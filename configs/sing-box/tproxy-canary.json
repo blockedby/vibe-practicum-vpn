@@ -63,7 +63,8 @@
     "rules": [
       {
         "inbound": [
-          "canary-tproxy-in"
+          "canary-tproxy-in",
+          "tailnet-socks-in"
         ],
         "action": "sniff",
         "timeout": "1s"
