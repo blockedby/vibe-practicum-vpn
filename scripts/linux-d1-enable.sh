@@ -19,7 +19,10 @@ fi
 
 # D1 requires Tailscale connected, but NOT as a global exit-node.
 # Otherwise Steam local-direct can still be pulled through tailscale0.
-sudo tailscale up --accept-routes
+# Use --reset because tailscale refuses changing prefs unless all previous
+# non-default flags are repeated. Repeating --exit-node would keep the old
+# global exit-node mode, which is exactly what D1 must disable.
+sudo tailscale up --reset --accept-routes
 
 echo "Checking VPS SOCKS reachability on $VPS_TS_IP:2080..."
 timeout 5 bash -lc "</dev/tcp/$VPS_TS_IP/2080" || {

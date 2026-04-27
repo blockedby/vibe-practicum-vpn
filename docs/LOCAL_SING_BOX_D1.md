@@ -16,8 +16,10 @@ This is only for gaming/dev Linux PCs. Phones/Windows/simple clients should keep
 For D1, the Linux PC should be connected to Tailscale **without global exit-node**:
 
 ```bash
-sudo tailscale up --accept-routes
+sudo tailscale up --reset --accept-routes
 ```
+
+`--reset` is intentional: if the machine previously used exit-node flags, Tailscale may refuse plain `tailscale up --accept-routes` and ask to repeat the old `--exit-node=...` flags. Do **not** repeat them for D1, because that would keep global exit-node mode enabled.
 
 Do not use this while D1 local sing-box is active:
 
@@ -97,7 +99,7 @@ The script will:
 1. switch Tailscale to connected/no-exit-node mode:
 
    ```bash
-   sudo tailscale up --accept-routes
+   sudo tailscale up --reset --accept-routes
    ```
 
 2. verify VPS SOCKS:
