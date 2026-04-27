@@ -75,6 +75,61 @@
           "192.168.0.0/16"
         ],
         "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geoip-ru",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geosite-ru-available-only-inside",
+        "outbound": "direct-out"
+      },
+      {
+        "domain_suffix": [
+          "ru",
+          "su",
+          "xn--p1ai",
+          "xn--p1acf",
+          "xn--80adxhks",
+          "moscow",
+          "tatar",
+          "xn--d1acj3b",
+          "xn--80aswg",
+          "xn--c1avg",
+          "xn--j1aef"
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "domain_suffix": [
+          "yandex.com",
+          "yandex.net",
+          "yastatic.net",
+          "yandexcloud.net",
+          "2gis.com",
+          "2gis.ae",
+          "dublgis.com",
+          "dgis.com",
+          "avito.st",
+          "avito.net"
+        ],
+        "outbound": "direct-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-ru-available-only-inside",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-ru-available-only-inside.srs",
+        "download_detour": "direct-out"
       }
     ]
   }
