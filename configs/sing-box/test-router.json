@@ -24,9 +24,7 @@
       "type": "socks",
       "tag": "test-socks-in",
       "listen": "127.0.0.1",
-      "listen_port": 2080,
-      "sniff": true,
-      "sniff_override_destination": false
+      "listen_port": 2080
     }
   ],
   "outbounds": [
@@ -48,6 +46,7 @@
   ],
   "route": {
     "auto_detect_interface": true,
+    "default_domain_resolver": "cloudflare",
     "final": "xray-socks-out",
     "rules": [
       {
