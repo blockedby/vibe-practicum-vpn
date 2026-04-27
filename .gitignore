@@ -1,0 +1,14 @@
+# Secrets / generated client configs
+*.key
+*.conf
+*.conf.*
+*.qr.png
+secrets/
+clients/
+
+# Runtime dumps that may contain sensitive data
+*.pcap
+*.dump
+
+# Keep sanitized examples/docs tracked explicitly if needed
+!examples/*.conf
