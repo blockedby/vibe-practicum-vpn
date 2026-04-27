@@ -24,6 +24,12 @@ For each new device:
 5. Add the device to the VPS TProxy capture rules if we are still in per-device canary mode.
 6. Run the acceptance checklist.
 
+Exact add-client runbook:
+
+```text
+docs/ADD_CLIENT_RUNBOOK.md
+```
+
 Checklist template:
 
 ```text
@@ -104,13 +110,13 @@ Open the login URL in the browser and authenticate.
 ### Use VPS as exit node
 
 ```bash
-sudo tailscale up --exit-node=awsbbbuslw --exit-node-allow-lan-access=true
+sudo tailscale up --exit-node=awsbbbuslw --exit-node-allow-lan-access=true --accept-routes
 ```
 
 If name resolution does not work, use the VPS Tailscale IP:
 
 ```bash
-sudo tailscale up --exit-node=100.121.107.112 --exit-node-allow-lan-access=true
+sudo tailscale up --exit-node=100.121.107.112 --exit-node-allow-lan-access=true --accept-routes
 ```
 
 Check status:
