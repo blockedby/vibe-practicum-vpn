@@ -17,12 +17,10 @@ if [[ ! -f "$CONFIG_SRC" ]]; then
   exit 1
 fi
 
-# D1 requires Tailscale connected, but NOT as a global exit-node.
-# Otherwise Steam local-direct can still be pulled through tailscale0.
-# Use --reset because tailscale refuses changing prefs unless all previous
-# non-default flags are repeated. Repeating --exit-node would keep the old
-# global exit-node mode, which is exactly what D1 must disable.
-sudo tailscale up --reset --accept-routes
+# Keep the operator-approved Tailscale mode: global exit-node stays enabled.
+# Local Steam/Dota direct is handled by sing-box local-direct bound to the LAN
+# interface in configs/sing-box/local/kcnc-pc-tun.json.
+sudo tailscale up --exit-node="100.121.107.112" --exit-node-allow-lan-access=true --accept-routes
 
 echo "Checking VPS SOCKS reachability on $VPS_TS_IP:2080..."
 timeout 5 bash -lc "</dev/tcp/$VPS_TS_IP/2080" || {

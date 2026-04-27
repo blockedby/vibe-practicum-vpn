@@ -11,12 +11,6 @@
         "type": "udp",
         "server": "1.1.1.1",
         "detour": "vps-router"
-      },
-      {
-        "tag": "local-dns",
-        "type": "udp",
-        "server": "1.1.1.1",
-        "detour": "local-direct"
       }
     ],
     "final": "vps-dns"
@@ -37,7 +31,8 @@
   "outbounds": [
     {
       "type": "direct",
-      "tag": "local-direct"
+      "tag": "local-direct",
+      "bind_interface": "wlp9s0"
     },
     {
       "type": "socks",

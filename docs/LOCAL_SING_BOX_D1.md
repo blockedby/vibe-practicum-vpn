@@ -13,21 +13,13 @@ This is only for gaming/dev Linux PCs. Phones/Windows/simple clients should keep
 
 ## Important difference from current dumb-client mode
 
-For D1, the Linux PC should be connected to Tailscale **without global exit-node**:
-
-```bash
-sudo tailscale up --reset --accept-routes
-```
-
-`--reset` is intentional: if the machine previously used exit-node flags, Tailscale may refuse plain `tailscale up --accept-routes` and ask to repeat the old `--exit-node=...` flags. Do **not** repeat them for D1, because that would keep global exit-node mode enabled.
-
-Do not use this while D1 local sing-box is active:
+For D1, keep the operator-approved Tailscale mode with global exit-node enabled:
 
 ```bash
 sudo tailscale up --exit-node='100.121.107.112' --exit-node-allow-lan-access=true --accept-routes
 ```
 
-Reason: if Tailscale exit-node is globally active, even `local-direct` traffic from Steam/Dota may still be pulled through `tailscale0` by Tailscale policy routing.
+Steam/Dota local-direct is handled by local sing-box binding its `local-direct` outbound to the LAN interface (`wlp9s0` on `kcnc-pc`).
 
 ## VPS side
 
@@ -96,10 +88,10 @@ Lower-level command if sing-box is already installed:
 
 The script will:
 
-1. switch Tailscale to connected/no-exit-node mode:
+1. ensure Tailscale exit-node mode is active:
 
    ```bash
-   sudo tailscale up --reset --accept-routes
+   sudo tailscale up --exit-node='100.121.107.112' --exit-node-allow-lan-access=true --accept-routes
    ```
 
 2. verify VPS SOCKS:
@@ -130,7 +122,7 @@ Lower-level command:
 ./scripts/linux-d1-disable.sh
 ```
 
-After disabling, if you want the old dumb-client mode back:
+After disabling, Tailscale exit-node mode remains the normal fallback:
 
 ```bash
 sudo tailscale up --exit-node='100.121.107.112' --exit-node-allow-lan-access=true --accept-routes
