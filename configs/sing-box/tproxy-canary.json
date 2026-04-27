@@ -1,0 +1,81 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "strategy": "prefer_ipv4",
+    "servers": [
+      {
+        "tag": "cloudflare",
+        "type": "udp",
+        "server": "1.1.1.1"
+      },
+      {
+        "tag": "google",
+        "type": "udp",
+        "server": "8.8.8.8"
+      }
+    ],
+    "final": "cloudflare"
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "test-socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
+    },
+    {
+      "type": "tproxy",
+      "tag": "canary-tproxy-in",
+      "listen": "0.0.0.0",
+      "listen_port": 2082
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct-out"
+    },
+    {
+      "type": "socks",
+      "tag": "xray-socks-out",
+      "server": "127.0.0.1",
+      "server_port": 10808,
+      "version": "5"
+    },
+    {
+      "type": "block",
+      "tag": "block-out"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "cloudflare",
+    "final": "xray-socks-out",
+    "rules": [
+      {
+        "inbound": [
+          "canary-tproxy-in"
+        ],
+        "action": "sniff",
+        "timeout": "1s"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct-out"
+      },
+      {
+        "ip_cidr": [
+          "100.64.0.0/10",
+          "127.0.0.0/8",
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16"
+        ],
+        "outbound": "direct-out"
+      }
+    ]
+  }
+}
