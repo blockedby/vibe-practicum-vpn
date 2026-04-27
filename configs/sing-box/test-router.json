@@ -56,6 +56,13 @@
     "final": "xray-socks-out",
     "rules": [
       {
+        "inbound": [
+          "canary-redirect-in"
+        ],
+        "action": "sniff",
+        "timeout": "1s"
+      },
+      {
         "ip_is_private": true,
         "outbound": "direct-out"
       },
