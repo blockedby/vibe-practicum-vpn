@@ -14,4 +14,5 @@ Useful docs:
 - [`docs/TAILSCALE_CLIENT_SETUP.md`](./docs/TAILSCALE_CLIENT_SETUP.md) — install/use Tailscale on Android, Windows, Kubuntu/Ubuntu.
 - [`docs/PIXEL_ACCEPTANCE_CHECKLIST.md`](./docs/PIXEL_ACCEPTANCE_CHECKLIST.md) — current accepted canary checklist.
 - [`docs/RU_DIRECT_RULESETS.md`](./docs/RU_DIRECT_RULESETS.md) — RU/direct rule-set notes.
+- [`docs/LOCAL_SING_BOX_D1.md`](./docs/LOCAL_SING_BOX_D1.md) — smart local sing-box/TUN mode for `kcnc-pc` gaming split routing.
 - [`docs/ROLLBACK.md`](./docs/ROLLBACK.md) — rollback commands.
