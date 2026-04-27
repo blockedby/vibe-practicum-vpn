@@ -75,12 +75,20 @@ Check:
 sing-box version
 ```
 
-## Enable D1
+## Start D1
 
 From repo root on the Linux PC:
 
 ```bash
 cd /home/kcnc/code/tools/vibe-practicum-vpn
+./scripts/d1-start.sh
+```
+
+This installs sing-box if missing, then enables D1.
+
+Lower-level command if sing-box is already installed:
+
+```bash
 ./scripts/linux-d1-enable.sh
 ```
 
@@ -107,10 +115,16 @@ The script will:
 4. run `sing-box check`;
 5. create/start `sing-box-vibe-local.service`.
 
-## Disable D1
+## Stop D1
 
 ```bash
 cd /home/kcnc/code/tools/vibe-practicum-vpn
+./scripts/d1-stop.sh
+```
+
+Lower-level command:
+
+```bash
 ./scripts/linux-d1-disable.sh
 ```
 
@@ -149,7 +163,7 @@ VPS logs should still show browser/default traffic entering via `tailnet-socks-i
 Fast rollback:
 
 ```bash
-./scripts/linux-d1-disable.sh
+./scripts/d1-stop.sh
 sudo tailscale up --exit-node='100.121.107.112' --exit-node-allow-lan-access=true --accept-routes
 ```
 
