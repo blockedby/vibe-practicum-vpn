@@ -77,6 +77,27 @@
         "outbound": "direct-out"
       },
       {
+        "rule_set": "geosite-steam",
+        "outbound": "direct-out"
+      },
+      {
+        "domain_suffix": [
+          "steamcontent.com",
+          "steampowered.com",
+          "steamstatic.com",
+          "steamserver.net",
+          "steamgames.com",
+          "steamusercontent.com",
+          "steamcommunity.com",
+          "steam-chat.com",
+          "steam.tv",
+          "valvesoftware.com",
+          "valve.net",
+          "dota2.com"
+        ],
+        "outbound": "direct-out"
+      },
+      {
         "rule_set": "geoip-ru",
         "outbound": "direct-out"
       },
@@ -129,6 +150,13 @@
         "tag": "geosite-ru-available-only-inside",
         "format": "binary",
         "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-ru-available-only-inside.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-steam",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-steam.srs",
         "download_detour": "direct-out"
       }
     ]
