@@ -11,8 +11,12 @@ User tested `pixel-7-pro` with Tailscale exit-node enabled and TProxy canary act
 Reported result:
 
 ```text
-Everything works great.
+Everything works great. Pixel is fast and stable.
+Telegram works. YouTube works. 2ip.ru shows Russia/direct.
+A non-RU IP check shows Netherlands/proxy. Ozon works and does not block as VPN.
 ```
+
+Detailed checklist: [`PIXEL_ACCEPTANCE_CHECKLIST.md`](PIXEL_ACCEPTANCE_CHECKLIST.md).
 
 ## Active canary behavior
 
@@ -38,7 +42,10 @@ Bypass/direct:
 
 - private/local ranges;
 - Tailscale CGNAT range `100.64.0.0/10`;
-- multicast/reserved ranges.
+- multicast/reserved ranges;
+- Russian IPs via `geoip-ru`;
+- Russian-only domains via `geosite-ru-available-only-inside`;
+- Russian TLDs and a small curated list for Yandex/2GIS/Avito infra.
 
 Everything else:
 
@@ -53,6 +60,6 @@ TProxy canary is the correct direction. The earlier TCP-only REDIRECT canary sho
 Next steps:
 
 1. Keep phone canary running for longer stability testing.
-2. Add a status/check script to show active rules and service health.
-3. Add optional direct whitelist rules carefully.
-4. Later expand from one phone to selected devices or all Tailscale clients.
+2. Add more devices one-by-one through the same Tailscale exit-node + VPS routing model.
+3. Run [`PIXEL_ACCEPTANCE_CHECKLIST.md`](PIXEL_ACCEPTANCE_CHECKLIST.md) or a copy of it for each new device.
+4. Keep rollback scripts ready and do not expand to all devices at once.
