@@ -48,3 +48,27 @@ Tracked Telegram IP ranges:
 - `91.108.16.0/22`
 - `91.108.20.0/22`
 - `91.108.56.0/22`
+
+## 2026-04-27: Telegram still failed, canary disabled
+
+After adding Telegram direct rules, Telegram still did not work from the phone.
+Canary was disabled to restore the baseline phone path.
+
+Observed sing-box logs showed Telegram IPs like `149.154.167.50:443` being routed direct, but direct dial timed out inside sing-box:
+
+```text
+outbound/direct[direct-out]: dial tcp 149.154.167.50:443: i/o timeout
+```
+
+This suggests the transparent redirect/direct outbound path is not equivalent to normal Linux forwarding/NAT path, or Telegram app has additional flows not covered by TCP-only redirect. The baseline Tailscale exit-node direct NAT path should be re-tested after disabling canary.
+
+Current state after this observation:
+
+- Pixel canary iptables rule removed.
+- sing-box service remains running locally (`127.0.0.1:2080`, redirect `:2081`) but no Tailscale traffic is redirected into it.
+
+Next investigation options:
+
+1. Keep canary disabled and verify Telegram recovers on phone.
+2. Avoid transparent REDIRECT for Telegram by excluding Telegram IP ranges at iptables level before redirect.
+3. Consider sing-box TUN/auto_route or TProxy instead of TCP REDIRECT if we continue transparent routing.
