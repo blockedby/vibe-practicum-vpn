@@ -127,6 +127,125 @@ func Download(socksAddr, testURL string, limit int64, timeout time.Duration) (Re
 	return Result{n, sec, float64(n) * 8 / sec / 1e6}, nil
 }
 
+type HTTPResult struct {
+	StatusCode int
+	Body       string
+	Seconds    float64
+}
+
+func Get(socksAddr, targetURL string, maxBody int64, timeout time.Duration) (HTTPResult, error) {
+	if maxBody <= 0 {
+		return HTTPResult{}, fmt.Errorf("max body must be positive")
+	}
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		return HTTPResult{}, err
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return HTTPResult{}, fmt.Errorf("unsupported URL scheme %q", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" || len(host) > 255 {
+		return HTTPResult{}, fmt.Errorf("invalid URL host")
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	path := u.RequestURI()
+	if path == "" {
+		path = "/"
+	}
+	d := net.Dialer{Timeout: timeout}
+	raw, err := d.Dial("tcp", socksAddr)
+	if err != nil {
+		return HTTPResult{}, err
+	}
+	defer raw.Close()
+	raw.SetDeadline(time.Now().Add(timeout))
+	start := time.Now()
+	if _, err := raw.Write([]byte{5, 1, 0}); err != nil {
+		return HTTPResult{}, err
+	}
+	gr := make([]byte, 2)
+	if _, err := io.ReadFull(raw, gr); err != nil || gr[1] != 0 {
+		return HTTPResult{}, fmt.Errorf("socks greeting")
+	}
+	hb := []byte(host)
+	p, err := strconv.Atoi(port)
+	if err != nil || p <= 0 || p > 65535 {
+		return HTTPResult{}, fmt.Errorf("invalid URL port %q", port)
+	}
+	req := append([]byte{5, 1, 0, 3, byte(len(hb))}, hb...)
+	req = append(req, byte(p>>8), byte(p))
+	if _, err := raw.Write(req); err != nil {
+		return HTTPResult{}, err
+	}
+	if err := readSocksReply(raw); err != nil {
+		return HTTPResult{}, err
+	}
+	conn := raw
+	if u.Scheme == "https" {
+		tlsconn := tls.Client(raw, &tls.Config{ServerName: host})
+		if err := tlsconn.Handshake(); err != nil {
+			return HTTPResult{}, err
+		}
+		conn = tlsconn
+	}
+	if _, err := fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: vibe-vpn/1\r\nConnection: close\r\n\r\n", path, u.Host); err != nil {
+		return HTTPResult{}, err
+	}
+	buf := make([]byte, 8192)
+	header := []byte{}
+	body := []byte{}
+	haveHeader := false
+	status := 0
+	for int64(len(body)) < maxBody {
+		c, err := conn.Read(buf)
+		if c > 0 {
+			data := buf[:c]
+			if !haveHeader {
+				header = append(header, data...)
+				if len(header) > 64<<10 {
+					return HTTPResult{}, fmt.Errorf("http response headers too large")
+				}
+				if i := bytes.Index(header, []byte("\r\n\r\n")); i >= 0 {
+					line := string(header[:i])
+					if j := strings.Index(line, "\r\n"); j >= 0 {
+						line = line[:j]
+					}
+					fields := strings.Fields(line)
+					if len(fields) < 2 {
+						return HTTPResult{}, fmt.Errorf("invalid http response status %q", line)
+					}
+					status, _ = strconv.Atoi(fields[1])
+					if status < 200 || status >= 300 {
+						return HTTPResult{}, fmt.Errorf("http response status %d", status)
+					}
+					haveHeader = true
+					body = append(body, header[i+4:]...)
+				}
+			} else {
+				body = append(body, data...)
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+	if !haveHeader {
+		return HTTPResult{}, fmt.Errorf("http response missing complete headers")
+	}
+	if int64(len(body)) > maxBody {
+		body = body[:maxBody]
+	}
+	return HTTPResult{StatusCode: status, Body: string(body), Seconds: time.Since(start).Seconds()}, nil
+}
+
 func checkHTTPStatus(header []byte) error {
 	line := string(header)
 	if i := strings.Index(line, "\r\n"); i >= 0 {

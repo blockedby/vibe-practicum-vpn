@@ -107,7 +107,7 @@ sudo install -o root -g root -m 755 /tmp/vibe-vpn /usr/local/bin/vibe-vpn
 sudo vibe-vpn status [--config /path/to/config.json]
 ```
 
-Shows production `xray` status, current node if known, and a SOCKS smoke check.
+Shows production `xray` status, production SOCKS address, current selected node, server `host:port`, transport/security, last benchmark speed, state source, live egress IP, and SOCKS latency.
 
 ```bash
 sudo vibe-vpn test [--config /path/to/config.json] [--limit-kib N] [--max N]
