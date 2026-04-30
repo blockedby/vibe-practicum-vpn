@@ -210,3 +210,17 @@ client device
 - Do not commit subscription URLs or full `vless://` secrets.
 - Keep `/etc/vibe-vpn/sub_url` mode `0600`.
 - `vibe-vpn test` is safe for live usage; `vibe-vpn pick` changes production only after the winner is selected.
+
+## vibe-vpn CLI
+
+`vibe-vpn` now uses Cobra and provides command-specific help (`vibe-vpn <command> --help`). Production safety remains unchanged: `test` benchmarks nodes with a temporary isolated xray SOCKS listener and never changes production; `pick` runs the same isolated tests and applies only the fastest working non-excluded node; `rollback` restores the latest backup.
+
+Common filters are available on `test`, `pick`, `list`, and `apply best`: `--include`, `--exclude`, `--transport`, `--security`, `--min-mbps`, `--default-exclude`, and `--no-default-exclude`. Explicit `apply <index>` is allowed for a working node from `last-results.json`; if current filters would exclude it, the CLI prints a warning before applying.
+
+Useful commands:
+
+- `vibe-vpn refresh` fetches the subscription and prints a node/transport summary.
+- `vibe-vpn current` shows the current node; `vibe-vpn current --link` prints only the VLESS link.
+- `vibe-vpn doctor` checks config, xray binary/config, state directory, subscription file, and test SOCKS availability.
+- `vibe-vpn logs` prints recent xray/vibe-vpn journal summaries when journalctl is available.
+- `vibe-vpn prune` removes stale temporary test files/processes and keeps recent backups.

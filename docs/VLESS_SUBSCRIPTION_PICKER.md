@@ -74,3 +74,17 @@ Safety notes:
 
 `scripts/vibe-pick-proxy-isolated.py` is retained as a legacy standalone helper.
 Prefer the Go CLI for new runs.
+
+## Updated CLI workflow
+
+The picker CLI is Cobra-based. Run `vibe-vpn --help` or `vibe-vpn test --help` for authoritative options.
+
+Shared filters apply consistently to `test`, `pick`, `list`, and `apply best`:
+
+```bash
+vibe-vpn test --transport tcp --security reality --min-mbps 10
+vibe-vpn list --exclude hongkong --failed
+vibe-vpn apply best --include germany --no-default-exclude
+```
+
+`test` uses an isolated temporary xray instance and leaves production untouched. `pick` only applies after tests complete and chooses the best working non-excluded node. `apply <index>` applies an explicit tested result and warns if the current filter set excludes that index. Use `vibe-vpn current --link` to retrieve the currently applied VLESS link.

@@ -195,3 +195,15 @@ No-go if:
 - `test` modifies production config;
 - `pick` leaves `xray` inactive;
 - client traffic stops after pick and rollback does not recover it.
+
+## CLI regression checks
+
+Before production use after CLI changes:
+
+1. `vibe-vpn doctor` must report required files and state directory as OK.
+2. `vibe-vpn refresh` must fetch the subscription and print a plausible transport/security summary.
+3. `vibe-vpn test --max 3 --transport tcp` must state that testing is isolated and production stays untouched.
+4. `vibe-vpn pick --max 3` may apply only after isolated tests finish; verify `vibe-vpn current` and `vibe-vpn current --link` afterwards.
+5. `vibe-vpn apply best --min-mbps 10` must respect filters from the saved `last-results.json`.
+6. `vibe-vpn rollback` must restore the latest backup if the applied node is bad.
+7. `vibe-vpn logs` and `vibe-vpn prune` should complete without disrupting production xray.

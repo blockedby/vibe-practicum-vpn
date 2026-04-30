@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -20,32 +19,11 @@ import (
 	"github.com/kcnc/vibe-practicum-vpn/internal/subscription"
 	"github.com/kcnc/vibe-practicum-vpn/internal/vless"
 	"github.com/kcnc/vibe-practicum-vpn/internal/xray"
+	"github.com/spf13/cobra"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
-	}
-	var err error
-	switch os.Args[1] {
-	case "test":
-		err = cmdTest(false)
-	case "pick":
-		err = cmdTest(true)
-	case "status":
-		err = cmdStatus()
-	case "list":
-		err = cmdList()
-	case "apply":
-		err = cmdApply()
-	case "rollback":
-		err = cmdRollback()
-	default:
-		usage()
-		os.Exit(2)
-	}
-	if err != nil {
+	if err := newRootCommand().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
@@ -53,36 +31,114 @@ func main() {
 
 const defaultConfigPath = "/etc/vibe-vpn/config.json"
 
-func usage() {
-	fmt.Println("vibe-vpn status|test|list|apply|pick|rollback\n  test: isolated benchmark, no production changes\n  pick: isolated benchmark then apply winner once")
+type cliOptions struct {
+	configPath string
+	filter     picker.FilterOptions
 }
-func load(fs *flag.FlagSet) (config.Config, error) {
-	cfgPath := fs.String("config", defaultConfigPath, "config path")
-	if err := fs.Parse(os.Args[2:]); err != nil {
-		return config.Config{}, err
+
+func newRootCommand() *cobra.Command {
+	o := &cliOptions{}
+	root := &cobra.Command{Use: "vibe-vpn", Short: "Safely test and select VLESS subscription nodes", SilenceUsage: true}
+	root.PersistentFlags().StringVar(&o.configPath, "config", defaultConfigPath, "config path")
+
+	addFilters := func(cmd *cobra.Command) {
+		cmd.Flags().StringArrayVar(&o.filter.Include, "include", nil, "include only nodes whose name/host contains text (repeatable)")
+		cmd.Flags().StringArrayVar(&o.filter.Exclude, "exclude", nil, "exclude nodes whose name/host contains text (repeatable)")
+		cmd.Flags().StringArrayVar(&o.filter.Transport, "transport", nil, "include only transport/network values such as tcp, ws, grpc (repeatable)")
+		cmd.Flags().StringArrayVar(&o.filter.Security, "security", nil, "include only security values such as tls or reality (repeatable)")
+		cmd.Flags().Float64Var(&o.filter.MinMbps, "min-mbps", 0, "exclude successful nodes slower than this Mbps")
+		cmd.Flags().BoolVar(&o.filter.DefaultExclude, "default-exclude", true, "exclude subscription metadata/traffic nodes")
+		cmd.Flags().BoolVar(&o.filter.DefaultExclude, "no-default-exclude", true, "disable default subscription metadata exclusions")
+		cmd.Flags().Lookup("no-default-exclude").NoOptDefVal = "false"
 	}
-	if *cfgPath != defaultConfigPath {
-		if _, err := os.Stat(*cfgPath); err != nil {
+
+	test := &cobra.Command{Use: "test", Short: "Benchmark subscription nodes with isolated temporary xray; no production changes", RunE: func(cmd *cobra.Command, args []string) error {
+		max, _ := cmd.Flags().GetInt("max")
+		lim, _ := cmd.Flags().GetInt("limit-kib")
+		verbose, _ := cmd.Flags().GetBool("verbose")
+		debug, _ := cmd.Flags().GetBool("debug")
+		return runTest(o, false, max, lim, verbose, debug)
+	}}
+	test.Flags().Int("max", 0, "max nodes")
+	test.Flags().Int("limit-kib", 0, "test KiB")
+	test.Flags().Bool("verbose", false, "print every node while testing")
+	test.Flags().Bool("debug", false, "show temporary xray logs")
+	addFilters(test)
+	root.AddCommand(test)
+
+	pick := &cobra.Command{Use: "pick", Short: "Benchmark in isolation, then apply the best non-excluded working node", RunE: func(cmd *cobra.Command, args []string) error {
+		max, _ := cmd.Flags().GetInt("max")
+		lim, _ := cmd.Flags().GetInt("limit-kib")
+		verbose, _ := cmd.Flags().GetBool("verbose")
+		debug, _ := cmd.Flags().GetBool("debug")
+		return runTest(o, true, max, lim, verbose, debug)
+	}}
+	pick.Flags().Int("max", 0, "max nodes")
+	pick.Flags().Int("limit-kib", 0, "test KiB")
+	pick.Flags().Bool("verbose", false, "print every node while testing")
+	pick.Flags().Bool("debug", false, "show temporary xray logs")
+	addFilters(pick)
+	root.AddCommand(pick)
+
+	list := &cobra.Command{Use: "list", Short: "List last benchmark results", RunE: func(cmd *cobra.Command, args []string) error { return cmdList(o, cmd) }}
+	list.Flags().Int("top", 20, "number of successful nodes to show")
+	list.Flags().Bool("all", false, "show all successful nodes")
+	list.Flags().Bool("failed", false, "show failed nodes too")
+	list.Flags().Bool("json", false, "print raw JSON results")
+	addFilters(list)
+	root.AddCommand(list)
+
+	apply := &cobra.Command{Use: "apply <index|best>", Short: "Apply a node from last-results.json; 'best' respects filters", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error { return cmdApply(o, args[0]) }}
+	addFilters(apply)
+	root.AddCommand(apply)
+	root.AddCommand(&cobra.Command{Use: "status", Short: "Show service and current-node status", RunE: func(cmd *cobra.Command, args []string) error { return cmdStatus(o) }})
+	cur := &cobra.Command{Use: "current", Short: "Show current selected node", RunE: func(cmd *cobra.Command, args []string) error {
+		link, _ := cmd.Flags().GetBool("link")
+		return cmdCurrent(o, link)
+	}}
+	cur.Flags().Bool("link", false, "print only current VLESS link")
+	root.AddCommand(cur)
+	root.AddCommand(&cobra.Command{Use: "rollback", Short: "Rollback production xray config to latest backup", RunE: func(cmd *cobra.Command, args []string) error { return cmdRollback(o) }})
+	root.AddCommand(&cobra.Command{Use: "refresh", Short: "Fetch subscription and print summary", RunE: func(cmd *cobra.Command, args []string) error { return cmdRefresh(o) }})
+	root.AddCommand(&cobra.Command{Use: "doctor", Short: "Run local configuration and safety checks", RunE: func(cmd *cobra.Command, args []string) error { return cmdDoctor(o) }})
+	logs := &cobra.Command{Use: "logs", Short: "Show vibe-vpn state summary", RunE: func(cmd *cobra.Command, args []string) error {
+		failed, _ := cmd.Flags().GetInt("failed")
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		return cmdLogs(o, failed, jsonOut)
+	}}
+	logs.Flags().Int("failed", 10, "number of failed results to show")
+	logs.Flags().Bool("json", false, "print raw last-results JSON")
+	root.AddCommand(logs)
+	prune := &cobra.Command{Use: "prune", Short: "Prune stale temporary xray configs and old backups", RunE: func(cmd *cobra.Command, args []string) error {
+		dry, _ := cmd.Flags().GetBool("dry-run")
+		keep, _ := cmd.Flags().GetInt("keep")
+		return cmdPrune(o, dry, keep)
+	}}
+	prune.Flags().Bool("dry-run", false, "show what would be removed without deleting")
+	prune.Flags().Int("keep", 10, "number of newest backups to keep")
+	root.AddCommand(prune)
+	return root
+}
+
+func loadConfig(path string) (config.Config, error) {
+	if path != defaultConfigPath {
+		if _, err := os.Stat(path); err != nil {
 			if os.IsNotExist(err) {
-				return config.Config{}, fmt.Errorf("config %s does not exist", *cfgPath)
+				return config.Config{}, fmt.Errorf("config %s does not exist", path)
 			}
 			return config.Config{}, err
 		}
 	}
-	return config.Load(*cfgPath)
+	return config.Load(path)
 }
-func cmdTest(apply bool) error {
-	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
-	max := fs.Int("max", 0, "max nodes")
-	lim := fs.Int("limit-kib", 0, "test KiB")
-	verbose := fs.Bool("verbose", false, "print every node while testing")
-	debug := fs.Bool("debug", false, "show temporary xray logs")
-	c, err := load(fs)
+
+func runTest(o *cliOptions, apply bool, max, lim int, verbose, debug bool) error {
+	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
 	}
-	if *lim > 0 {
-		c.TestLimitKiB = *lim
+	if lim > 0 {
+		c.TestLimitKiB = lim
 	}
 	subURLb, err := os.ReadFile(c.SubscriptionFile)
 	if err != nil {
@@ -92,8 +148,30 @@ func cmdTest(apply bool) error {
 	if err != nil {
 		return err
 	}
-	if *max > 0 && *max < len(links) {
-		links = links[:*max]
+	type candidate struct {
+		idx  int
+		link string
+		node vless.Node
+	}
+	candidates := []candidate{}
+	parseFailures := []picker.NodeResult{}
+	for i, l := range links {
+		n, err := vless.Parse(l)
+		if err != nil {
+			parseFailures = append(parseFailures, picker.NodeResult{Index: i + 1, OK: false, Error: err.Error(), Link: l})
+			continue
+		}
+		probe := picker.NodeResult{Index: i + 1, Name: n.Name, Host: n.Host, Port: n.Port, Network: n.Network, Security: n.Security, Link: l}
+		if ok, _ := o.filter.MatchResult(probe); ok {
+			candidates = append(candidates, candidate{i + 1, l, n})
+		}
+	}
+	beforeMax := len(candidates)
+	if max > 0 && max < len(candidates) {
+		candidates = candidates[:max]
+	}
+	if len(candidates) == 0 {
+		return fmt.Errorf("no nodes match filters")
 	}
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
 		if n := cleanupStaleTestXray(); n > 0 {
@@ -109,61 +187,48 @@ func cmdTest(apply bool) error {
 		fmt.Printf("Test SOCKS address %s is still busy; using fallback %s for this run.\n", c.TestSocks, alt)
 		c.TestSocks = alt
 	}
-	fmt.Printf("Found %d VLESS nodes. Testing isolated on %s; production stays untouched.\n", len(links), c.TestSocks)
-	if !*verbose {
+	fmt.Printf("Fetched %d nodes, %d after filters", len(links), beforeMax)
+	if max > 0 && max < beforeMax {
+		fmt.Printf(", testing first %d", len(candidates))
+	}
+	fmt.Printf(".\n")
+	fmt.Printf("Testing isolated on %s; production stays untouched.\n", c.TestSocks)
+	if !verbose {
 		fmt.Println("Progress is quiet by default; use --verbose to print every node.")
 	}
-	var results []picker.NodeResult
-	for i, l := range links {
-		n, err := vless.Parse(l)
+	results := append([]picker.NodeResult{}, parseFailures...)
+	for j, cand := range candidates {
+		n := cand.node
+		r, err := testOne(c, n, debug)
 		if err != nil {
-			if *verbose {
-				fmt.Printf("[%03d/%03d] FAIL %v\n", i+1, len(links), err)
+			if verbose {
+				fmt.Printf("[%03d/%03d] FAIL %v\n", j+1, len(candidates), err)
 			}
-			results = append(results, picker.NodeResult{Index: i + 1, OK: false, Error: err.Error(), Link: l})
-			continue
-		}
-		r, err := testOne(c, n, *debug)
-		if err != nil {
-			if *verbose {
-				fmt.Printf("[%03d/%03d] FAIL %v\n", i+1, len(links), err)
-			}
-			results = append(results, picker.NodeResult{Index: i + 1, OK: false, Error: err.Error(), Link: l, Name: n.Name, Host: n.Host, Port: n.Port, Network: n.Network, Security: n.Security})
+			results = append(results, picker.NodeResult{Index: cand.idx, OK: false, Error: err.Error(), Link: cand.link, Name: n.Name, Host: n.Host, Port: n.Port, Network: n.Network, Security: n.Security})
 			continue
 		}
 		ok := r.Bytes >= successThreshold(int64(c.TestLimitKiB)*1024)
-		nr := picker.FromNode(i+1, n, r.Mbps, r.Bytes, r.Seconds)
+		nr := picker.FromNode(cand.idx, n, r.Mbps, r.Bytes, r.Seconds)
 		nr.OK = ok
 		results = append(results, nr)
-		if *verbose {
-			fmt.Printf("[%03d/%03d] %7.2f Mbps %5.2fs %s\n", i+1, len(links), r.Mbps, r.Seconds, n.Name)
+		if verbose {
+			fmt.Printf("[%03d/%03d] %7.2f Mbps %5.2fs #%03d %s\n", j+1, len(candidates), r.Mbps, r.Seconds, cand.idx, n.Name)
 		}
 	}
+	results = o.filter.Apply(results)
 	if err := state.SaveJSON(c.StateDir, "last-results.json", results); err != nil {
 		return err
 	}
 	printSummary(results, 20)
-	b := picker.Best(results)
+	b := picker.BestFiltered(results)
 	if b == nil {
-		return fmt.Errorf("no working node")
+		return fmt.Errorf("no working non-excluded node")
 	}
-	fmt.Printf("\nBEST:\n  %s\n  %.2f Mbps\n", b.Name, b.Mbps)
+	fmt.Printf("\nBEST:\n  #%03d %s\n  %.2f Mbps\n", b.Index, b.Name, b.Mbps)
 	if apply {
-		backup, err := xray.Apply(c.XrayConfig, c.StateDir, b.Outbound)
-		if err != nil {
-			return err
-		}
-		cur := state.Current{Name: b.Name, Host: b.Host, Port: b.Port, Network: b.Network, Security: b.Security, Link: b.Link, Mbps: b.Mbps, TestedAt: time.Now().Format(time.RFC3339)}
-		if err := state.SaveJSON(c.StateDir, "current-node.json", cur); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(c.StateDir, "current-link.txt"), []byte(b.Link+"\n"), 0600); err != nil {
-			return err
-		}
-		fmt.Println("Applied to production xray. Backup:", backup)
-	} else {
-		fmt.Println("Dry run only. Use 'vibe-vpn pick' to apply winner.")
+		return applyResult(c, *b)
 	}
+	fmt.Println("Dry run only. Use 'vibe-vpn pick' to apply winner.")
 	return nil
 }
 func testOne(c config.Config, n vless.Node, debug bool) (nettest.Result, error) {
@@ -261,9 +326,8 @@ func waitTCP(addr string, d time.Duration) error {
 	}
 	return fmt.Errorf("temp xray did not open %s", addr)
 }
-func cmdStatus() error {
-	fs := flag.NewFlagSet("status", flag.ExitOnError)
-	c, err := load(fs)
+func cmdStatus(o *cliOptions) error {
+	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
 	}
@@ -350,9 +414,8 @@ func valueOr(v, fallback string) string {
 	}
 	return v
 }
-func cmdRollback() error {
-	fs := flag.NewFlagSet("rollback", flag.ExitOnError)
-	c, err := load(fs)
+func cmdRollback(o *cliOptions) error {
+	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
 	}
@@ -379,7 +442,7 @@ func stringTrim(s string) string {
 func sortedOK(results []picker.NodeResult) []picker.NodeResult {
 	ok := make([]picker.NodeResult, 0, len(results))
 	for _, r := range results {
-		if r.OK {
+		if r.OK && !r.Excluded {
 			ok = append(ok, r)
 		}
 	}
@@ -427,13 +490,12 @@ func applyResult(c config.Config, b picker.NodeResult) error {
 	return nil
 }
 
-func cmdList() error {
-	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	top := fs.Int("top", 20, "number of successful nodes to show")
-	all := fs.Bool("all", false, "show all successful nodes")
-	failed := fs.Bool("failed", false, "show failed nodes too")
-	jsonOut := fs.Bool("json", false, "print raw JSON results")
-	c, err := load(fs)
+func cmdList(o *cliOptions, cmd *cobra.Command) error {
+	top, _ := cmd.Flags().GetInt("top")
+	all, _ := cmd.Flags().GetBool("all")
+	failed, _ := cmd.Flags().GetBool("failed")
+	jsonOut, _ := cmd.Flags().GetBool("json")
+	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
 	}
@@ -442,40 +504,38 @@ func cmdList() error {
 	if err != nil {
 		return err
 	}
-	if *jsonOut {
-		fmt.Print(string(b))
-		return nil
-	}
 	if err := json.Unmarshal(b, &results); err != nil {
 		return err
 	}
-	if *all {
-		*top = len(results)
+	results = o.filter.Apply(results)
+	if jsonOut {
+		enc, _ := json.MarshalIndent(results, "", "  ")
+		fmt.Println(string(enc))
+		return nil
 	}
-	printSummary(results, *top)
-	if *failed {
-		fmt.Println("\nFailed:")
+	if all {
+		top = len(results)
+	}
+	printSummary(results, top)
+	if failed {
+		fmt.Println("\nFailed/Excluded:")
 		for _, r := range results {
-			if !r.OK {
-				fmt.Printf("  #%03d  FAIL  %-42s  %s\n", r.Index, truncate(r.Name, 42), r.Error)
+			if !r.OK || r.Excluded {
+				status := "FAIL"
+				if r.Excluded {
+					status = "EXCLUDED:" + strings.Join(r.ExcludeReasons, ",")
+				}
+				fmt.Printf("  #%03d  %s  %-42s  %s\n", r.Index, status, truncate(r.Name, 42), r.Error)
 			}
 		}
 	}
 	return nil
 }
 
-func cmdApply() error {
-	fs := flag.NewFlagSet("apply", flag.ExitOnError)
-	c, err := load(fs)
+func cmdApply(o *cliOptions, arg string) error {
+	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
-	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: vibe-vpn apply <index-from-last-results>")
-	}
-	var idx int
-	if _, err := fmt.Sscanf(fs.Arg(0), "%d", &idx); err != nil || idx <= 0 {
-		return fmt.Errorf("invalid index %q", fs.Arg(0))
 	}
 	var results []picker.NodeResult
 	b, err := os.ReadFile(filepath.Join(c.StateDir, "last-results.json"))
@@ -485,14 +545,219 @@ func cmdApply() error {
 	if err := json.Unmarshal(b, &results); err != nil {
 		return err
 	}
-	for _, r := range results {
-		if r.Index == idx {
-			if !r.OK {
-				return fmt.Errorf("node #%03d is not OK: %s", idx, r.Error)
+	results = o.filter.Apply(results)
+	var chosen *picker.NodeResult
+	if arg == "best" {
+		chosen = picker.BestFiltered(results)
+		if chosen == nil {
+			return fmt.Errorf("no working non-excluded node")
+		}
+	} else {
+		var idx int
+		if _, err := fmt.Sscanf(arg, "%d", &idx); err != nil || idx <= 0 {
+			return fmt.Errorf("invalid index %q", arg)
+		}
+		for i := range results {
+			if results[i].Index == idx {
+				chosen = &results[i]
+				break
 			}
-			fmt.Printf("Applying #%03d %.2f Mbps %s (%s:%d %s/%s)\n", r.Index, r.Mbps, r.Name, r.Host, r.Port, r.Network, r.Security)
-			return applyResult(c, r)
+		}
+		if chosen == nil {
+			return fmt.Errorf("node #%03d not found in last-results.json", idx)
 		}
 	}
-	return fmt.Errorf("node #%03d not found in last-results.json", idx)
+	if !chosen.OK {
+		return fmt.Errorf("node #%03d is not OK: %s", chosen.Index, chosen.Error)
+	}
+	if chosen.Excluded {
+		fmt.Fprintf(os.Stderr, "WARNING: applying excluded node #%03d (%s)\n", chosen.Index, strings.Join(chosen.ExcludeReasons, ","))
+	}
+	fmt.Printf("Applying #%03d %.2f Mbps %s (%s:%d %s/%s)\n", chosen.Index, chosen.Mbps, chosen.Name, chosen.Host, chosen.Port, chosen.Network, chosen.Security)
+	return applyResult(c, *chosen)
+}
+
+func cmdCurrent(o *cliOptions, linkOnly bool) error {
+	c, err := loadConfig(o.configPath)
+	if err != nil {
+		return err
+	}
+	cur, source, err := loadCurrentWithLegacy(c.StateDir)
+	if err != nil {
+		return err
+	}
+	if linkOnly {
+		fmt.Println(cur.Link)
+		return nil
+	}
+	fmt.Printf("name: %s\nserver: %s:%d\ntransport: %s/%s\nlast_speed: %.2f Mbps\ntested_at: %s\nstate: %s\n", valueOr(cur.Name, "unknown"), valueOr(cur.Host, "unknown"), cur.Port, valueOr(cur.Network, "unknown"), valueOr(cur.Security, "unknown"), cur.Mbps, valueOr(cur.TestedAt, "unknown"), source)
+	return nil
+}
+
+func cmdRefresh(o *cliOptions) error {
+	c, err := loadConfig(o.configPath)
+	if err != nil {
+		return err
+	}
+	u, err := os.ReadFile(c.SubscriptionFile)
+	if err != nil {
+		return err
+	}
+	links, err := subscription.Fetch(stringTrim(string(u)), time.Duration(c.TimeoutSeconds)*time.Second)
+	if err != nil {
+		return err
+	}
+	counts := map[string]int{}
+	for _, l := range links {
+		if n, err := vless.Parse(l); err == nil {
+			counts[n.Network+"/"+n.Security]++
+		}
+	}
+	fmt.Printf("subscription: %d VLESS nodes\n", len(links))
+	for k, v := range counts {
+		fmt.Printf("  %s: %d\n", k, v)
+	}
+	return nil
+}
+
+func cmdDoctor(o *cliOptions) error {
+	c, err := loadConfig(o.configPath)
+	if err != nil {
+		return err
+	}
+	checks := []struct {
+		name string
+		err  error
+	}{
+		{"config", c.Validate()}, {"subscription_file", fileReadable(c.SubscriptionFile)}, {"xray_bin", fileExecutable(c.XrayBin)}, {"state_dir", os.MkdirAll(c.StateDir, 0700)}, {"xray_config", fileReadable(c.XrayConfig)},
+	}
+	failed := 0
+	for _, ch := range checks {
+		if ch.err != nil {
+			failed++
+			fmt.Printf("FAIL %s: %v\n", ch.name, ch.err)
+		} else {
+			fmt.Printf("OK   %s\n", ch.name)
+		}
+	}
+	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
+		fmt.Printf("WARN test_socks_busy: %s\n", c.TestSocks)
+	} else {
+		fmt.Printf("OK   test_socks_free\n")
+	}
+	if failed > 0 {
+		return fmt.Errorf("doctor found %d failed check(s)", failed)
+	}
+	return nil
+}
+
+func fileReadable(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+func fileExecutable(path string) error {
+	st, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if st.Mode()&0111 == 0 {
+		return fmt.Errorf("not executable")
+	}
+	return nil
+}
+
+func cmdLogs(o *cliOptions, failedLimit int, jsonOut bool) error {
+	c, err := loadConfig(o.configPath)
+	if err != nil {
+		return err
+	}
+	var results []picker.NodeResult
+	b, err := os.ReadFile(filepath.Join(c.StateDir, "last-results.json"))
+	if err != nil {
+		return err
+	}
+	if jsonOut {
+		fmt.Print(string(b))
+		return nil
+	}
+	if err := json.Unmarshal(b, &results); err != nil {
+		return err
+	}
+	if cur, source, err := loadCurrentWithLegacy(c.StateDir); err == nil {
+		fmt.Printf("current:\n  name: %s\n  server: %s:%d\n  transport: %s/%s\n  last_speed: %.2f Mbps\n  state: %s\n\n", valueOr(cur.Name, "unknown"), valueOr(cur.Host, "unknown"), cur.Port, valueOr(cur.Network, "unknown"), valueOr(cur.Security, "unknown"), cur.Mbps, source)
+	}
+	ok := sortedOK(results)
+	fmt.Printf("last_test:\n  total: %d\n  ok: %d\n  failed: %d\n", len(results), len(ok), len(results)-len(ok))
+	if len(ok) > 0 {
+		fmt.Printf("  best: #%03d %.2f Mbps %s (%s:%d %s/%s)\n", ok[0].Index, ok[0].Mbps, ok[0].Name, ok[0].Host, ok[0].Port, ok[0].Network, ok[0].Security)
+	}
+	if failedLimit > 0 {
+		shown := 0
+		fmt.Println("\nfailed:")
+		for _, r := range results {
+			if !r.OK {
+				fmt.Printf("  #%03d %-38s %s\n", r.Index, truncate(r.Name, 38), r.Error)
+				shown++
+				if shown >= failedLimit {
+					break
+				}
+			}
+		}
+		if shown == 0 {
+			fmt.Println("  none")
+		}
+	}
+	return nil
+}
+
+func cmdPrune(o *cliOptions, dryRun bool, keep int) error {
+	c, err := loadConfig(o.configPath)
+	if err != nil {
+		return err
+	}
+	if keep < 0 {
+		return fmt.Errorf("--keep must be non-negative")
+	}
+	killed := 0
+	if dryRun {
+		out, _ := exec.Command("pgrep", "-f", "xray run -config /tmp/vibe-vpn-xray-").Output()
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if strings.TrimSpace(line) != "" {
+				killed++
+			}
+		}
+	} else {
+		killed = cleanupStaleTestXray()
+	}
+	files, _ := filepath.Glob(filepath.Join(os.TempDir(), "vibe-vpn-xray-*.json"))
+	removed := 0
+	cut := time.Now().Add(-24 * time.Hour)
+	for _, f := range files {
+		if st, err := os.Stat(f); err == nil && st.ModTime().Before(cut) {
+			removed++
+			if !dryRun {
+				_ = os.Remove(f)
+			}
+		}
+	}
+	backs, _ := filepath.Glob(filepath.Join(c.StateDir, "backups", "xray-*.json"))
+	sort.Strings(backs)
+	brem := 0
+	if len(backs) > keep {
+		for _, f := range backs[:len(backs)-keep] {
+			brem++
+			if !dryRun {
+				_ = os.Remove(f)
+			}
+		}
+	}
+	prefix := "removed"
+	if dryRun {
+		prefix = "would_remove"
+	}
+	fmt.Printf("%s: stale_xray=%d temp_files=%d backups=%d keep=%d\n", prefix, killed, removed, brem, keep)
+	return nil
 }

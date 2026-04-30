@@ -3,19 +3,21 @@ package picker
 import "github.com/kcnc/vibe-practicum-vpn/internal/vless"
 
 type NodeResult struct {
-	Index    int            `json:"index"`
-	Name     string         `json:"name,omitempty"`
-	Host     string         `json:"host,omitempty"`
-	Network  string         `json:"network,omitempty"`
-	Security string         `json:"security,omitempty"`
-	Error    string         `json:"error,omitempty"`
-	Link     string         `json:"link,omitempty"`
-	Port     int            `json:"port,omitempty"`
-	Mbps     float64        `json:"mbps,omitempty"`
-	Bytes    int64          `json:"bytes,omitempty"`
-	Seconds  float64        `json:"seconds,omitempty"`
-	OK       bool           `json:"ok"`
-	Outbound map[string]any `json:"outbound,omitempty"`
+	Index          int            `json:"index"`
+	Name           string         `json:"name,omitempty"`
+	Host           string         `json:"host,omitempty"`
+	Network        string         `json:"network,omitempty"`
+	Security       string         `json:"security,omitempty"`
+	Error          string         `json:"error,omitempty"`
+	Link           string         `json:"link,omitempty"`
+	Port           int            `json:"port,omitempty"`
+	Mbps           float64        `json:"mbps,omitempty"`
+	Bytes          int64          `json:"bytes,omitempty"`
+	Seconds        float64        `json:"seconds,omitempty"`
+	OK             bool           `json:"ok"`
+	Excluded       bool           `json:"excluded,omitempty"`
+	ExcludeReasons []string       `json:"exclude_reasons,omitempty"`
+	Outbound       map[string]any `json:"outbound,omitempty"`
 }
 
 func Best(rs []NodeResult) *NodeResult {
