@@ -67,12 +67,19 @@ Run safe checks over SSH:
 ssh vibe-practicum 'sudo vibe-vpn status'
 ssh vibe-practicum 'sudo vibe-vpn test --limit-kib 64 --max 2'
 ssh vibe-practicum 'sudo vibe-vpn test --limit-kib 256'
+ssh vibe-practicum 'sudo vibe-vpn list --top 20'
 ```
 
-Pick and apply the best node:
+Pick and apply the best node automatically:
 
 ```bash
 ssh vibe-practicum 'sudo vibe-vpn pick --limit-kib 256'
+```
+
+Or manually apply a specific node from the latest test results:
+
+```bash
+ssh vibe-practicum 'sudo vibe-vpn apply 6'
 ```
 
 Rollback if the chosen node is bad:
@@ -110,10 +117,10 @@ sudo vibe-vpn status [--config /path/to/config.json]
 Shows production `xray` status, production SOCKS address, current selected node, server `host:port`, transport/security, last benchmark speed, state source, live egress IP, and SOCKS latency.
 
 ```bash
-sudo vibe-vpn test [--config /path/to/config.json] [--limit-kib N] [--max N]
+sudo vibe-vpn test [--config /path/to/config.json] [--limit-kib N] [--max N] [--verbose] [--debug]
 ```
 
-Benchmarks subscription nodes safely. Does **not** apply anything.
+Benchmarks subscription nodes safely. Does **not** apply anything. By default it is quiet: it suppresses temporary `xray` logs and prints a sorted top-20 summary at the end.
 
 Useful examples:
 
@@ -121,7 +128,21 @@ Useful examples:
 sudo vibe-vpn test --limit-kib 64 --max 2    # quick smoke test
 sudo vibe-vpn test --limit-kib 256           # full safer benchmark
 sudo vibe-vpn test --limit-kib 1024 --max 20 # heavier partial benchmark
+sudo vibe-vpn test --verbose              # print every node while testing
+sudo vibe-vpn test --debug                # show temporary xray logs
 ```
+
+```bash
+sudo vibe-vpn list [--top N] [--all] [--failed] [--json]
+```
+
+Shows saved results from the last `test` or `pick`, sorted by speed.
+
+```bash
+sudo vibe-vpn apply <index>
+```
+
+Applies a specific OK node from `/var/lib/vibe-vpn/last-results.json`, for example `sudo vibe-vpn apply 6`.
 
 ```bash
 sudo vibe-vpn pick [--config /path/to/config.json] [--limit-kib N] [--max N]
@@ -148,6 +169,13 @@ Flag notes:
 - `--config`: optional config path. If explicitly provided, the file must exist.
 - `--limit-kib`: how much data to download per node during benchmark. Higher is more accurate but slower.
 - `--max`: test only the first N subscription nodes. Useful for smoke tests.
+- `--verbose`: print every node as it is tested.
+- `--debug`: show temporary xray stdout/stderr.
+- `list --top N`: show N fastest successful nodes from the last run.
+- `list --all`: show all successful nodes from the last run.
+- `list --failed`: also print failed nodes and errors.
+- `list --json`: dump raw saved results.
+- `apply <index>`: apply a specific OK node from the last results.
 
 See the full design and operational notes:
 
