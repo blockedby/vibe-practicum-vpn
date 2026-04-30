@@ -96,7 +96,12 @@ func cmdTest(apply bool) error {
 		links = links[:*max]
 	}
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
-		return fmt.Errorf("test SOCKS address %s is already in use", c.TestSocks)
+		alt, err := freeLocalSocksAddr()
+		if err != nil {
+			return fmt.Errorf("test SOCKS address %s is already in use and no free fallback port found: %w", c.TestSocks, err)
+		}
+		fmt.Printf("Test SOCKS address %s is busy; using fallback %s for this run.\n", c.TestSocks, alt)
+		c.TestSocks = alt
 	}
 	fmt.Printf("Found %d VLESS nodes. Testing isolated on %s; production stays untouched.\n", len(links), c.TestSocks)
 	if !*verbose {
@@ -157,7 +162,7 @@ func cmdTest(apply bool) error {
 }
 func testOne(c config.Config, n vless.Node, debug bool) (nettest.Result, error) {
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
-		return nettest.Result{}, fmt.Errorf("test SOCKS address %s is already in use", c.TestSocks)
+		return nettest.Result{}, fmt.Errorf("test SOCKS address %s became busy during run", c.TestSocks)
 	}
 	b, err := xray.TempConfig(n.Outbound, c.TestSocks)
 	if err != nil {
@@ -203,6 +208,15 @@ func successThreshold(limitBytes int64) int64 {
 		return limitBytes
 	}
 	return maxThreshold
+}
+
+func freeLocalSocksAddr() (string, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	defer ln.Close()
+	return ln.Addr().String(), nil
 }
 
 func tcpOpen(addr string, timeout time.Duration) bool {
