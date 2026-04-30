@@ -96,11 +96,17 @@ func cmdTest(apply bool) error {
 		links = links[:*max]
 	}
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
+		if n := cleanupStaleTestXray(); n > 0 {
+			fmt.Printf("Test SOCKS address %s is busy; cleaned up %d stale temporary xray process(es).\n", c.TestSocks, n)
+			time.Sleep(300 * time.Millisecond)
+		}
+	}
+	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
 		alt, err := freeLocalSocksAddr()
 		if err != nil {
 			return fmt.Errorf("test SOCKS address %s is already in use and no free fallback port found: %w", c.TestSocks, err)
 		}
-		fmt.Printf("Test SOCKS address %s is busy; using fallback %s for this run.\n", c.TestSocks, alt)
+		fmt.Printf("Test SOCKS address %s is still busy; using fallback %s for this run.\n", c.TestSocks, alt)
 		c.TestSocks = alt
 	}
 	fmt.Printf("Found %d VLESS nodes. Testing isolated on %s; production stays untouched.\n", len(links), c.TestSocks)
@@ -208,6 +214,23 @@ func successThreshold(limitBytes int64) int64 {
 		return limitBytes
 	}
 	return maxThreshold
+}
+
+func cleanupStaleTestXray() int {
+	out, err := exec.Command("pgrep", "-f", "xray run -config /tmp/vibe-vpn-xray-").Output()
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		_ = exec.Command("kill", line).Run()
+		count++
+	}
+	return count
 }
 
 func freeLocalSocksAddr() (string, error) {
