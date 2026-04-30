@@ -10,5 +10,8 @@ clients/
 *.pcap
 *.dump
 
+# Local Go build artifact from `go build ./cmd/vibe-vpn`
+vibe-vpn
+
 # Keep sanitized examples/docs tracked explicitly if needed
 !examples/*.conf

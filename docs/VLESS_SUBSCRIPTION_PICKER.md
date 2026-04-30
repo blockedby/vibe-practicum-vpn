@@ -1,0 +1,76 @@
+# VLESS subscription picker
+
+Goal: make `update from subscription -> test nodes -> pick best -> apply to xray` repeatable and safe.
+
+## Go CLI
+
+The current implementation is `cmd/vibe-vpn`.
+
+```bash
+go test ./...
+go build -o vibe-vpn ./cmd/vibe-vpn
+```
+
+Default state/config paths:
+
+```text
+/etc/vibe-vpn/config.json       # optional CLI config
+/etc/vibe-vpn/sub_url           # root-only subscription URL
+/var/lib/vibe-vpn/last-results.json
+/var/lib/vibe-vpn/current-node.json
+/var/lib/vibe-vpn/current-link.txt
+/var/lib/vibe-vpn/backups/      # xray config backups for rollback
+/usr/local/etc/xray/config.json # production xray config
+```
+
+Example optional config (`/etc/vibe-vpn/config.json`):
+
+```json
+{
+  "subscription_file": "/etc/vibe-vpn/sub_url",
+  "xray_bin": "/usr/local/bin/xray",
+  "xray_config": "/usr/local/etc/xray/config.json",
+  "state_dir": "/var/lib/vibe-vpn",
+  "production_socks": "127.0.0.1:10808",
+  "test_socks": "127.0.0.1:18080",
+  "test_url": "https://proof.ovh.net/files/10Mb.dat",
+  "test_limit_kib": 512,
+  "timeout_seconds": 12
+}
+```
+
+Dry run: starts a temporary xray SOCKS listener on `test_socks` for each node.
+Production xray and `production_socks` are not touched.
+
+```bash
+sudo vibe-vpn test --limit-kib 256 --max 10
+```
+
+Pick and apply: benchmarks in isolation, then writes only the winning outbound to
+production xray.
+
+```bash
+sudo vibe-vpn pick --limit-kib 256
+```
+
+Rollback to the newest saved config backup:
+
+```bash
+sudo vibe-vpn rollback
+```
+
+Safety notes:
+
+- `test` never rewrites or restarts production xray.
+- `test_socks` must be a free local address; the CLI refuses to benchmark if it
+  is already occupied, so stale listeners cannot skew results.
+- `pick` saves a backup before changing production config and preserves the
+  existing first outbound tag for routing-rule compatibility.
+- If `systemctl restart xray` fails after applying the winner, the CLI restores
+  the previous config and restarts xray again.
+- `rollback` uses backups from `/var/lib/vibe-vpn/backups/`.
+
+## Legacy helper
+
+`scripts/vibe-pick-proxy-isolated.py` is retained as a legacy standalone helper.
+Prefer the Go CLI for new runs.
