@@ -13,5 +13,11 @@ clients/
 # Local Go build artifact from `go build -o vibe-vpn ./cmd/vibe-vpn`
 /vibe-vpn
 
+# Hermes/Pi orchestration artifacts (local prompts, logs, sessions)
+/.hermes/
+
+# Local git worktrees used by Hermes/Pi agents
+/.worktrees/
+
 # Keep sanitized examples/docs tracked explicitly if needed
 !examples/*.conf
