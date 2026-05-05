@@ -47,6 +47,34 @@ func TestXFRMInstallPlanRequiresUnderlayPlaceholder(t *testing.T) {
 	}
 }
 
+func TestXFRMPlansRejectShellUnsafeInterfaces(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*config.IKEv2Config)
+	}{
+		{"xfrm semicolon slash", func(c *config.IKEv2Config) { c.XFRMInterface = "ipsec0; rm -rf /" }},
+		{"underlay command substitution", func(c *config.IKEv2Config) { c.UnderlayInterface = "ens3$(touch /tmp/pwn)" }},
+		{"xfrm newline", func(c *config.IKEv2Config) { c.XFRMInterface = "ipsec0\nip link delete lo" }},
+		{"underlay newline", func(c *config.IKEv2Config) { c.UnderlayInterface = "ens3\nrm -rf /" }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.DefaultIKEv2Config()
+			cfg.UnderlayInterface = "ens3"
+			tc.mutate(&cfg)
+			if plan, err := XFRMInstallPlan(cfg); err == nil {
+				t.Fatalf("expected unsafe interface rejection, got plan:\n%s", plan.String())
+			}
+		})
+	}
+
+	cfg := config.DefaultIKEv2Config()
+	cfg.XFRMInterface = "ipsec0; rm -rf /"
+	if plan, err := XFRMDisablePlan(cfg); err == nil {
+		t.Fatalf("expected unsafe interface rejection, got plan:\n%s", plan.String())
+	}
+}
+
 func TestXFRMDisablePlanOnlyTargetsIKEv2Interface(t *testing.T) {
 	cfg := config.DefaultIKEv2Config()
 	cfg.XFRMInterface = "ipsec0"

@@ -46,6 +46,12 @@ func XFRMStatus(c *config.IKEv2Config) string {
 
 func XFRMInstallPlan(c config.IKEv2Config) (XFRMPlan, error) {
 	c.ApplyDefaults()
+	if err := c.Validate(); err != nil {
+		return XFRMPlan{}, err
+	}
+	if err := validateCommandRenderedNetworkFields(c, true); err != nil {
+		return XFRMPlan{}, err
+	}
 	prefix, err := gatewayPrefix(c)
 	if err != nil {
 		return XFRMPlan{}, err
@@ -66,8 +72,8 @@ func XFRMInstallPlan(c config.IKEv2Config) (XFRMPlan, error) {
 
 func XFRMDisablePlan(c config.IKEv2Config) (XFRMPlan, error) {
 	c.ApplyDefaults()
-	if c.XFRMInterface == "" {
-		return XFRMPlan{}, fmt.Errorf("ikev2.xfrm_interface is empty")
+	if err := validateLinuxInterfaceName("ikev2.xfrm_interface", c.XFRMInterface); err != nil {
+		return XFRMPlan{}, err
 	}
 	return XFRMPlan{
 		Title: "dry-run: would remove IKEv2 XFRM interface setup only",

@@ -38,7 +38,7 @@ func TestIKEv2HelpAndReadOnlyCommands(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"IKEv2", "status", "doctor", "smoke", "pki", "server", "xfrm", "routing", "client"} {
+	for _, want := range []string{"IKEv2", "status", "doctor", "smoke", "pki", "server", "xfrm", "routing", "client", "write local config/state/output files", "system/network mutations remain dry-run", "Review --config paths"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("ikev2 help missing %q in\n%s", want, out.String())
 		}

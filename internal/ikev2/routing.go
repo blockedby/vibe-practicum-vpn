@@ -47,6 +47,9 @@ func RoutingEnablePlan(c config.IKEv2Config) (RoutingPlan, error) {
 	if err := c.Validate(); err != nil {
 		return RoutingPlan{}, err
 	}
+	if err := validateCommandRenderedNetworkFields(c, false); err != nil {
+		return RoutingPlan{}, err
+	}
 	p := RoutingPlan{Title: "dry-run: would add IKEv2-only TPROXY routing plan"}
 	p.Actions = append(p.Actions,
 		fmt.Sprintf("iptables -t mangle -N %s", ikev2RoutingChain),
@@ -68,6 +71,9 @@ func RoutingEnablePlan(c config.IKEv2Config) (RoutingPlan, error) {
 func RoutingDisablePlan(c config.IKEv2Config) (RoutingPlan, error) {
 	c.ApplyDefaults()
 	if err := c.Validate(); err != nil {
+		return RoutingPlan{}, err
+	}
+	if err := validateCommandRenderedNetworkFields(c, false); err != nil {
 		return RoutingPlan{}, err
 	}
 	return RoutingPlan{

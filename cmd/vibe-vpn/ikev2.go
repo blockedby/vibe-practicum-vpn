@@ -9,7 +9,13 @@ import (
 )
 
 func newIKEv2Command(o *cliOptions) *cobra.Command {
-	root := &cobra.Command{Use: "ikev2", Short: "Manage IKEv2/IPsec skeleton configuration", Long: "Manage IKEv2/IPsec skeleton configuration. This milestone is read-only except for future command placeholders."}
+	root := &cobra.Command{Use: "ikev2", Short: "Manage IKEv2/IPsec skeleton configuration", Long: `Manage IKEv2/IPsec skeleton configuration.
+
+Some commands write local config/state/output files, including pki init,
+client create/revoke, and server/client render commands. Review --config paths
+before running local write commands so output goes to the intended directories.
+system/network mutations remain dry-run/safety-blocked unless explicitly
+implemented in a later milestone.`}
 
 	root.AddCommand(&cobra.Command{Use: "status", Short: "Show configured IKEv2 defaults and skeleton status", RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := loadConfig(o.configPath)

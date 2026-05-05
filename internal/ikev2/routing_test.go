@@ -45,6 +45,33 @@ func TestRoutingEnablePlanContainsBypassesAndTPROXYActions(t *testing.T) {
 	}
 }
 
+func TestRoutingPlansRejectShellUnsafeConfig(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*config.IKEv2Config)
+	}{
+		{"interface semicolon slash", func(c *config.IKEv2Config) { c.XFRMInterface = "ipsec0; rm -rf /" }},
+		{"interface command substitution", func(c *config.IKEv2Config) { c.XFRMInterface = "ens3$(touch /tmp/pwn)" }},
+		{"mark semicolon", func(c *config.IKEv2Config) { c.TProxyMark = "0x1; iptables -F" }},
+		{"mark backticks", func(c *config.IKEv2Config) { c.TProxyMark = "0x1`iptables -F`" }},
+		{"mark newline", func(c *config.IKEv2Config) { c.TProxyMark = "0x1\niptables -F" }},
+		{"table too large", func(c *config.IKEv2Config) { c.TProxyTable = 2147483648 }},
+		{"interface newline", func(c *config.IKEv2Config) { c.XFRMInterface = "ipsec0\nrm -rf /" }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.DefaultIKEv2Config()
+			tc.mutate(&cfg)
+			if plan, err := RoutingEnablePlan(cfg); err == nil {
+				t.Fatalf("expected unsafe routing config rejection, got plan:\n%s", plan.String())
+			}
+			if plan, err := RoutingDisablePlan(cfg); err == nil {
+				t.Fatalf("expected unsafe routing config rejection, got plan:\n%s", plan.String())
+			}
+		})
+	}
+}
+
 func TestRoutingDisablePlanOnlyTargetsIKEv2ChainHookAndRules(t *testing.T) {
 	cfg := config.DefaultIKEv2Config()
 	plan, err := RoutingDisablePlan(cfg)
