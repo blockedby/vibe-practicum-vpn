@@ -167,12 +167,53 @@ func newIKEv2Command(o *cliOptions) *cobra.Command {
 	xfrm.AddCommand(disableXFRM)
 	root.AddCommand(xfrm)
 
-	routing := placeholderParent("routing", "Manage IKEv2 routing placeholders")
-	routing.AddCommand(notImplemented("status", "Show IKEv2 routing status"))
-	enableRouting := notImplemented("enable", "Enable IKEv2 routing")
-	enableRouting.Flags().Bool("dry-run", false, "show what would be changed without changing the system")
+	routing := placeholderParent("routing", "Manage IKEv2 routing planning")
+	routing.AddCommand(&cobra.Command{Use: "status", Short: "Show IKEv2 routing status plan", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), ikev2.RoutingStatus(c.IKEv2))
+		return err
+	}})
+	var enableRoutingDryRun bool
+	enableRouting := &cobra.Command{Use: "enable", Short: "Plan IKEv2 routing enable", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !enableRoutingDryRun {
+			return fmt.Errorf("ikev2 routing enable without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.RoutingEnablePlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	enableRouting.Flags().BoolVar(&enableRoutingDryRun, "dry-run", false, "show what would be changed without changing the system")
 	routing.AddCommand(enableRouting)
-	routing.AddCommand(notImplemented("disable", "Disable IKEv2 routing"))
+	var disableRoutingDryRun bool
+	disableRouting := &cobra.Command{Use: "disable", Short: "Plan IKEv2 routing disable", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !disableRoutingDryRun {
+			return fmt.Errorf("ikev2 routing disable without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.RoutingDisablePlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	disableRouting.Flags().BoolVar(&disableRoutingDryRun, "dry-run", false, "show what would be disabled without changing the system")
+	routing.AddCommand(disableRouting)
 	root.AddCommand(routing)
 
 	client := placeholderParent("client", "Manage IKEv2 clients")
