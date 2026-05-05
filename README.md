@@ -200,6 +200,8 @@ client device
 - [`docs/VLESS_SUBSCRIPTION_PICKER.md`](./docs/VLESS_SUBSCRIPTION_PICKER.md) — `vibe-vpn` CLI design and usage.
 - [`docs/ADD_CLIENT_RUNBOOK.md`](./docs/ADD_CLIENT_RUNBOOK.md) — exact runbook for adding a new Tailscale client to VPS routing.
 - [`docs/TAILSCALE_CLIENT_SETUP.md`](./docs/TAILSCALE_CLIENT_SETUP.md) — install/use Tailscale on Android, Windows, Kubuntu/Ubuntu.
+- [`docs/IKEV2_MVP_DESIGN.md`](./docs/IKEV2_MVP_DESIGN.md) — native-client IKEv2 MVP design for the future Tailscale replacement path.
+- [`docs/IKEV2_ROLLBACK.md`](./docs/IKEV2_ROLLBACK.md) — design-level rollback guidance for the future IKEv2 canary.
 - [`docs/PIXEL_ACCEPTANCE_CHECKLIST.md`](./docs/PIXEL_ACCEPTANCE_CHECKLIST.md) — current accepted canary checklist.
 - [`docs/RU_DIRECT_RULESETS.md`](./docs/RU_DIRECT_RULESETS.md) — RU/direct rule-set notes.
 - [`docs/LOCAL_SING_BOX_D1.md`](./docs/LOCAL_SING_BOX_D1.md) — smart local sing-box/TUN mode for `kcnc-pc` gaming split routing.
