@@ -259,7 +259,38 @@ func newIKEv2Command(o *cliOptions) *cobra.Command {
 		}
 		return nil
 	}})
-	client.AddCommand(notImplemented("render <name>", "Render an IKEv2 client profile"))
+	var clientRenderOutputDir, clientRenderFormat string
+	clientRender := &cobra.Command{Use: "render <name>", Short: "Render an IKEv2 client profile", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		reg := ikev2.NewRegistry(eff.IKEv2Config)
+		cl, err := reg.Get(args[0])
+		if err != nil {
+			return err
+		}
+		files, err := ikev2.RenderClientProfile(eff.IKEv2Config, cl, clientRenderFormat)
+		if err != nil {
+			return err
+		}
+		written, err := ikev2.WriteRenderedClientProfile(clientRenderOutputDir, files)
+		if err != nil {
+			return err
+		}
+		for _, p := range written {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", p); err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), ikev2.ProfileRedactionNotice())
+		return err
+	}}
+	clientRender.Flags().StringVar(&clientRenderOutputDir, "output-dir", "", "directory to write rendered client profile")
+	clientRender.Flags().StringVar(&clientRenderFormat, "format", "ios", "profile format: ios or generic")
+	_ = clientRender.MarkFlagRequired("output-dir")
+	client.AddCommand(clientRender)
 	client.AddCommand(&cobra.Command{Use: "revoke <name>", Short: "Revoke an IKEv2 client", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := loadConfig(o.configPath)
 		if err != nil {
@@ -272,7 +303,19 @@ func newIKEv2Command(o *cliOptions) *cobra.Command {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "revoked ikev2 client\nname: %s\nsecret_material: not printed\n", args[0])
 		return err
 	}})
-	client.AddCommand(notImplemented("audit <name>", "Audit an IKEv2 client"))
+	client.AddCommand(&cobra.Command{Use: "audit <name>", Short: "Audit an IKEv2 client", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		cl, err := ikev2.NewRegistry(eff.IKEv2Config).Get(args[0])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), ikev2.AuditClientProfile(eff.IKEv2Config, cl))
+		return err
+	}})
 	root.AddCommand(client)
 
 	return root
