@@ -74,6 +74,9 @@ func TestIKEv2PKIAndClientCommands(t *testing.T) {
 		{[]string{"--config", cfg, "ikev2", "client", "list"}, "phone\t10.88.0.2\tios\trevoked=false"},
 		{[]string{"--config", cfg, "ikev2", "client", "revoke", "phone"}, "revoked ikev2 client"},
 		{[]string{"--config", cfg, "ikev2", "client", "list"}, "phone\t10.88.0.2\tios\trevoked=true"},
+		{[]string{"--config", cfg, "ikev2", "server", "render", "--output-dir", filepath.Join(dir, "rendered")}, "wrote " + filepath.Join(dir, "rendered", "swanctl.conf")},
+		{[]string{"--config", cfg, "ikev2", "server", "install", "--dry-run"}, "dry-run: would install " + filepath.Join(dir, "ikev2-etc", "swanctl.conf") + " to " + filepath.Join(dir, "swanctl", "swanctl.conf")},
+		{[]string{"--config", cfg, "ikev2", "server", "install", "--dry-run", "--output-dir", filepath.Join(dir, "staged")}, "dry-run: staged " + filepath.Join(dir, "staged", "swanctl.conf")},
 	} {
 		cmd := newRootCommand()
 		var out bytes.Buffer
@@ -181,7 +184,7 @@ func writeTestConfig(t *testing.T, dir string) string {
 func writeTestConfigWithIKEv2(t *testing.T, dir string) string {
 	t.Helper()
 	cfg := filepath.Join(dir, "config-ikev2.json")
-	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1,"ikev2":{"config_dir":"` + filepath.Join(dir, "ikev2-etc") + `","state_dir":"` + filepath.Join(dir, "ikev2-state") + `"}}`
+	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1,"ikev2":{"config_dir":"` + filepath.Join(dir, "ikev2-etc") + `","state_dir":"` + filepath.Join(dir, "ikev2-state") + `","swanctl_dir":"` + filepath.Join(dir, "swanctl") + `"}}`
 	if err := os.WriteFile(cfg, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
