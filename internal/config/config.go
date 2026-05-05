@@ -28,6 +28,7 @@ type IKEv2Config struct {
 	GatewayIP         string `json:"gateway_ip"`
 	XFRMInterface     string `json:"xfrm_interface"`
 	XFRMIfID          int    `json:"xfrm_if_id"`
+	UnderlayInterface string `json:"underlay_interface,omitempty"`
 	ConfigDir         string `json:"config_dir"`
 	StateDir          string `json:"state_dir"`
 	SwanctlDir        string `json:"swanctl_dir"`

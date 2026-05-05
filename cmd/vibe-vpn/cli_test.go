@@ -77,6 +77,9 @@ func TestIKEv2PKIAndClientCommands(t *testing.T) {
 		{[]string{"--config", cfg, "ikev2", "server", "render", "--output-dir", filepath.Join(dir, "rendered")}, "wrote " + filepath.Join(dir, "rendered", "swanctl.conf")},
 		{[]string{"--config", cfg, "ikev2", "server", "install", "--dry-run"}, "dry-run: would install " + filepath.Join(dir, "ikev2-etc", "swanctl.conf") + " to " + filepath.Join(dir, "swanctl", "swanctl.conf")},
 		{[]string{"--config", cfg, "ikev2", "server", "install", "--dry-run", "--output-dir", filepath.Join(dir, "staged")}, "dry-run: staged " + filepath.Join(dir, "staged", "swanctl.conf")},
+		{[]string{"--config", cfg, "ikev2", "xfrm", "status"}, "xfrm_underlay_interface: ens3"},
+		{[]string{"--config", cfg, "ikev2", "xfrm", "install", "--dry-run"}, "ip link add ipsec0 type xfrm dev ens3 if_id 42"},
+		{[]string{"--config", cfg, "ikev2", "xfrm", "disable", "--dry-run"}, "ip link delete ipsec0"},
 	} {
 		cmd := newRootCommand()
 		var out bytes.Buffer
@@ -88,6 +91,14 @@ func TestIKEv2PKIAndClientCommands(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), tc.want) {
 			t.Fatalf("%v output missing %q in %q", tc.args, tc.want, out.String())
+		}
+	}
+
+	for _, args := range [][]string{{"--config", cfg, "ikev2", "xfrm", "install"}, {"--config", cfg, "ikev2", "xfrm", "disable"}} {
+		cmd := newRootCommand()
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "without --dry-run") {
+			t.Fatalf("%v expected safety dry-run error, got %v", args, err)
 		}
 	}
 
@@ -184,7 +195,7 @@ func writeTestConfig(t *testing.T, dir string) string {
 func writeTestConfigWithIKEv2(t *testing.T, dir string) string {
 	t.Helper()
 	cfg := filepath.Join(dir, "config-ikev2.json")
-	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1,"ikev2":{"config_dir":"` + filepath.Join(dir, "ikev2-etc") + `","state_dir":"` + filepath.Join(dir, "ikev2-state") + `","swanctl_dir":"` + filepath.Join(dir, "swanctl") + `"}}`
+	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1,"ikev2":{"config_dir":"` + filepath.Join(dir, "ikev2-etc") + `","state_dir":"` + filepath.Join(dir, "ikev2-state") + `","swanctl_dir":"` + filepath.Join(dir, "swanctl") + `","underlay_interface":"ens3"}}`
 	if err := os.WriteFile(cfg, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
