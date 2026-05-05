@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/kcnc/vibe-practicum-vpn/internal/ikev2"
 	"github.com/spf13/cobra"
@@ -47,9 +48,72 @@ func newIKEv2Command(o *cliOptions) *cobra.Command {
 	root.AddCommand(pki)
 
 	server := placeholderParent("server", "Manage strongSwan server placeholders")
-	server.AddCommand(notImplemented("render", "Render strongSwan config"))
-	install := notImplemented("install", "Install rendered strongSwan config")
-	install.Flags().Bool("dry-run", false, "show what would be installed without changing the system")
+	var serverRenderOutputDir string
+	render := &cobra.Command{Use: "render", Short: "Render strongSwan swanctl server config", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		clients, err := ikev2.NewRegistry(eff.IKEv2Config).List()
+		if err != nil {
+			return err
+		}
+		files, err := ikev2.RenderServerConfig(eff.IKEv2Config, clients)
+		if err != nil {
+			return err
+		}
+		written, err := ikev2.WriteRenderedServerConfig(serverRenderOutputDir, files)
+		if err != nil {
+			return err
+		}
+		for _, p := range written {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", p); err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "secret_material: not printed")
+		return err
+	}}
+	render.Flags().StringVar(&serverRenderOutputDir, "output-dir", "", "directory to write rendered server config files")
+	_ = render.MarkFlagRequired("output-dir")
+	server.AddCommand(render)
+	var installDryRun bool
+	var installOutputDir string
+	install := &cobra.Command{Use: "install", Short: "Install rendered strongSwan config", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		if !installDryRun {
+			return fmt.Errorf("ikev2 server install without --dry-run is not implemented yet for safety")
+		}
+		clients, err := ikev2.NewRegistry(eff.IKEv2Config).List()
+		if err != nil {
+			return err
+		}
+		files, err := ikev2.RenderServerConfig(eff.IKEv2Config, clients)
+		if err != nil {
+			return err
+		}
+		for _, f := range files {
+			fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would install %s to %s\n", filepath.Join(eff.ConfigDir, f.RelativePath), filepath.Join(eff.SwanctlDir, f.RelativePath))
+		}
+		if installOutputDir != "" {
+			written, err := ikev2.WriteRenderedServerConfig(installOutputDir, files)
+			if err != nil {
+				return err
+			}
+			for _, p := range written {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: staged %s\n", p)
+			}
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "secret_material: not printed")
+		return err
+	}}
+	install.Flags().BoolVar(&installDryRun, "dry-run", false, "show what would be installed without changing the system")
+	install.Flags().StringVar(&installOutputDir, "output-dir", "", "optional staging directory for dry-run rendered files")
 	server.AddCommand(install)
 	server.AddCommand(notImplemented("reload", "Reload strongSwan service"))
 	root.AddCommand(server)
