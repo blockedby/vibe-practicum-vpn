@@ -2,13 +2,20 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/kcnc/vibe-practicum-vpn/internal/ikev2"
 	"github.com/spf13/cobra"
 )
 
 func newIKEv2Command(o *cliOptions) *cobra.Command {
-	root := &cobra.Command{Use: "ikev2", Short: "Manage IKEv2/IPsec skeleton configuration", Long: "Manage IKEv2/IPsec skeleton configuration. This milestone is read-only except for future command placeholders."}
+	root := &cobra.Command{Use: "ikev2", Short: "Manage IKEv2/IPsec skeleton configuration", Long: `Manage IKEv2/IPsec skeleton configuration.
+
+Some commands write local config/state/output files, including pki init,
+client create/revoke, and server/client render commands. Review --config paths
+before running local write commands so output goes to the intended directories.
+system/network mutations remain dry-run/safety-blocked unless explicitly
+implemented in a later milestone.`}
 
 	root.AddCommand(&cobra.Command{Use: "status", Short: "Show configured IKEv2 defaults and skeleton status", RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := loadConfig(o.configPath)
@@ -30,41 +37,299 @@ func newIKEv2Command(o *cliOptions) *cobra.Command {
 		}
 		return err
 	}})
+	root.AddCommand(&cobra.Command{Use: "smoke", Short: "Print read-only IKEv2 canary smoke checklist", RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), ikev2.SmokePlan(c.IKEv2))
+		return err
+	}})
 
-	pki := placeholderParent("pki", "Manage IKEv2 PKI placeholders")
-	pki.AddCommand(notImplemented("init", "Initialize IKEv2 PKI"))
+	pki := placeholderParent("pki", "Manage IKEv2 PKI")
+	pki.AddCommand(&cobra.Command{Use: "init", Short: "Initialize local IKEv2 PKI/state directories", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		if err := ikev2.InitPKI(eff.IKEv2Config); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "initialized ikev2 pki/state directories\nconfig_dir: %s\nstate_dir: %s\nsecret_material: not printed\n", eff.ConfigDir, eff.StateDir)
+		return err
+	}})
 	root.AddCommand(pki)
 
 	server := placeholderParent("server", "Manage strongSwan server placeholders")
-	server.AddCommand(notImplemented("render", "Render strongSwan config"))
-	install := notImplemented("install", "Install rendered strongSwan config")
-	install.Flags().Bool("dry-run", false, "show what would be installed without changing the system")
+	var serverRenderOutputDir string
+	render := &cobra.Command{Use: "render", Short: "Render strongSwan swanctl server config", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		clients, err := ikev2.NewRegistry(eff.IKEv2Config).List()
+		if err != nil {
+			return err
+		}
+		files, err := ikev2.RenderServerConfig(eff.IKEv2Config, clients)
+		if err != nil {
+			return err
+		}
+		written, err := ikev2.WriteRenderedServerConfig(serverRenderOutputDir, files)
+		if err != nil {
+			return err
+		}
+		for _, p := range written {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", p); err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "secret_material: not printed")
+		return err
+	}}
+	render.Flags().StringVar(&serverRenderOutputDir, "output-dir", "", "directory to write rendered server config files")
+	_ = render.MarkFlagRequired("output-dir")
+	server.AddCommand(render)
+	var installDryRun bool
+	var installOutputDir string
+	install := &cobra.Command{Use: "install", Short: "Install rendered strongSwan config", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		if !installDryRun {
+			return fmt.Errorf("ikev2 server install without --dry-run is not implemented yet for safety")
+		}
+		clients, err := ikev2.NewRegistry(eff.IKEv2Config).List()
+		if err != nil {
+			return err
+		}
+		files, err := ikev2.RenderServerConfig(eff.IKEv2Config, clients)
+		if err != nil {
+			return err
+		}
+		for _, f := range files {
+			fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would install %s to %s\n", filepath.Join(eff.ConfigDir, f.RelativePath), filepath.Join(eff.SwanctlDir, f.RelativePath))
+		}
+		if installOutputDir != "" {
+			written, err := ikev2.WriteRenderedServerConfig(installOutputDir, files)
+			if err != nil {
+				return err
+			}
+			for _, p := range written {
+				fmt.Fprintf(cmd.OutOrStdout(), "dry-run: staged %s\n", p)
+			}
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "secret_material: not printed")
+		return err
+	}}
+	install.Flags().BoolVar(&installDryRun, "dry-run", false, "show what would be installed without changing the system")
+	install.Flags().StringVar(&installOutputDir, "output-dir", "", "optional staging directory for dry-run rendered files")
 	server.AddCommand(install)
 	server.AddCommand(notImplemented("reload", "Reload strongSwan service"))
 	root.AddCommand(server)
 
-	xfrm := placeholderParent("xfrm", "Manage XFRM interface placeholders")
-	xfrm.AddCommand(notImplemented("status", "Show XFRM runtime status"))
-	installXFRM := notImplemented("install", "Install XFRM interface")
-	installXFRM.Flags().Bool("dry-run", false, "show what would be installed without changing the system")
+	xfrm := placeholderParent("xfrm", "Manage XFRM interface planning")
+	xfrm.AddCommand(&cobra.Command{Use: "status", Short: "Show configured XFRM interface status plan", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), ikev2.XFRMStatus(c.IKEv2))
+		return err
+	}})
+	var installXFRMDryRun bool
+	installXFRM := &cobra.Command{Use: "install", Short: "Plan XFRM interface install", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !installXFRMDryRun {
+			return fmt.Errorf("ikev2 xfrm install without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.XFRMInstallPlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	installXFRM.Flags().BoolVar(&installXFRMDryRun, "dry-run", false, "show what would be installed without changing the system")
 	xfrm.AddCommand(installXFRM)
-	xfrm.AddCommand(notImplemented("disable", "Disable XFRM interface"))
+	var disableXFRMDryRun bool
+	disableXFRM := &cobra.Command{Use: "disable", Short: "Plan XFRM interface disable", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !disableXFRMDryRun {
+			return fmt.Errorf("ikev2 xfrm disable without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.XFRMDisablePlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	disableXFRM.Flags().BoolVar(&disableXFRMDryRun, "dry-run", false, "show what would be disabled without changing the system")
+	xfrm.AddCommand(disableXFRM)
 	root.AddCommand(xfrm)
 
-	routing := placeholderParent("routing", "Manage IKEv2 routing placeholders")
-	routing.AddCommand(notImplemented("status", "Show IKEv2 routing status"))
-	enableRouting := notImplemented("enable", "Enable IKEv2 routing")
-	enableRouting.Flags().Bool("dry-run", false, "show what would be changed without changing the system")
+	routing := placeholderParent("routing", "Manage IKEv2 routing planning")
+	routing.AddCommand(&cobra.Command{Use: "status", Short: "Show IKEv2 routing status plan", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), ikev2.RoutingStatus(c.IKEv2))
+		return err
+	}})
+	var enableRoutingDryRun bool
+	enableRouting := &cobra.Command{Use: "enable", Short: "Plan IKEv2 routing enable", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !enableRoutingDryRun {
+			return fmt.Errorf("ikev2 routing enable without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.RoutingEnablePlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	enableRouting.Flags().BoolVar(&enableRoutingDryRun, "dry-run", false, "show what would be changed without changing the system")
 	routing.AddCommand(enableRouting)
-	routing.AddCommand(notImplemented("disable", "Disable IKEv2 routing"))
+	var disableRoutingDryRun bool
+	disableRouting := &cobra.Command{Use: "disable", Short: "Plan IKEv2 routing disable", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !disableRoutingDryRun {
+			return fmt.Errorf("ikev2 routing disable without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.RoutingDisablePlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	disableRouting.Flags().BoolVar(&disableRoutingDryRun, "dry-run", false, "show what would be disabled without changing the system")
+	routing.AddCommand(disableRouting)
 	root.AddCommand(routing)
 
-	client := placeholderParent("client", "Manage IKEv2 client placeholders")
-	client.AddCommand(notImplemented("create <name>", "Create an IKEv2 client certificate"))
-	client.AddCommand(notImplemented("list", "List IKEv2 clients"))
-	client.AddCommand(notImplemented("render <name>", "Render an IKEv2 client profile"))
-	client.AddCommand(notImplemented("revoke <name>", "Revoke an IKEv2 client"))
-	client.AddCommand(notImplemented("audit <name>", "Audit an IKEv2 client"))
+	client := placeholderParent("client", "Manage IKEv2 clients")
+	var clientIP, clientOS string
+	create := &cobra.Command{Use: "create <name>", Short: "Create an IKEv2 client registry entry", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		if err := ikev2.InitPKI(eff.IKEv2Config); err != nil {
+			return err
+		}
+		cl, err := ikev2.NewRegistry(eff.IKEv2Config).Create(args[0], clientIP, clientOS)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "created ikev2 client\nname: %s\nip: %s\nos: %s\nrevoked: %t\nsecret_material: not printed\n", cl.Name, cl.IP, cl.OS, cl.Revoked)
+		return err
+	}}
+	create.Flags().StringVar(&clientIP, "ip", "", "client VPN IP inside configured subnet")
+	create.Flags().StringVar(&clientOS, "os", "", "client OS: ios, android, windows, or linux")
+	_ = create.MarkFlagRequired("ip")
+	client.AddCommand(create)
+	client.AddCommand(&cobra.Command{Use: "list", Short: "List IKEv2 clients", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		clients, err := ikev2.NewRegistry(eff.IKEv2Config).List()
+		if err != nil {
+			return err
+		}
+		if len(clients) == 0 {
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "no ikev2 clients registered")
+			return err
+		}
+		for _, cl := range clients {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\trevoked=%t\n", cl.Name, cl.IP, cl.OS, cl.Revoked); err != nil {
+				return err
+			}
+		}
+		return nil
+	}})
+	var clientRenderOutputDir, clientRenderFormat string
+	clientRender := &cobra.Command{Use: "render <name>", Short: "Render an IKEv2 client profile", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		reg := ikev2.NewRegistry(eff.IKEv2Config)
+		cl, err := reg.Get(args[0])
+		if err != nil {
+			return err
+		}
+		files, err := ikev2.RenderClientProfile(eff.IKEv2Config, cl, clientRenderFormat)
+		if err != nil {
+			return err
+		}
+		written, err := ikev2.WriteRenderedClientProfile(clientRenderOutputDir, files)
+		if err != nil {
+			return err
+		}
+		for _, p := range written {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", p); err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), ikev2.ProfileRedactionNotice())
+		return err
+	}}
+	clientRender.Flags().StringVar(&clientRenderOutputDir, "output-dir", "", "directory to write rendered client profile")
+	clientRender.Flags().StringVar(&clientRenderFormat, "format", "ios", "profile format: ios or generic")
+	_ = clientRender.MarkFlagRequired("output-dir")
+	client.AddCommand(clientRender)
+	client.AddCommand(&cobra.Command{Use: "revoke <name>", Short: "Revoke an IKEv2 client", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		if err := ikev2.NewRegistry(eff.IKEv2Config).Revoke(args[0]); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "revoked ikev2 client\nname: %s\nsecret_material: not printed\n", args[0])
+		return err
+	}})
+	client.AddCommand(&cobra.Command{Use: "audit <name>", Short: "Audit an IKEv2 client", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		cl, err := ikev2.NewRegistry(eff.IKEv2Config).Get(args[0])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), ikev2.AuditClientProfile(eff.IKEv2Config, cl))
+		return err
+	}})
 	root.AddCommand(client)
 
 	return root
