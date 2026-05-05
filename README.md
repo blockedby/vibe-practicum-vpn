@@ -181,6 +181,20 @@ See the full design and operational notes:
 
 - [`docs/VLESS_SUBSCRIPTION_PICKER.md`](./docs/VLESS_SUBSCRIPTION_PICKER.md)
 
+## IKEv2 canary workflow
+
+The IKEv2 MVP is prepared as a safe canary package before any real strongSwan,
+XFRM, or routing mutation. Start with the runbook and smoke checklist:
+
+```bash
+vibe-vpn --config /path/to/staging-config.json ikev2 smoke
+```
+
+Then follow [`docs/IKEV2_CANARY_RUNBOOK.md`](./docs/IKEV2_CANARY_RUNBOOK.md).
+Review all `--dry-run` output before production changes, keep Tailscale as the
+rollback path, and never commit generated profiles, private keys, subscription
+URLs, VLESS links, or tokens.
+
 ## Traffic model
 
 Current intended client path:
@@ -201,6 +215,7 @@ client device
 - [`docs/ADD_CLIENT_RUNBOOK.md`](./docs/ADD_CLIENT_RUNBOOK.md) — exact runbook for adding a new Tailscale client to VPS routing.
 - [`docs/TAILSCALE_CLIENT_SETUP.md`](./docs/TAILSCALE_CLIENT_SETUP.md) — install/use Tailscale on Android, Windows, Kubuntu/Ubuntu.
 - [`docs/IKEV2_MVP_DESIGN.md`](./docs/IKEV2_MVP_DESIGN.md) — native-client IKEv2 MVP design for the future Tailscale replacement path.
+- [`docs/IKEV2_CANARY_RUNBOOK.md`](./docs/IKEV2_CANARY_RUNBOOK.md) — safe canary preparation workflow, dry-run gates, and mobile checks.
 - [`docs/IKEV2_ROLLBACK.md`](./docs/IKEV2_ROLLBACK.md) — design-level rollback guidance for the future IKEv2 canary.
 - [`docs/PIXEL_ACCEPTANCE_CHECKLIST.md`](./docs/PIXEL_ACCEPTANCE_CHECKLIST.md) — current accepted canary checklist.
 - [`docs/RU_DIRECT_RULESETS.md`](./docs/RU_DIRECT_RULESETS.md) — RU/direct rule-set notes.

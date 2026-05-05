@@ -31,6 +31,14 @@ func newIKEv2Command(o *cliOptions) *cobra.Command {
 		}
 		return err
 	}})
+	root.AddCommand(&cobra.Command{Use: "smoke", Short: "Print read-only IKEv2 canary smoke checklist", RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), ikev2.SmokePlan(c.IKEv2))
+		return err
+	}})
 
 	pki := placeholderParent("pki", "Manage IKEv2 PKI")
 	pki.AddCommand(&cobra.Command{Use: "init", Short: "Initialize local IKEv2 PKI/state directories", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
