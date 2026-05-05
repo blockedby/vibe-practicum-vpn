@@ -20,6 +20,9 @@ func RenderServerConfig(c config.IKEv2Config, clients []Client) ([]RenderedFile,
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	if err := validateRenderedServerConfigFields(c); err != nil {
+		return nil, err
+	}
 	sorted := append([]Client(nil), clients...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
 

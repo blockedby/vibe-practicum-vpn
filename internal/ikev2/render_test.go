@@ -54,6 +54,38 @@ func TestRenderServerConfigDeterministic(t *testing.T) {
 	}
 }
 
+func TestRenderServerConfigRejectsUnsafeServerName(t *testing.T) {
+	for _, name := range []string{
+		"vpn.example.test\nconnections { injected { } }",
+		"vpn.example.test; include /etc/shadow",
+		"vpn.example.test`touch /tmp/pwned`",
+		"vpn.example.test$(touch /tmp/pwned)",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.DefaultIKEv2Config()
+			cfg.Enabled = true
+			cfg.ServerName = name
+			if files, err := RenderServerConfig(cfg, nil); err == nil {
+				t.Fatalf("expected unsafe server_name to fail before render, got files: %+v", files)
+			}
+		})
+	}
+}
+
+func TestRenderServerConfigAllowsSafeServerName(t *testing.T) {
+	cfg := config.DefaultIKEv2Config()
+	cfg.Enabled = true
+	cfg.ServerName = "vpn-1.example.test"
+	files, err := RenderServerConfig(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := files[0].Content
+	if !strings.Contains(out, "# Server: vpn-1.example.test") || !strings.Contains(out, "local_addrs = vpn-1.example.test") {
+		t.Fatalf("safe server name not rendered deterministically:\n%s", out)
+	}
+}
+
 func TestWriteRenderedServerConfigWritesOnlyOutputDir(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.DefaultIKEv2Config()

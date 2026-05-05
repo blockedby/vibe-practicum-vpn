@@ -29,6 +29,18 @@ func TestStatusOutputIsDryAndStable(t *testing.T) {
 	}
 }
 
+func TestStatusOutputEscapesControlCharacters(t *testing.T) {
+	cfg := config.DefaultIKEv2Config()
+	cfg.ServerName = "vpn.example.test\nspoofed: true"
+	out := Status(&cfg)
+	if strings.Contains(out, "\nspoofed: true") {
+		t.Fatalf("status output included raw control characters:\n%s", out)
+	}
+	if !strings.Contains(out, `server_name: vpn.example.test\nspoofed: true`) {
+		t.Fatalf("status output did not escape server_name:\n%s", out)
+	}
+}
+
 func TestDoctorValidatesConfigOnly(t *testing.T) {
 	bad := config.DefaultIKEv2Config()
 	bad.Enabled = true

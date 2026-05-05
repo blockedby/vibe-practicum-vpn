@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"strings"
+	"unicode"
 
 	"github.com/kcnc/vibe-practicum-vpn/internal/config"
 )
@@ -11,6 +13,7 @@ import (
 var (
 	linuxInterfaceNameRE = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,15}$`)
 	tproxyMarkRE         = regexp.MustCompile(`^(0[xX][0-9A-Fa-f]+|[0-9]+)$`)
+	renderIdentifierRE   = regexp.MustCompile(`^[A-Za-z0-9_.:-]+$`)
 )
 
 func validateLinuxInterfaceName(field, value string) error {
@@ -32,6 +35,37 @@ func validateTProxyMark(value string) error {
 		return fmt.Errorf("ikev2.tproxy_mark must be a decimal or hex mark such as 1 or 0x1")
 	}
 	return nil
+}
+
+func validateRenderedIdentifier(field, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is empty", field)
+	}
+	if strings.ContainsAny(value, "/\\;{}\"'`$()[]|&<>*?!") {
+		return fmt.Errorf("%s contains unsafe characters for rendered strongSwan config", field)
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) || unicode.IsSpace(r) {
+			return fmt.Errorf("%s contains unsafe whitespace/control characters for rendered strongSwan config", field)
+		}
+	}
+	if !renderIdentifierRE.MatchString(value) {
+		return fmt.Errorf("%s must contain only letters, digits, dot, underscore, colon, or hyphen", field)
+	}
+	return nil
+}
+
+func validateRenderedServerConfigFields(c config.IKEv2Config) error {
+	serverName := c.ServerName
+	if serverName == "" {
+		serverName = "%any"
+	}
+	if serverName != "%any" {
+		if err := validateRenderedIdentifier("ikev2.server_name", serverName); err != nil {
+			return err
+		}
+	}
+	return validateCommandRenderedNetworkFields(c, false)
 }
 
 func validateRoutingTableID(value int) error {
