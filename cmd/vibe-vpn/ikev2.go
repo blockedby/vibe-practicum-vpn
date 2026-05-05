@@ -118,12 +118,53 @@ func newIKEv2Command(o *cliOptions) *cobra.Command {
 	server.AddCommand(notImplemented("reload", "Reload strongSwan service"))
 	root.AddCommand(server)
 
-	xfrm := placeholderParent("xfrm", "Manage XFRM interface placeholders")
-	xfrm.AddCommand(notImplemented("status", "Show XFRM runtime status"))
-	installXFRM := notImplemented("install", "Install XFRM interface")
-	installXFRM.Flags().Bool("dry-run", false, "show what would be installed without changing the system")
+	xfrm := placeholderParent("xfrm", "Manage XFRM interface planning")
+	xfrm.AddCommand(&cobra.Command{Use: "status", Short: "Show configured XFRM interface status plan", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), ikev2.XFRMStatus(c.IKEv2))
+		return err
+	}})
+	var installXFRMDryRun bool
+	installXFRM := &cobra.Command{Use: "install", Short: "Plan XFRM interface install", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !installXFRMDryRun {
+			return fmt.Errorf("ikev2 xfrm install without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.XFRMInstallPlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	installXFRM.Flags().BoolVar(&installXFRMDryRun, "dry-run", false, "show what would be installed without changing the system")
 	xfrm.AddCommand(installXFRM)
-	xfrm.AddCommand(notImplemented("disable", "Disable XFRM interface"))
+	var disableXFRMDryRun bool
+	disableXFRM := &cobra.Command{Use: "disable", Short: "Plan XFRM interface disable", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !disableXFRMDryRun {
+			return fmt.Errorf("ikev2 xfrm disable without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.XFRMDisablePlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	disableXFRM.Flags().BoolVar(&disableXFRMDryRun, "dry-run", false, "show what would be disabled without changing the system")
+	xfrm.AddCommand(disableXFRM)
 	root.AddCommand(xfrm)
 
 	routing := placeholderParent("routing", "Manage IKEv2 routing placeholders")
