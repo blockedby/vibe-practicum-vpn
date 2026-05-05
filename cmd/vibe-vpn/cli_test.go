@@ -29,6 +29,38 @@ func TestCobraHelpMentionsSafetyAndFilters(t *testing.T) {
 	}
 }
 
+func TestIKEv2HelpAndReadOnlyCommands(t *testing.T) {
+	cmd := newRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"ikev2", "--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"IKEv2", "status", "doctor", "pki", "server", "xfrm", "routing", "client"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("ikev2 help missing %q in\n%s", want, out.String())
+		}
+	}
+
+	dir := t.TempDir()
+	cfg := writeTestConfig(t, dir)
+	for _, args := range [][]string{{"--config", cfg, "ikev2", "status"}, {"--config", cfg, "ikev2", "doctor"}} {
+		cmd := newRootCommand()
+		var got bytes.Buffer
+		cmd.SetOut(&got)
+		cmd.SetErr(&got)
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%v failed: %v", args, err)
+		}
+		if !strings.Contains(got.String(), "ikev2") {
+			t.Fatalf("%v output missing ikev2: %q", args, got.String())
+		}
+	}
+}
+
 func TestCurrentLink(t *testing.T) {
 	dir := t.TempDir()
 	cfg := writeTestConfig(t, dir)

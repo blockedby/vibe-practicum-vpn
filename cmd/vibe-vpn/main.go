@@ -117,6 +117,7 @@ func newRootCommand() *cobra.Command {
 	prune.Flags().Bool("dry-run", false, "show what would be removed without deleting")
 	prune.Flags().Int("keep", 10, "number of newest backups to keep")
 	root.AddCommand(prune)
+	root.AddCommand(newIKEv2Command(o))
 	return root
 }
 
