@@ -61,6 +61,48 @@ func TestIKEv2HelpAndReadOnlyCommands(t *testing.T) {
 	}
 }
 
+func TestIKEv2PKIAndClientCommands(t *testing.T) {
+	dir := t.TempDir()
+	cfg := writeTestConfigWithIKEv2(t, dir)
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--config", cfg, "ikev2", "pki", "init"}, "secret_material: not printed"},
+		{[]string{"--config", cfg, "ikev2", "client", "create", "phone", "--ip", "10.88.0.2", "--os", "ios"}, "created ikev2 client"},
+		{[]string{"--config", cfg, "ikev2", "client", "list"}, "phone\t10.88.0.2\tios\trevoked=false"},
+		{[]string{"--config", cfg, "ikev2", "client", "revoke", "phone"}, "revoked ikev2 client"},
+		{[]string{"--config", cfg, "ikev2", "client", "list"}, "phone\t10.88.0.2\tios\trevoked=true"},
+	} {
+		cmd := newRootCommand()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs(tc.args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%v failed: %v\n%s", tc.args, err, out.String())
+		}
+		if !strings.Contains(out.String(), tc.want) {
+			t.Fatalf("%v output missing %q in %q", tc.args, tc.want, out.String())
+		}
+	}
+
+	secretish := []string{
+		filepath.Join(dir, "ikev2-etc", "pki", "private", ".keep"),
+		filepath.Join(dir, "ikev2-state", "clients", "phone.json"),
+	}
+	for _, path := range secretish {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0600 {
+			t.Fatalf("%s mode=%o", path, info.Mode().Perm())
+		}
+	}
+}
+
 func TestCurrentLink(t *testing.T) {
 	dir := t.TempDir()
 	cfg := writeTestConfig(t, dir)
@@ -127,6 +169,19 @@ func writeTestConfig(t *testing.T, dir string) string {
 	t.Helper()
 	cfg := filepath.Join(dir, "config.json")
 	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1}`
+	if err := os.WriteFile(cfg, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub"), []byte("http://example.invalid"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
+func writeTestConfigWithIKEv2(t *testing.T, dir string) string {
+	t.Helper()
+	cfg := filepath.Join(dir, "config-ikev2.json")
+	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1,"ikev2":{"config_dir":"` + filepath.Join(dir, "ikev2-etc") + `","state_dir":"` + filepath.Join(dir, "ikev2-state") + `"}}`
 	if err := os.WriteFile(cfg, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
