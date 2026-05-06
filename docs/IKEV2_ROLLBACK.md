@@ -27,19 +27,23 @@ Rollback of IKEv2 must not change these unless the operator is intentionally per
 
 These areas are expected to have concrete implementation-specific commands later. Until implementation exists, treat this as a checklist.
 
-1. Disable IKEv2-specific TPROXY/routing rules.
+1. Disable the optional IKEv2-to-tailnet bridge if it was enabled.
+   - Review `vibe-vpn ikev2 routing bridge disable --dry-run`.
+   - Remove only exact `vibe-vpn-ikev2-tailnet-bridge:*` comment-scoped rules from `filter/FORWARD`, `nat/POSTROUTING`, and the dedicated IKEv2 mangle chain.
+   - Do not remove existing Tailscale/Hysteria rules or broad `tailscale0` behavior.
+2. Disable IKEv2-specific TPROXY/routing rules.
    - Remove or disable iptables rules that match `ipsec0` or `10.88.0.0/24` and send traffic into the TPROXY selector.
-   - Do not remove existing `tailscale0` rules.
-2. Unload or stop the strongSwan IKEv2 connection.
+   - Do not remove existing `tailscale0` rules outside the exact bridge comments above.
+3. Unload or stop the strongSwan IKEv2 connection.
    - Terminate active IKE_SA/CHILD_SA state for the canary connection.
    - Disable loading of the MVP connection if needed.
-3. Remove or disable `ipsec0`.
+4. Remove or disable `ipsec0`.
    - Bring down/delete the XFRM interface only after traffic has stopped and strongSwan state is unloaded.
    - Do not touch unrelated interfaces.
-4. Restore swanctl backups.
+5. Restore swanctl backups.
    - Restore only files changed for IKEv2 MVP.
    - Preserve permissions and ownership.
-5. Verify Tailscale path.
+6. Verify Tailscale path.
    - Confirm existing clients still route through `tailscale0`, sing-box, xray, and the selected VLESS upstream.
 
 ## Read-only verification before rollback
@@ -62,7 +66,7 @@ sudo swanctl --list-conns
 sudo swanctl --list-sas
 
 # Firewall/routing rules; do not include secrets in comments
-sudo iptables-save | grep -E 'ipsec0|10\.88\.0\.|TPROXY|2082' || true
+sudo iptables-save | grep -E 'ipsec0|10\.88\.0\.|TPROXY|2082|vibe-vpn-ikev2-tailnet-bridge' || true
 
 # Existing production path status
 systemctl is-active tailscaled || true
@@ -84,6 +88,9 @@ The following are **placeholders only**. They are not claimed to be tested and m
 
 # FUTURE PLACEHOLDER: unload finalized swanctl connection or reload restored config
 # sudo swanctl --load-all
+
+# Bridge rollback planner: deletes only exact vibe-vpn-ikev2-tailnet-bridge:* rules
+# sudo vibe-vpn ikev2 routing bridge disable --dry-run
 
 # FUTURE PLACEHOLDER: delete only finalized IKEv2 iptables rules by exact handle/comment
 # sudo iptables -t mangle -D <CHAIN> <exact finalized rule spec>

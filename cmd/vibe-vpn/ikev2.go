@@ -228,6 +228,59 @@ implemented in a later milestone.`}
 	}}
 	disableRouting.Flags().BoolVar(&disableRoutingDryRun, "dry-run", false, "show what would be disabled without changing the system")
 	routing.AddCommand(disableRouting)
+
+	bridge := placeholderParent("bridge", "Plan IKEv2-to-tailnet bridge rules")
+	bridge.AddCommand(&cobra.Command{Use: "status", Short: "Show IKEv2-to-tailnet bridge audit plan", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		out, err := ikev2.RoutingBridgeStatus(c.IKEv2)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), out)
+		return err
+	}})
+	var enableBridgeDryRun bool
+	enableBridge := &cobra.Command{Use: "enable", Short: "Plan IKEv2-to-tailnet bridge enable", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !enableBridgeDryRun {
+			return fmt.Errorf("ikev2 routing bridge enable without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.RoutingBridgeEnablePlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	enableBridge.Flags().BoolVar(&enableBridgeDryRun, "dry-run", false, "show bridge rules without changing the system")
+	bridge.AddCommand(enableBridge)
+	var disableBridgeDryRun bool
+	disableBridge := &cobra.Command{Use: "disable", Short: "Plan IKEv2-to-tailnet bridge disable", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if !disableBridgeDryRun {
+			return fmt.Errorf("ikev2 routing bridge disable without --dry-run is not implemented yet for safety")
+		}
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		eff := ikev2.EffectiveConfig(c.IKEv2)
+		plan, err := ikev2.RoutingBridgeDisablePlan(eff.IKEv2Config)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), plan.String())
+		return err
+	}}
+	disableBridge.Flags().BoolVar(&disableBridgeDryRun, "dry-run", false, "show bridge rollback rules without changing the system")
+	bridge.AddCommand(disableBridge)
+	routing.AddCommand(bridge)
 	root.AddCommand(routing)
 
 	client := placeholderParent("client", "Manage IKEv2 clients")

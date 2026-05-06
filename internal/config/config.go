@@ -36,6 +36,8 @@ type IKEv2Config struct {
 	TProxyPort        int    `json:"tproxy_port"`
 	TProxyMark        string `json:"tproxy_mark"`
 	TProxyTable       int    `json:"tproxy_table"`
+	TailnetInterface  string `json:"tailnet_interface,omitempty"`
+	TailnetSubnet     string `json:"tailnet_subnet,omitempty"`
 }
 
 const (
@@ -50,6 +52,8 @@ const (
 	DefaultIKEv2TProxyPort        = 2082
 	DefaultIKEv2TProxyMark        = "0x1"
 	DefaultIKEv2TProxyTable       = 100
+	DefaultIKEv2TailnetInterface  = "tailscale0"
+	DefaultIKEv2TailnetSubnet     = "100.64.0.0/10"
 )
 
 func Default() Config {
@@ -57,7 +61,7 @@ func Default() Config {
 }
 
 func DefaultIKEv2Config() IKEv2Config {
-	return IKEv2Config{VPNSubnet: DefaultIKEv2VPNSubnet, GatewayIP: DefaultIKEv2GatewayIP, XFRMInterface: DefaultIKEv2XFRMInterface, XFRMIfID: DefaultIKEv2XFRMIfID, ConfigDir: DefaultIKEv2ConfigDir, StateDir: DefaultIKEv2StateDir, SwanctlDir: DefaultIKEv2SwanctlDir, StrongSwanService: DefaultIKEv2StrongSwanService, TProxyPort: DefaultIKEv2TProxyPort, TProxyMark: DefaultIKEv2TProxyMark, TProxyTable: DefaultIKEv2TProxyTable}
+	return IKEv2Config{VPNSubnet: DefaultIKEv2VPNSubnet, GatewayIP: DefaultIKEv2GatewayIP, XFRMInterface: DefaultIKEv2XFRMInterface, XFRMIfID: DefaultIKEv2XFRMIfID, ConfigDir: DefaultIKEv2ConfigDir, StateDir: DefaultIKEv2StateDir, SwanctlDir: DefaultIKEv2SwanctlDir, StrongSwanService: DefaultIKEv2StrongSwanService, TProxyPort: DefaultIKEv2TProxyPort, TProxyMark: DefaultIKEv2TProxyMark, TProxyTable: DefaultIKEv2TProxyTable, TailnetInterface: DefaultIKEv2TailnetInterface, TailnetSubnet: DefaultIKEv2TailnetSubnet}
 }
 
 func Load(path string) (Config, error) {
@@ -114,6 +118,12 @@ func (c *IKEv2Config) ApplyDefaults() {
 	}
 	if c.TProxyTable == 0 {
 		c.TProxyTable = DefaultIKEv2TProxyTable
+	}
+	if c.TailnetInterface == "" {
+		c.TailnetInterface = DefaultIKEv2TailnetInterface
+	}
+	if c.TailnetSubnet == "" {
+		c.TailnetSubnet = DefaultIKEv2TailnetSubnet
 	}
 }
 
@@ -181,6 +191,12 @@ func (c IKEv2Config) Validate() error {
 	}
 	if c.TProxyTable <= 0 {
 		return fmt.Errorf("ikev2.tproxy_table must be positive")
+	}
+	if c.TailnetInterface == "" {
+		return fmt.Errorf("ikev2.tailnet_interface is empty")
+	}
+	if c.TailnetSubnet == "" {
+		return fmt.Errorf("ikev2.tailnet_subnet is empty")
 	}
 	return nil
 }

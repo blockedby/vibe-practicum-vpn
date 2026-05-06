@@ -83,6 +83,9 @@ func TestIKEv2PKIAndClientCommands(t *testing.T) {
 		{[]string{"--config", cfg, "ikev2", "routing", "status"}, "routing_interface: ipsec0"},
 		{[]string{"--config", cfg, "ikev2", "routing", "enable", "--dry-run"}, "iptables -t mangle -A VIBE_ROUTER_IKEV2 -p tcp -j TPROXY --on-port 2082 --tproxy-mark 0x1"},
 		{[]string{"--config", cfg, "ikev2", "routing", "disable", "--dry-run"}, "iptables -t mangle -X VIBE_ROUTER_IKEV2"},
+		{[]string{"--config", cfg, "ikev2", "routing", "bridge", "status"}, "bridge: ipad-ikev2-tailnet"},
+		{[]string{"--config", cfg, "ikev2", "routing", "bridge", "enable", "--dry-run"}, "vibe-vpn-ikev2-tailnet-bridge:ipsec-to-tailnet"},
+		{[]string{"--config", cfg, "ikev2", "routing", "bridge", "disable", "--dry-run"}, "while iptables -w -t filter -C FORWARD -i ipsec0 -o tailscale0"},
 	} {
 		cmd := newRootCommand()
 		var out bytes.Buffer
@@ -97,7 +100,7 @@ func TestIKEv2PKIAndClientCommands(t *testing.T) {
 		}
 	}
 
-	for _, args := range [][]string{{"--config", cfg, "ikev2", "xfrm", "install"}, {"--config", cfg, "ikev2", "xfrm", "disable"}, {"--config", cfg, "ikev2", "routing", "enable"}, {"--config", cfg, "ikev2", "routing", "disable"}} {
+	for _, args := range [][]string{{"--config", cfg, "ikev2", "xfrm", "install"}, {"--config", cfg, "ikev2", "xfrm", "disable"}, {"--config", cfg, "ikev2", "routing", "enable"}, {"--config", cfg, "ikev2", "routing", "disable"}, {"--config", cfg, "ikev2", "routing", "bridge", "enable"}, {"--config", cfg, "ikev2", "routing", "bridge", "disable"}} {
 		cmd := newRootCommand()
 		cmd.SetArgs(args)
 		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "without --dry-run") {

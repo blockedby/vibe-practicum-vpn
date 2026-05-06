@@ -191,9 +191,12 @@ vibe-vpn --config /path/to/staging-config.json ikev2 smoke
 ```
 
 Then follow [`docs/IKEV2_CANARY_RUNBOOK.md`](./docs/IKEV2_CANARY_RUNBOOK.md).
-Review all `--dry-run` output before production changes, keep Tailscale as the
-rollback path, and never commit generated profiles, private keys, subscription
-URLs, VLESS links, or tokens.
+For the iPad-to-PC/Steam Deck tailnet bridge use-case, review
+[`docs/IPAD_IKEV2_TAILNET_BRIDGE.md`](./docs/IPAD_IKEV2_TAILNET_BRIDGE.md) and
+`vibe-vpn ikev2 routing bridge enable --dry-run` before any live change. Review
+all `--dry-run` output before production changes, keep Tailscale as the rollback
+path, and never commit generated profiles, private keys, subscription URLs,
+VLESS links, or tokens.
 
 ## Traffic model
 

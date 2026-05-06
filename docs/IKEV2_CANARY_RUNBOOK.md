@@ -138,9 +138,29 @@ Expected plan:
 
 - creates only `VIBE_ROUTER_IKEV2`;
 - hooks only `PREROUTING -i ipsec0 -s 10.88.0.0/24`;
-- bypasses VPN/private/local ranges;
+- bypasses VPN/private/local ranges, including `10.88.0.0/24` and the configured tailnet subnet `100.64.0.0/10`;
 - TPROXYs eligible TCP/UDP to port `2082` with mark/table from config;
-- does not mention `tailscale0` changes or default route changes.
+- does not mention `tailscale0` interface changes or default route changes.
+
+## iPad to tailnet bridge dry-run
+
+For the relocation/iPad use-case, review the dedicated bridge plan after the base routing plan:
+
+```bash
+vibe-vpn --config /tmp/ikev2-canary.json ikev2 routing bridge status
+vibe-vpn --config /tmp/ikev2-canary.json ikev2 routing bridge enable --dry-run
+```
+
+Expected bridge plan:
+
+- allows only `ipsec0 -> tailscale0` traffic with source `10.88.0.0/24` and destination `100.64.0.0/10`;
+- allows only `ESTABLISHED,RELATED` return traffic from `tailscale0 -> ipsec0`;
+- adds MASQUERADE only for `10.88.0.0/24 -> 100.64.0.0/10` out `tailscale0`;
+- adds comment-scoped private bypass rules to `VIBE_ROUTER_IKEV2` only when that chain exists;
+- uses `vibe-vpn-ikev2-tailnet-bridge:*` comments for exact rollback;
+- does not change default routes, flush firewall chains, or restart services.
+
+See [`IPAD_IKEV2_TAILNET_BRIDGE.md`](./IPAD_IKEV2_TAILNET_BRIDGE.md) for iPad profile/user acceptance steps and target addresses.
 
 ## Manual iOS/mobile canary prep
 
