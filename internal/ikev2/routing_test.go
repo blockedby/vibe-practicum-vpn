@@ -194,8 +194,8 @@ func TestRoutingDisablePlanOnlyTargetsIKEv2ChainHookAndRules(t *testing.T) {
 		"iptables -t mangle -D PREROUTING -i ipsec0 -s 10.88.0.0/24 -j VIBE_ROUTER_IKEV2",
 		"iptables -t mangle -F VIBE_ROUTER_IKEV2",
 		"iptables -t mangle -X VIBE_ROUTER_IKEV2",
-		"ip rule del fwmark 0x1 lookup 100",
-		"ip route del local 0.0.0.0/0 dev lo table 100",
+		"ip rule del fwmark 0x88 lookup 188",
+		"ip route del local 0.0.0.0/0 dev lo table 188",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("disable plan missing %q in\n%s", want, got)

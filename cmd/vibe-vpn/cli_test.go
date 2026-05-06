@@ -81,7 +81,7 @@ func TestIKEv2PKIAndClientCommands(t *testing.T) {
 		{[]string{"--config", cfg, "ikev2", "xfrm", "install", "--dry-run"}, "ip link add ipsec0 type xfrm dev ens3 if_id 42"},
 		{[]string{"--config", cfg, "ikev2", "xfrm", "disable", "--dry-run"}, "ip link delete ipsec0"},
 		{[]string{"--config", cfg, "ikev2", "routing", "status"}, "routing_interface: ipsec0"},
-		{[]string{"--config", cfg, "ikev2", "routing", "enable", "--dry-run"}, "iptables -t mangle -A VIBE_ROUTER_IKEV2 -p tcp -j TPROXY --on-port 2082 --tproxy-mark 0x1"},
+		{[]string{"--config", cfg, "ikev2", "routing", "enable", "--dry-run"}, "iptables -t mangle -A VIBE_ROUTER_IKEV2 -p tcp -j TPROXY --on-port 2082 --tproxy-mark 0x88"},
 		{[]string{"--config", cfg, "ikev2", "routing", "disable", "--dry-run"}, "iptables -t mangle -X VIBE_ROUTER_IKEV2"},
 		{[]string{"--config", cfg, "ikev2", "routing", "bridge", "status"}, "bridge: ipad-ikev2-tailnet"},
 		{[]string{"--config", cfg, "ikev2", "routing", "bridge", "enable", "--dry-run"}, "vibe-vpn-ikev2-tailnet-bridge:ipsec-to-tailnet"},

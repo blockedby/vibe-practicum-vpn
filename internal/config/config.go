@@ -50,8 +50,8 @@ const (
 	DefaultIKEv2SwanctlDir        = "/etc/swanctl"
 	DefaultIKEv2StrongSwanService = "strongswan"
 	DefaultIKEv2TProxyPort        = 2082
-	DefaultIKEv2TProxyMark        = "0x1"
-	DefaultIKEv2TProxyTable       = 100
+	DefaultIKEv2TProxyMark        = "0x88"
+	DefaultIKEv2TProxyTable       = 188
 	DefaultIKEv2TailnetInterface  = "tailscale0"
 	DefaultIKEv2TailnetSubnet     = "100.64.0.0/10"
 )

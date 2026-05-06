@@ -31,11 +31,11 @@ The MASQUERADE rule makes PC/Deck replies return through the VPS tailnet IP, so 
 
 ## iPad client identity/profile
 
-Create a stable iPad client entry and render the iOS profile through the existing safe CLI workflow:
+Create a stable iPad client entry and render the iOS profile through the existing safe CLI workflow. These commands write local PKI/state/profile files, so choose the intended config and output paths explicitly:
 
 ```bash
-vibe-vpn ikev2 client create ipad --ip 10.88.0.10 --os ios
-vibe-vpn ikev2 client render ipad --output-dir /secure/operator/chosen/path
+vibe-vpn --config /path/to/staging-or-live-config.json ikev2 client create ipad --ip 10.88.0.10 --os ios
+vibe-vpn --config /path/to/staging-or-live-config.json ikev2 client render ipad --output-dir /secure/operator/chosen/path
 ```
 
 Do not paste or commit generated profiles, private keys, certificates, PSKs, subscription URLs, VLESS links, or other secret material.
@@ -45,15 +45,15 @@ Do not paste or commit generated profiles, private keys, certificates, PSKs, sub
 Review the existing IKEv2 routing/TPROXY plan first. It must keep private/tailnet destinations as `RETURN` bypasses before TPROXY capture:
 
 ```bash
-vibe-vpn ikev2 routing status
-vibe-vpn ikev2 routing enable --dry-run
+vibe-vpn --config /path/to/staging-or-live-config.json ikev2 routing status
+vibe-vpn --config /path/to/staging-or-live-config.json ikev2 routing enable --dry-run
 ```
 
 Then review the bridge plan:
 
 ```bash
-vibe-vpn ikev2 routing bridge status
-vibe-vpn ikev2 routing bridge enable --dry-run
+vibe-vpn --config /path/to/staging-or-live-config.json ikev2 routing bridge status
+vibe-vpn --config /path/to/staging-or-live-config.json ikev2 routing bridge enable --dry-run
 ```
 
 Expected bridge plan properties:
@@ -97,7 +97,7 @@ With the iPad VPN connected:
 Review rollback before any live application:
 
 ```bash
-vibe-vpn ikev2 routing bridge disable --dry-run
+vibe-vpn --config /path/to/staging-or-live-config.json ikev2 routing bridge disable --dry-run
 ```
 
 The rollback plan deletes only exact comment-scoped bridge rules. It must not flush broad chains, delete existing Tailscale/Hysteria/IKEv2 rules, change the default route, or restart services.
