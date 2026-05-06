@@ -30,20 +30,20 @@ Use existing Docker, with only UDP port publish:
 ```sh
 docker run -d --name vibe-hy2-mvp \
   --restart unless-stopped \
-  -p 0.0.0.0:18443:8443/udp \
+  --network host \
   -v /opt/vibe-hy2-mvp:/etc/hysteria:ro \
   docker.io/tobyxdd/hysteria:v2.8.2 \
   server -c /etc/hysteria/server.yaml
 ```
 
-No `--network host`, no `--cap-add NET_ADMIN`, no TUN, no TProxy. The explicit `0.0.0.0:` publish keeps the MVP IPv4-only.
+Use Docker host networking for the server container to avoid Docker bridge/UFW/Tailscale hairpin forwarding issues. Still no `--cap-add NET_ADMIN`, no TUN, no TProxy, and no host route changes.
 
 ### Server config MVP
 
 Use a self-signed certificate plus SHA-256 certificate pin in the client URI. This avoids manual CA installation on clients while still protecting against trivial MITM better than `insecure` alone.
 
 ```yaml
-listen: :8443
+listen: :18443
 
 tls:
   cert: /etc/hysteria/server.crt
@@ -194,11 +194,12 @@ All scripts must have dry-run mode first or be small/readable enough to review b
 ### Server acceptance
 
 - `docker ps` shows `vibe-hy2-mvp` running.
-- `ss -lunp` shows UDP `18443` bound by Docker proxy/container path.
+- `ss -lunp` shows UDP `18443` bound by the Hysteria process in the host-network container.
 - `tailscaled.service` is still active.
 - `sing-box-vibe-router.service` is still active.
 - No new `ip rule` except pre-existing Tailscale/sing-box rules.
 - No new broad iptables mangle chains.
+- Docker inspect shows host networking and no added Linux capabilities.
 
 ### Client acceptance
 

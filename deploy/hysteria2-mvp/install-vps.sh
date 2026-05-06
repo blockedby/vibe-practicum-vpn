@@ -12,7 +12,7 @@ CONTAINER_NAME="${CONTAINER_NAME:-vibe-hy2-mvp}"
 STATE_DIR="${STATE_DIR:-/opt/vibe-hy2-mvp}"
 IMAGE="${HY2_IMAGE:-docker.io/tobyxdd/hysteria:v2.8.2}"
 HY2_PUBLIC_PORT="${HY2_PUBLIC_PORT:-18443}"
-HY2_LISTEN_PORT="${HY2_LISTEN_PORT:-8443}"
+HY2_LISTEN_PORT="${HY2_LISTEN_PORT:-$HY2_PUBLIC_PORT}"
 SING_BOX_SOCKS_ADDR="${SING_BOX_SOCKS_ADDR:-100.121.107.112:2080}"
 HY2_PUBLIC_HOST="${HY2_PUBLIC_HOST:-positions.peacedata.company}"
 HY2_SNI="${HY2_SNI:-$HY2_PUBLIC_HOST}"
@@ -32,8 +32,8 @@ usage() {
 Usage: $0 [--dry-run]
 
 Environment overrides, intended to be set before the first install:
-  HY2_PUBLIC_PORT        UDP port published on the VPS (default: 18443)
-  HY2_LISTEN_PORT        UDP port inside the container (default: 8443)
+  HY2_PUBLIC_PORT        UDP port exposed on the VPS (default: 18443)
+  HY2_LISTEN_PORT        Hysteria listen port in host-network mode (default: HY2_PUBLIC_PORT)
   SING_BOX_SOCKS_ADDR    existing sing-box SOCKS listener (default: 100.121.107.112:2080)
   HY2_IMAGE              Docker image (default: docker.io/tobyxdd/hysteria:v2.8.2)
   HY2_PUBLIC_HOST        host/IP printed in the client URI (default: positions.peacedata.company)
@@ -115,12 +115,11 @@ Would:
   - add UFW rule: allow ${HY2_PUBLIC_PORT}/udp comment 'vibe hy2 mvp'
   - pull Docker image: $IMAGE
   - recreate only Docker container: $CONTAINER_NAME
-  - publish only IPv4 UDP 0.0.0.0:${HY2_PUBLIC_PORT}:${HY2_LISTEN_PORT}/udp
+  - run the Hysteria container with Docker host networking and listen on UDP ${HY2_LISTEN_PORT}
   - mount $STATE_DIR read-only at /etc/hysteria
   - route Hysteria outbounds through SOCKS5 $SING_BOX_SOCKS_ADDR
 Would not:
   - use Podman
-  - use host networking
   - add any extra Linux capability
   - stop, restart, disable, or edit tailscaled/sing-box services
 PLAN
@@ -157,7 +156,7 @@ fi
 HY2_AUTH_PASSWORD="${HY2_AUTH_PASSWORD:-$(openssl rand -hex 32)}"
 HY2_OBFS_PASSWORD="${HY2_OBFS_PASSWORD:-$(openssl rand -hex 32)}"
 HY2_PUBLIC_PORT="${HY2_PUBLIC_PORT:-18443}"
-HY2_LISTEN_PORT="${HY2_LISTEN_PORT:-8443}"
+HY2_LISTEN_PORT="${HY2_LISTEN_PORT:-$HY2_PUBLIC_PORT}"
 SING_BOX_SOCKS_ADDR="${SING_BOX_SOCKS_ADDR:-100.121.107.112:2080}"
 HY2_PUBLIC_HOST="${HY2_PUBLIC_HOST:-positions.peacedata.company}"
 HY2_SNI="${HY2_SNI:-$HY2_PUBLIC_HOST}"
@@ -210,7 +209,7 @@ docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
-  -p "0.0.0.0:${HY2_PUBLIC_PORT}:${HY2_LISTEN_PORT}/udp" \
+  --network host \
   -v "${STATE_DIR}:/etc/hysteria:ro" \
   "$IMAGE" \
   server -c /etc/hysteria/server.yaml
@@ -225,7 +224,7 @@ State directory: $STATE_DIR
 Rendered config: $SERVER_CONFIG
 Certificate pinSHA256: $HY2_CERT_PIN_SHA256
 SOCKS outbound: $SING_BOX_SOCKS_ADDR
-Published UDP: ${HY2_PUBLIC_PORT} -> container ${HY2_LISTEN_PORT}
+Published UDP: ${HY2_PUBLIC_PORT} (Docker host network; Hysteria listens on ${HY2_LISTEN_PORT})
 
 Client URI (replace placeholder host if HY2_PUBLIC_HOST was not set):
 $client_uri

@@ -2,10 +2,10 @@
 
 Isolated Hysteria 2 MVP for `positions.peacedata.company`.
 
-Server side uses the existing VPS Docker runtime and publishes only IPv4 UDP
-`18443`. It does not use host networking, NET_ADMIN, TUN, TProxy, policy routing,
-or broad iptables chains. Hysteria outbound traffic is forced through the
-existing sing-box SOCKS listener at `100.121.107.112:2080` by default.
+Server side uses the existing VPS Docker runtime in host-network mode and binds
+only UDP `18443`. It does not use NET_ADMIN, TUN, TProxy, policy routing, or
+broad iptables chains. Hysteria outbound traffic is forced through the existing
+sing-box SOCKS listener at `100.121.107.112:2080` by default.
 
 Client-side onboarding avoids host route changes: the local sandbox client runs
 in a Podman container and exposes only loopback proxies on the workstation.
@@ -28,7 +28,7 @@ Useful overrides:
 
 ```sh
 HY2_PUBLIC_PORT=18443
-HY2_LISTEN_PORT=8443
+HY2_LISTEN_PORT=18443
 SING_BOX_SOCKS_ADDR=100.121.107.112:2080
 HY2_IMAGE=docker.io/tobyxdd/hysteria:v2.8.2
 ```
