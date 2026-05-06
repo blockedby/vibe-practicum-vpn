@@ -10,6 +10,7 @@ Goal: prove a small, isolated Hysteria 2 path from a client to the VPS without t
 - Do not install Podman on the VPS just for this MVP; use the already-present Docker runtime to save disk.
 - Do not use host-level TUN, TPROXY, default-route changes, or policy routing in the first MVP.
 - First server bind must use a new high UDP port, not `443/udp`, because `caddy` already owns UDP/TCP 443.
+- Public hostname for the MVP is `positions.peacedata.company` (A record points to the VPS); the VPS has no IPv6, so publish IPv4 only.
 - All server state must live under one prefix, e.g. `/opt/vibe-hy2-mvp`, so cleanup is one command.
 
 ## Evidence from docs
@@ -29,13 +30,13 @@ Use existing Docker, with only UDP port publish:
 ```sh
 docker run -d --name vibe-hy2-mvp \
   --restart unless-stopped \
-  -p 18443:8443/udp \
+  -p 0.0.0.0:18443:8443/udp \
   -v /opt/vibe-hy2-mvp:/etc/hysteria:ro \
   tobyxdd/hysteria:v2.8.2 \
   server -c /etc/hysteria/server.yaml
 ```
 
-No `--network host`, no `--cap-add NET_ADMIN`, no TUN, no TProxy.
+No `--network host`, no `--cap-add NET_ADMIN`, no TUN, no TProxy. The explicit `0.0.0.0:` publish keeps the MVP IPv4-only.
 
 ### Server config MVP
 
@@ -63,11 +64,15 @@ congestion:
   type: bbr
   bbrProfile: standard
 
-resolver:
-  type: udp
-  udp:
-    addr: 1.1.1.1:53
-    timeout: 4s
+outbounds:
+  - name: sing_box_socks
+    type: socks5
+    socks5:
+      addr: "100.121.107.112:2080"
+
+acl:
+  inline:
+    - sing_box_socks(all)
 
 masquerade:
   type: string
@@ -79,6 +84,7 @@ masquerade:
 Notes:
 
 - With Salamander enabled, Hysteria is intentionally not a valid HTTP/3 masquerade endpoint; it looks like obfuscated UDP. This is acceptable for the MVP.
+- The `sing_box_socks(all)` ACL forces proxied client requests through the existing sing-box SOCKS listener, so server egress follows the current sing-box route policy.
 - For a later stealth profile, run a second non-obfuscated HTTP/3-masquerade instance on a separate port or migrate to `443/udp` only after auditing Caddy.
 
 ### Firewall
@@ -105,7 +111,7 @@ ss -lunp | grep 18443
 Give the user one QR / one link:
 
 ```text
-hysteria2://<AUTH_PASSWORD>@<VPS_IP_OR_DOMAIN>:18443/?insecure=1&pinSHA256=<CERT_SHA256>&obfs=salamander&obfs-password=<OBFS_PASSWORD>&sni=www.cloudflare.com
+hysteria2://<AUTH_PASSWORD>@positions.peacedata.company:18443/?insecure=1&pinSHA256=<CERT_SHA256>&obfs=salamander&obfs-password=<OBFS_PASSWORD>&sni=positions.peacedata.company
 ```
 
 Recommended apps:
@@ -137,20 +143,19 @@ podman run --rm --name vibe-hy2-client \
 Client config:
 
 ```yaml
-server: <VPS_IP_OR_DOMAIN>:18443
+server: positions.peacedata.company:18443
 auth: <AUTH_PASSWORD>
 
 tls:
   insecure: true
   pinSHA256: <CERT_SHA256>
-  sni: www.cloudflare.com
+  sni: positions.peacedata.company
 
 obfs:
   type: salamander
   salamander:
     password: <OBFS_PASSWORD>
 
-ignoreClientBandwidth: true
 congestion:
   type: bbr
   bbrProfile: standard
@@ -198,7 +203,7 @@ All scripts must have dry-run mode first or be small/readable enough to review b
 ### Client acceptance
 
 - Local Podman sandbox client connects and logs `connected to server`.
-- `curl --socks5-hostname 127.0.0.1:1080 https://ifconfig.me` returns VPS public IP.
+- `curl --socks5-hostname 127.0.0.1:1080 https://ifconfig.me` returns the expected sing-box/Xray exit IP, not necessarily the VPS public IP.
 - Android/iOS app can import the URI/QR and connect.
 - If one network blocks it, test another network before changing server.
 
