@@ -32,7 +32,7 @@ docker run -d --name vibe-hy2-mvp \
   --restart unless-stopped \
   -p 0.0.0.0:18443:8443/udp \
   -v /opt/vibe-hy2-mvp:/etc/hysteria:ro \
-  tobyxdd/hysteria:v2.8.2 \
+  docker.io/tobyxdd/hysteria:v2.8.2 \
   server -c /etc/hysteria/server.yaml
 ```
 
@@ -136,7 +136,7 @@ podman run --rm --name vibe-hy2-client \
   -p 127.0.0.1:1080:1080/tcp \
   -p 127.0.0.1:8081:8081/tcp \
   -v "$PWD/.hermes/hysteria2/client.yaml:/etc/hysteria/client.yaml:ro,Z" \
-  tobyxdd/hysteria:v2.8.2 \
+  docker.io/tobyxdd/hysteria:v2.8.2 \
   client -c /etc/hysteria/client.yaml
 ```
 

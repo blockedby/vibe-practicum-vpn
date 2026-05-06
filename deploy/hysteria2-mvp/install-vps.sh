@@ -10,7 +10,7 @@ set -eu
 
 CONTAINER_NAME="${CONTAINER_NAME:-vibe-hy2-mvp}"
 STATE_DIR="${STATE_DIR:-/opt/vibe-hy2-mvp}"
-IMAGE="${HY2_IMAGE:-tobyxdd/hysteria:v2.8.2}"
+IMAGE="${HY2_IMAGE:-docker.io/tobyxdd/hysteria:v2.8.2}"
 HY2_PUBLIC_PORT="${HY2_PUBLIC_PORT:-18443}"
 HY2_LISTEN_PORT="${HY2_LISTEN_PORT:-8443}"
 SING_BOX_SOCKS_ADDR="${SING_BOX_SOCKS_ADDR:-100.121.107.112:2080}"
@@ -35,7 +35,7 @@ Environment overrides, intended to be set before the first install:
   HY2_PUBLIC_PORT        UDP port published on the VPS (default: 18443)
   HY2_LISTEN_PORT        UDP port inside the container (default: 8443)
   SING_BOX_SOCKS_ADDR    existing sing-box SOCKS listener (default: 100.121.107.112:2080)
-  HY2_IMAGE              Docker image (default: tobyxdd/hysteria:v2.8.2)
+  HY2_IMAGE              Docker image (default: docker.io/tobyxdd/hysteria:v2.8.2)
   HY2_PUBLIC_HOST        host/IP printed in the client URI (default: positions.peacedata.company)
   HY2_SNI                SNI for client URI/config (default: HY2_PUBLIC_HOST)
   STATE_DIR              state directory under /opt/vibe-hy2-mvp (default: /opt/vibe-hy2-mvp)

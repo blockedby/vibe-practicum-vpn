@@ -5,7 +5,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ENV_FILE=${HY2_ENV_FILE:-"$SCRIPT_DIR/server.env"}
 CONFIG_FILE=${HY2_CLIENT_CONFIG:-"$SCRIPT_DIR/client.yaml"}
 TEMPLATE_FILE=${HY2_CLIENT_TEMPLATE:-"$SCRIPT_DIR/client.yaml.template"}
-IMAGE=${HY2_IMAGE:-"tobyxdd/hysteria:v2.8.2"}
+IMAGE=${HY2_IMAGE:-"docker.io/tobyxdd/hysteria:v2.8.2"}
 CONTAINER_NAME=${HY2_CLIENT_CONTAINER:-"vibe-hy2-client"}
 RENDER_ONLY=0
 
@@ -22,7 +22,7 @@ Options:
   --env-file PATH     Server env file to source (default: ./server.env)
   --config PATH       Rendered client config path (default: ./client.yaml)
   --template PATH     Client template path (default: ./client.yaml.template)
-  --image IMAGE       Hysteria image (default: tobyxdd/hysteria:v2.8.2)
+  --image IMAGE       Hysteria image (default: docker.io/tobyxdd/hysteria:v2.8.2)
   --name NAME         Podman container name (default: vibe-hy2-client)
   --render-only       Only render client.yaml; do not start Podman
   -h, --help          Show this help
