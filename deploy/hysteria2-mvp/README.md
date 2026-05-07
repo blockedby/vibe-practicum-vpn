@@ -82,12 +82,30 @@ exact certificate. Salamander obfuscation is enabled with `obfs=salamander` and
 
 ## Generate a URI and optional QR
 
+If you already have a local private `server.env`:
+
 ```sh
 ./make-client-uri.sh --env-file ./server.env
 ```
 
-The script prints a `hysteria2://` URI. If `qrencode` is installed, it also
-prints an ANSI QR code.
+From the operator machine, fetch the private env from the VPS over SSH and print
+the onboarding URI/QR directly:
+
+```sh
+./make-client-uri-vps.sh
+```
+
+Useful variants:
+
+```sh
+./make-client-uri-vps.sh --no-qr
+./make-client-uri-vps.sh --ssh-host vibe-practicum
+./make-client-uri-vps.sh --local-env ./server.env
+```
+
+The scripts print a `hysteria2://` URI. If `qrencode` is installed, they also
+print an ANSI QR code. The URI/QR contains the shared HY2 auth and obfs secrets;
+only send it to trusted chats/devices.
 
 ## Local Podman sandbox client
 
