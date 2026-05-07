@@ -65,6 +65,11 @@ func validateRenderedServerConfigFields(c config.IKEv2Config) error {
 			return err
 		}
 	}
+	if c.PublicEndpoint != "" {
+		if err := validateRenderedIdentifier("ikev2.public_endpoint", c.PublicEndpoint); err != nil {
+			return err
+		}
+	}
 	return validateCommandRenderedNetworkFields(c, false)
 }
 

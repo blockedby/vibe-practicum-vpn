@@ -24,6 +24,7 @@ type Config struct {
 type IKEv2Config struct {
 	Enabled           bool   `json:"enabled"`
 	ServerName        string `json:"server_name"`
+	PublicEndpoint    string `json:"public_endpoint,omitempty"`
 	VPNSubnet         string `json:"vpn_subnet"`
 	GatewayIP         string `json:"gateway_ip"`
 	XFRMInterface     string `json:"xfrm_interface"`
@@ -86,6 +87,9 @@ func Load(path string) (Config, error) {
 }
 
 func (c *IKEv2Config) ApplyDefaults() {
+	if c.PublicEndpoint == "" {
+		c.PublicEndpoint = c.ServerName
+	}
 	if c.VPNSubnet == "" {
 		c.VPNSubnet = DefaultIKEv2VPNSubnet
 	}

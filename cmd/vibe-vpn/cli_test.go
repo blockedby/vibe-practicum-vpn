@@ -150,10 +150,31 @@ func TestIKEv2ClientRenderAndAuditCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"PayloadType", "IKEv2", "PLACEHOLDER_CLIENT_CERT_REFERENCE_NO_PRIVATE_MATERIAL", "ClientVPNAddress</key><string>10.88.0.2"} {
+	for _, want := range []string{"PayloadType", "com.apple.security.pkcs12", "com.apple.vpn.managed", "IKEv2", "AuthenticationMethod</key><string>Certificate", "RemoteIdentifier</key><string>vibe"} {
 		if !strings.Contains(string(body), want) {
-			t.Fatalf("mobileconfig missing %q in\n%s", want, string(body))
+			t.Fatalf("mobileconfig missing %q", want)
 		}
+	}
+	if info, err := os.Stat(mobileconfig); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != 0600 {
+		t.Fatalf("mobileconfig mode=%o", info.Mode().Perm())
+	}
+	if err := os.Chmod(mobileconfig, 0644); err != nil {
+		t.Fatal(err)
+	}
+	cmd = newRootCommand()
+	out.Reset()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", cfg, "ikev2", "client", "render", "phone", "--output-dir", outDir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("re-render ios failed: %v\n%s", err, out.String())
+	}
+	if info, err := os.Stat(mobileconfig); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != 0600 {
+		t.Fatalf("re-rendered mobileconfig mode=%o", info.Mode().Perm())
 	}
 	for _, forbidden := range []string{"PRIVATE KEY", "BEGIN CERTIFICATE", "vless://"} {
 		if strings.Contains(string(body), forbidden) {
