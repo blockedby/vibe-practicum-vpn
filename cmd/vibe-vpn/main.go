@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kcnc/vibe-practicum-vpn/internal/config"
+	"github.com/kcnc/vibe-practicum-vpn/internal/extranodes"
 	"github.com/kcnc/vibe-practicum-vpn/internal/nettest"
 	"github.com/kcnc/vibe-practicum-vpn/internal/picker"
 	"github.com/kcnc/vibe-practicum-vpn/internal/state"
@@ -57,10 +58,12 @@ func newRootCommand() *cobra.Command {
 		lim, _ := cmd.Flags().GetInt("limit-kib")
 		verbose, _ := cmd.Flags().GetBool("verbose")
 		debug, _ := cmd.Flags().GetBool("debug")
-		return runTest(o, false, max, lim, verbose, debug)
+		dur, _ := cmd.Flags().GetInt("duration-sec")
+		return runTest(o, false, max, lim, dur, verbose, debug)
 	}}
 	test.Flags().Int("max", 0, "max nodes")
 	test.Flags().Int("limit-kib", 0, "test KiB")
+	test.Flags().Int("duration-sec", -1, "download duration per node in seconds; 0 disables duration mode")
 	test.Flags().Bool("verbose", false, "print every node while testing")
 	test.Flags().Bool("debug", false, "show temporary xray logs")
 	addFilters(test)
@@ -71,10 +74,12 @@ func newRootCommand() *cobra.Command {
 		lim, _ := cmd.Flags().GetInt("limit-kib")
 		verbose, _ := cmd.Flags().GetBool("verbose")
 		debug, _ := cmd.Flags().GetBool("debug")
-		return runTest(o, true, max, lim, verbose, debug)
+		dur, _ := cmd.Flags().GetInt("duration-sec")
+		return runTest(o, true, max, lim, dur, verbose, debug)
 	}}
 	pick.Flags().Int("max", 0, "max nodes")
 	pick.Flags().Int("limit-kib", 0, "test KiB")
+	pick.Flags().Int("duration-sec", -1, "download duration per node in seconds; 0 disables duration mode")
 	pick.Flags().Bool("verbose", false, "print every node while testing")
 	pick.Flags().Bool("debug", false, "show temporary xray logs")
 	addFilters(pick)
@@ -133,7 +138,7 @@ func loadConfig(path string) (config.Config, error) {
 	return config.Load(path)
 }
 
-func runTest(o *cliOptions, apply bool, max, lim int, verbose, debug bool) error {
+func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) error {
 	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
@@ -141,13 +146,28 @@ func runTest(o *cliOptions, apply bool, max, lim int, verbose, debug bool) error
 	if lim > 0 {
 		c.TestLimitKiB = lim
 	}
-	subURLb, err := os.ReadFile(c.SubscriptionFile)
+	if dur >= 0 {
+		c.TestDurationSeconds = dur
+	}
+	extra, err := extranodes.Load(c.ExtraNodesFile)
 	if err != nil {
 		return err
 	}
-	links, err := subscription.Fetch(stringTrim(string(subURLb)), time.Duration(c.TimeoutSeconds)*time.Second)
+	var links []string
+	subURLb, err := os.ReadFile(c.SubscriptionFile)
 	if err != nil {
-		return err
+		if len(extra) == 0 {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "WARN subscription unavailable: %v; testing extra nodes only\n", err)
+	} else {
+		links, err = subscription.Fetch(stringTrim(string(subURLb)), time.Duration(c.TimeoutSeconds)*time.Second)
+		if err != nil {
+			if len(extra) == 0 {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "WARN subscription fetch failed: %v; testing extra nodes only\n", err)
+		}
 	}
 	type candidate struct {
 		idx  int
@@ -165,6 +185,13 @@ func runTest(o *cliOptions, apply bool, max, lim int, verbose, debug bool) error
 		probe := picker.NodeResult{Index: i + 1, Name: n.Name, Host: n.Host, Port: n.Port, Network: n.Network, Security: n.Security, Link: l}
 		if ok, _ := o.filter.MatchResult(probe); ok {
 			candidates = append(candidates, candidate{i + 1, l, n})
+		}
+	}
+	for i, n := range extra {
+		idx := len(links) + i + 1
+		probe := picker.NodeResult{Index: idx, Name: n.Name, Host: n.Host, Port: n.Port, Network: n.Network, Security: n.Security, Link: n.Link}
+		if ok, _ := o.filter.MatchResult(probe); ok {
+			candidates = append(candidates, candidate{idx, n.Link, n})
 		}
 	}
 	beforeMax := len(candidates)
@@ -188,12 +215,17 @@ func runTest(o *cliOptions, apply bool, max, lim int, verbose, debug bool) error
 		fmt.Printf("Test SOCKS address %s is still busy; using fallback %s for this run.\n", c.TestSocks, alt)
 		c.TestSocks = alt
 	}
-	fmt.Printf("Fetched %d nodes, %d after filters", len(links), beforeMax)
+	fmt.Printf("Fetched %d subscription nodes + %d extra nodes, %d after filters", len(links), len(extra), beforeMax)
 	if max > 0 && max < beforeMax {
 		fmt.Printf(", testing first %d", len(candidates))
 	}
 	fmt.Printf(".\n")
 	fmt.Printf("Testing isolated on %s; production stays untouched.\n", c.TestSocks)
+	if c.TestDurationSeconds > 0 {
+		fmt.Printf("Benchmark mode: download for %ds per node.\n", c.TestDurationSeconds)
+	} else {
+		fmt.Printf("Benchmark mode: download up to %d KiB per node.\n", c.TestLimitKiB)
+	}
 	if !verbose {
 		fmt.Println("Progress is quiet by default; use --verbose to print every node.")
 	}
@@ -208,7 +240,11 @@ func runTest(o *cliOptions, apply bool, max, lim int, verbose, debug bool) error
 			results = append(results, picker.NodeResult{Index: cand.idx, OK: false, Error: err.Error(), Link: cand.link, Name: n.Name, Host: n.Host, Port: n.Port, Network: n.Network, Security: n.Security})
 			continue
 		}
-		ok := r.Bytes >= successThreshold(int64(c.TestLimitKiB)*1024)
+		threshold := successThreshold(int64(c.TestLimitKiB) * 1024)
+		if c.TestDurationSeconds > 0 {
+			threshold = 64 * 1024
+		}
+		ok := r.Bytes >= threshold
 		nr := picker.FromNode(cand.idx, n, r.Mbps, r.Bytes, r.Seconds)
 		nr.OK = ok
 		results = append(results, nr)
@@ -268,6 +304,9 @@ func testOne(c config.Config, n vless.Node, debug bool) (nettest.Result, error) 
 	defer func() { cancel(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	if err := waitTCP(c.TestSocks, 3*time.Second); err != nil {
 		return nettest.Result{}, err
+	}
+	if c.TestDurationSeconds > 0 {
+		return nettest.DownloadFor(c.TestSocks, c.TestURL, time.Duration(c.TestDurationSeconds)*time.Second, time.Duration(c.TimeoutSeconds)*time.Second)
 	}
 	return nettest.Download(c.TestSocks, c.TestURL, int64(c.TestLimitKiB)*1024, time.Duration(c.TimeoutSeconds)*time.Second)
 }
@@ -600,13 +639,25 @@ func cmdRefresh(o *cliOptions) error {
 	if err != nil {
 		return err
 	}
-	u, err := os.ReadFile(c.SubscriptionFile)
+	extra, err := extranodes.Load(c.ExtraNodesFile)
 	if err != nil {
 		return err
 	}
-	links, err := subscription.Fetch(stringTrim(string(u)), time.Duration(c.TimeoutSeconds)*time.Second)
+	var links []string
+	u, err := os.ReadFile(c.SubscriptionFile)
 	if err != nil {
-		return err
+		if len(extra) == 0 {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "WARN subscription unavailable: %v; showing extra nodes only\n", err)
+	} else {
+		links, err = subscription.Fetch(stringTrim(string(u)), time.Duration(c.TimeoutSeconds)*time.Second)
+		if err != nil {
+			if len(extra) == 0 {
+				return err
+			}
+			fmt.Fprintf(os.Stderr, "WARN subscription fetch failed: %v; showing extra nodes only\n", err)
+		}
 	}
 	counts := map[string]int{}
 	for _, l := range links {
@@ -614,7 +665,11 @@ func cmdRefresh(o *cliOptions) error {
 			counts[n.Network+"/"+n.Security]++
 		}
 	}
+	for _, n := range extra {
+		counts[n.Network+"/"+n.Security]++
+	}
 	fmt.Printf("subscription: %d VLESS nodes\n", len(links))
+	fmt.Printf("extra_nodes: %d\n", len(extra))
 	for k, v := range counts {
 		fmt.Printf("  %s: %d\n", k, v)
 	}

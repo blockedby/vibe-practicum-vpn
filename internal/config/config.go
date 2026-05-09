@@ -7,15 +7,17 @@ import (
 )
 
 type Config struct {
-	SubscriptionFile string `json:"subscription_file"`
-	XrayBin          string `json:"xray_bin"`
-	XrayConfig       string `json:"xray_config"`
-	StateDir         string `json:"state_dir"`
-	ProductionSocks  string `json:"production_socks"`
-	TestSocks        string `json:"test_socks"`
-	TestURL          string `json:"test_url"`
-	TestLimitKiB     int    `json:"test_limit_kib"`
-	TimeoutSeconds   int    `json:"timeout_seconds"`
+	SubscriptionFile    string `json:"subscription_file"`
+	ExtraNodesFile      string `json:"extra_nodes_file"`
+	XrayBin             string `json:"xray_bin"`
+	XrayConfig          string `json:"xray_config"`
+	StateDir            string `json:"state_dir"`
+	ProductionSocks     string `json:"production_socks"`
+	TestSocks           string `json:"test_socks"`
+	TestURL             string `json:"test_url"`
+	TestLimitKiB        int    `json:"test_limit_kib"`
+	TestDurationSeconds int    `json:"test_duration_seconds"`
+	TimeoutSeconds      int    `json:"timeout_seconds"`
 	// IKEv2 is optional and kept as a pointer so an absent section is
 	// distinguishable from an explicitly configured-but-disabled section.
 	IKEv2 *IKEv2Config `json:"ikev2,omitempty"`
@@ -58,7 +60,7 @@ const (
 )
 
 func Default() Config {
-	return Config{SubscriptionFile: "/etc/vibe-vpn/sub_url", XrayBin: "/usr/local/bin/xray", XrayConfig: "/usr/local/etc/xray/config.json", StateDir: "/var/lib/vibe-vpn", ProductionSocks: "127.0.0.1:10808", TestSocks: "127.0.0.1:18080", TestURL: "https://proof.ovh.net/files/10Mb.dat", TestLimitKiB: 512, TimeoutSeconds: 12}
+	return Config{SubscriptionFile: "/etc/vibe-vpn/sub_url", ExtraNodesFile: "/etc/vibe-vpn/extra-nodes.json", XrayBin: "/usr/local/bin/xray", XrayConfig: "/usr/local/etc/xray/config.json", StateDir: "/var/lib/vibe-vpn", ProductionSocks: "127.0.0.1:10808", TestSocks: "127.0.0.1:18080", TestURL: "https://proof.ovh.net/files/10Mb.dat", TestLimitKiB: 512, TimeoutSeconds: 12}
 }
 
 func DefaultIKEv2Config() IKEv2Config {
@@ -155,6 +157,9 @@ func (c Config) Validate() error {
 	}
 	if c.TestLimitKiB <= 0 {
 		return fmt.Errorf("test_limit_kib must be positive")
+	}
+	if c.TestDurationSeconds < 0 {
+		return fmt.Errorf("test_duration_seconds must be non-negative")
 	}
 	if c.TimeoutSeconds <= 0 {
 		return fmt.Errorf("timeout_seconds must be positive")

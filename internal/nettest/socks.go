@@ -22,6 +22,38 @@ func Download(socksAddr, testURL string, limit int64, timeout time.Duration) (Re
 	if limit <= 0 {
 		return Result{}, fmt.Errorf("download limit must be positive")
 	}
+	return download(socksAddr, testURL, limit, 0, timeout)
+}
+
+func DownloadFor(socksAddr, testURL string, duration, timeout time.Duration) (Result, error) {
+	if duration <= 0 {
+		return Result{}, fmt.Errorf("download duration must be positive")
+	}
+	start := time.Now()
+	deadline := start.Add(duration)
+	var total int64
+	for time.Now().Before(deadline) {
+		remaining := time.Until(deadline)
+		r, err := download(socksAddr, testURL, 0, remaining, timeout)
+		if err != nil {
+			if total > 0 {
+				break
+			}
+			return Result{}, err
+		}
+		total += r.Bytes
+		if r.Bytes == 0 {
+			break
+		}
+	}
+	sec := time.Since(start).Seconds()
+	if total <= 0 {
+		return Result{}, fmt.Errorf("download read no body bytes")
+	}
+	return Result{total, sec, float64(total) * 8 / sec / 1e6}, nil
+}
+
+func download(socksAddr, testURL string, limit int64, duration, timeout time.Duration) (Result, error) {
 	u, err := url.Parse(testURL)
 	if err != nil {
 		return Result{}, err
@@ -89,11 +121,14 @@ func Download(socksAddr, testURL string, limit int64, timeout time.Duration) (Re
 	if _, err := fmt.Fprintf(conn, "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: vibe-vpn/1\r\nConnection: close\r\n\r\n", path, u.Host); err != nil {
 		return Result{}, err
 	}
+	if duration > 0 {
+		_ = conn.SetDeadline(t.Add(duration))
+	}
 	buf := make([]byte, 32768)
 	var n int64
 	header := []byte{}
 	haveHeader := false
-	for n < limit {
+	for limit <= 0 || n < limit {
 		c, err := conn.Read(buf)
 		if c > 0 {
 			data := buf[:c]
