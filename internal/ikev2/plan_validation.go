@@ -65,6 +65,11 @@ func validateRenderedServerConfigFields(c config.IKEv2Config) error {
 			return err
 		}
 	}
+	if c.PublicEndpoint != "" {
+		if err := validateRenderedIdentifier("ikev2.public_endpoint", c.PublicEndpoint); err != nil {
+			return err
+		}
+	}
 	return validateCommandRenderedNetworkFields(c, false)
 }
 
@@ -99,6 +104,11 @@ func validateCommandRenderedNetworkFields(c config.IKEv2Config, includeUnderlay 
 	if c.GatewayIP != "" && net.ParseIP(c.GatewayIP) == nil {
 		return fmt.Errorf("invalid ikev2.gateway_ip %q", c.GatewayIP)
 	}
+	if c.TailnetSubnet != "" {
+		if _, _, err := net.ParseCIDR(c.TailnetSubnet); err != nil {
+			return fmt.Errorf("invalid ikev2.tailnet_subnet %q", c.TailnetSubnet)
+		}
+	}
 	if err := validateTProxyMark(c.TProxyMark); err != nil {
 		return err
 	}
@@ -106,4 +116,14 @@ func validateCommandRenderedNetworkFields(c config.IKEv2Config, includeUnderlay 
 		return err
 	}
 	return validateTProxyPort(c.TProxyPort)
+}
+
+func validateTailnetBridgeFields(c config.IKEv2Config) error {
+	if err := validateCommandRenderedNetworkFields(c, false); err != nil {
+		return err
+	}
+	if err := validateLinuxInterfaceName("ikev2.tailnet_interface", c.TailnetInterface); err != nil {
+		return err
+	}
+	return nil
 }

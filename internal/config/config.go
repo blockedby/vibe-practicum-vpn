@@ -7,15 +7,17 @@ import (
 )
 
 type Config struct {
-	SubscriptionFile string `json:"subscription_file"`
-	XrayBin          string `json:"xray_bin"`
-	XrayConfig       string `json:"xray_config"`
-	StateDir         string `json:"state_dir"`
-	ProductionSocks  string `json:"production_socks"`
-	TestSocks        string `json:"test_socks"`
-	TestURL          string `json:"test_url"`
-	TestLimitKiB     int    `json:"test_limit_kib"`
-	TimeoutSeconds   int    `json:"timeout_seconds"`
+	SubscriptionFile    string `json:"subscription_file"`
+	ExtraNodesFile      string `json:"extra_nodes_file"`
+	XrayBin             string `json:"xray_bin"`
+	XrayConfig          string `json:"xray_config"`
+	StateDir            string `json:"state_dir"`
+	ProductionSocks     string `json:"production_socks"`
+	TestSocks           string `json:"test_socks"`
+	TestURL             string `json:"test_url"`
+	TestLimitKiB        int    `json:"test_limit_kib"`
+	TestDurationSeconds int    `json:"test_duration_seconds"`
+	TimeoutSeconds      int    `json:"timeout_seconds"`
 	// IKEv2 is optional and kept as a pointer so an absent section is
 	// distinguishable from an explicitly configured-but-disabled section.
 	IKEv2 *IKEv2Config `json:"ikev2,omitempty"`
@@ -24,6 +26,7 @@ type Config struct {
 type IKEv2Config struct {
 	Enabled           bool   `json:"enabled"`
 	ServerName        string `json:"server_name"`
+	PublicEndpoint    string `json:"public_endpoint,omitempty"`
 	VPNSubnet         string `json:"vpn_subnet"`
 	GatewayIP         string `json:"gateway_ip"`
 	XFRMInterface     string `json:"xfrm_interface"`
@@ -36,6 +39,8 @@ type IKEv2Config struct {
 	TProxyPort        int    `json:"tproxy_port"`
 	TProxyMark        string `json:"tproxy_mark"`
 	TProxyTable       int    `json:"tproxy_table"`
+	TailnetInterface  string `json:"tailnet_interface,omitempty"`
+	TailnetSubnet     string `json:"tailnet_subnet,omitempty"`
 }
 
 const (
@@ -48,16 +53,18 @@ const (
 	DefaultIKEv2SwanctlDir        = "/etc/swanctl"
 	DefaultIKEv2StrongSwanService = "strongswan"
 	DefaultIKEv2TProxyPort        = 2082
-	DefaultIKEv2TProxyMark        = "0x1"
-	DefaultIKEv2TProxyTable       = 100
+	DefaultIKEv2TProxyMark        = "0x88"
+	DefaultIKEv2TProxyTable       = 188
+	DefaultIKEv2TailnetInterface  = "tailscale0"
+	DefaultIKEv2TailnetSubnet     = "100.64.0.0/10"
 )
 
 func Default() Config {
-	return Config{SubscriptionFile: "/etc/vibe-vpn/sub_url", XrayBin: "/usr/local/bin/xray", XrayConfig: "/usr/local/etc/xray/config.json", StateDir: "/var/lib/vibe-vpn", ProductionSocks: "127.0.0.1:10808", TestSocks: "127.0.0.1:18080", TestURL: "https://proof.ovh.net/files/10Mb.dat", TestLimitKiB: 512, TimeoutSeconds: 12}
+	return Config{SubscriptionFile: "/etc/vibe-vpn/sub_url", ExtraNodesFile: "/etc/vibe-vpn/extra-nodes.json", XrayBin: "/usr/local/bin/xray", XrayConfig: "/usr/local/etc/xray/config.json", StateDir: "/var/lib/vibe-vpn", ProductionSocks: "127.0.0.1:10808", TestSocks: "127.0.0.1:18080", TestURL: "https://proof.ovh.net/files/10Mb.dat", TestLimitKiB: 512, TimeoutSeconds: 12}
 }
 
 func DefaultIKEv2Config() IKEv2Config {
-	return IKEv2Config{VPNSubnet: DefaultIKEv2VPNSubnet, GatewayIP: DefaultIKEv2GatewayIP, XFRMInterface: DefaultIKEv2XFRMInterface, XFRMIfID: DefaultIKEv2XFRMIfID, ConfigDir: DefaultIKEv2ConfigDir, StateDir: DefaultIKEv2StateDir, SwanctlDir: DefaultIKEv2SwanctlDir, StrongSwanService: DefaultIKEv2StrongSwanService, TProxyPort: DefaultIKEv2TProxyPort, TProxyMark: DefaultIKEv2TProxyMark, TProxyTable: DefaultIKEv2TProxyTable}
+	return IKEv2Config{VPNSubnet: DefaultIKEv2VPNSubnet, GatewayIP: DefaultIKEv2GatewayIP, XFRMInterface: DefaultIKEv2XFRMInterface, XFRMIfID: DefaultIKEv2XFRMIfID, ConfigDir: DefaultIKEv2ConfigDir, StateDir: DefaultIKEv2StateDir, SwanctlDir: DefaultIKEv2SwanctlDir, StrongSwanService: DefaultIKEv2StrongSwanService, TProxyPort: DefaultIKEv2TProxyPort, TProxyMark: DefaultIKEv2TProxyMark, TProxyTable: DefaultIKEv2TProxyTable, TailnetInterface: DefaultIKEv2TailnetInterface, TailnetSubnet: DefaultIKEv2TailnetSubnet}
 }
 
 func Load(path string) (Config, error) {
@@ -82,6 +89,9 @@ func Load(path string) (Config, error) {
 }
 
 func (c *IKEv2Config) ApplyDefaults() {
+	if c.PublicEndpoint == "" {
+		c.PublicEndpoint = c.ServerName
+	}
 	if c.VPNSubnet == "" {
 		c.VPNSubnet = DefaultIKEv2VPNSubnet
 	}
@@ -115,6 +125,12 @@ func (c *IKEv2Config) ApplyDefaults() {
 	if c.TProxyTable == 0 {
 		c.TProxyTable = DefaultIKEv2TProxyTable
 	}
+	if c.TailnetInterface == "" {
+		c.TailnetInterface = DefaultIKEv2TailnetInterface
+	}
+	if c.TailnetSubnet == "" {
+		c.TailnetSubnet = DefaultIKEv2TailnetSubnet
+	}
 }
 
 func (c Config) Validate() error {
@@ -141,6 +157,9 @@ func (c Config) Validate() error {
 	}
 	if c.TestLimitKiB <= 0 {
 		return fmt.Errorf("test_limit_kib must be positive")
+	}
+	if c.TestDurationSeconds < 0 {
+		return fmt.Errorf("test_duration_seconds must be non-negative")
 	}
 	if c.TimeoutSeconds <= 0 {
 		return fmt.Errorf("timeout_seconds must be positive")
@@ -181,6 +200,12 @@ func (c IKEv2Config) Validate() error {
 	}
 	if c.TProxyTable <= 0 {
 		return fmt.Errorf("ikev2.tproxy_table must be positive")
+	}
+	if c.TailnetInterface == "" {
+		return fmt.Errorf("ikev2.tailnet_interface is empty")
+	}
+	if c.TailnetSubnet == "" {
+		return fmt.Errorf("ikev2.tailnet_subnet is empty")
 	}
 	return nil
 }

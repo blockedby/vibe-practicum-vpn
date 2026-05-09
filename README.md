@@ -100,6 +100,8 @@ sudo install -o root -g root -m 755 /tmp/vibe-vpn /usr/local/bin/vibe-vpn
 
 ```text
 /etc/vibe-vpn/sub_url                 # root-only subscription URL, not in git
+/etc/vibe-vpn/extra-nodes.json        # optional root-only static nodes, not in git
+/etc/vibe-vpn/lil-sweden-hy2-auth     # Hysteria auth secret, not in git
 /etc/vibe-vpn/config.json             # optional config override
 /var/lib/vibe-vpn/last-results.json   # latest benchmark results
 /var/lib/vibe-vpn/current-node.json   # currently applied winner metadata
@@ -117,7 +119,7 @@ sudo vibe-vpn status [--config /path/to/config.json]
 Shows production `xray` status, production SOCKS address, current selected node, server `host:port`, transport/security, last benchmark speed, state source, live egress IP, and SOCKS latency.
 
 ```bash
-sudo vibe-vpn test [--config /path/to/config.json] [--limit-kib N] [--max N] [--verbose] [--debug]
+sudo vibe-vpn test [--config /path/to/config.json] [--limit-kib N] [--duration-sec N] [--max N] [--verbose] [--debug]
 ```
 
 Benchmarks subscription nodes safely. Does **not** apply anything. By default it is quiet: it suppresses temporary `xray` logs and prints a sorted top-20 summary at the end.
@@ -128,6 +130,7 @@ Useful examples:
 sudo vibe-vpn test --limit-kib 64 --max 2    # quick smoke test
 sudo vibe-vpn test --limit-kib 256           # full safer benchmark
 sudo vibe-vpn test --limit-kib 1024 --max 20 # heavier partial benchmark
+sudo vibe-vpn test --duration-sec 5 --max 20 # time-based benchmark
 sudo vibe-vpn test --verbose              # print every node while testing
 sudo vibe-vpn test --debug                # show temporary xray logs
 ```
@@ -145,7 +148,7 @@ sudo vibe-vpn apply <index>
 Applies a specific OK node from `/var/lib/vibe-vpn/last-results.json`, for example `sudo vibe-vpn apply 6`.
 
 ```bash
-sudo vibe-vpn pick [--config /path/to/config.json] [--limit-kib N] [--max N]
+sudo vibe-vpn pick [--config /path/to/config.json] [--limit-kib N] [--duration-sec N] [--max N]
 ```
 
 Benchmarks safely, selects the fastest working node, backs up production xray
@@ -167,8 +170,9 @@ Restores the newest xray config backup from `/var/lib/vibe-vpn/backups/`.
 Flag notes:
 
 - `--config`: optional config path. If explicitly provided, the file must exist.
-- `--limit-kib`: how much data to download per node during benchmark. Higher is more accurate but slower.
-- `--max`: test only the first N subscription nodes. Useful for smoke tests.
+- `--limit-kib`: how much data to download per node during size-based benchmark. Higher is more accurate but slower.
+- `--duration-sec`: run a time-based benchmark for each node. `0` disables duration mode and returns to `--limit-kib` behavior.
+- `--max`: test only the first N subscription/extra nodes after filters. Useful for smoke tests.
 - `--verbose`: print every node as it is tested.
 - `--debug`: show temporary xray stdout/stderr.
 - `list --top N`: show N fastest successful nodes from the last run.
@@ -191,9 +195,12 @@ vibe-vpn --config /path/to/staging-config.json ikev2 smoke
 ```
 
 Then follow [`docs/IKEV2_CANARY_RUNBOOK.md`](./docs/IKEV2_CANARY_RUNBOOK.md).
-Review all `--dry-run` output before production changes, keep Tailscale as the
-rollback path, and never commit generated profiles, private keys, subscription
-URLs, VLESS links, or tokens.
+For the iPad-to-PC/Steam Deck tailnet bridge use-case, review
+[`docs/IPAD_IKEV2_TAILNET_BRIDGE.md`](./docs/IPAD_IKEV2_TAILNET_BRIDGE.md) and
+`vibe-vpn ikev2 routing bridge enable --dry-run` before any live change. Review
+all `--dry-run` output before production changes, keep Tailscale as the rollback
+path, and never commit generated profiles, private keys, subscription URLs,
+VLESS links, or tokens.
 
 ## Traffic model
 
@@ -220,6 +227,9 @@ client device
 - [`docs/PIXEL_ACCEPTANCE_CHECKLIST.md`](./docs/PIXEL_ACCEPTANCE_CHECKLIST.md) — current accepted canary checklist.
 - [`docs/RU_DIRECT_RULESETS.md`](./docs/RU_DIRECT_RULESETS.md) — RU/direct rule-set notes.
 - [`docs/LOCAL_SING_BOX_D1.md`](./docs/LOCAL_SING_BOX_D1.md) — smart local sing-box/TUN mode for `kcnc-pc` gaming split routing.
+- [`docs/LIL_SWEDEN_GATEWAY.md`](./docs/LIL_SWEDEN_GATEWAY.md) — SSH/access, web, and Hysteria2 notes for the Sweden gateway.
+- [`docs/issues/001-hysteria2-performance-followup.md`](./docs/issues/001-hysteria2-performance-followup.md) — deferred Hysteria2 performance tuning ideas.
+- [`docs/STATIC_EXTRA_NODES.md`](./docs/STATIC_EXTRA_NODES.md) — `vibe-vpn` static/extra node file format.
 - [`docs/ROLLBACK.md`](./docs/ROLLBACK.md) — rollback commands.
 
 ## Security notes

@@ -66,7 +66,7 @@ func TestLoadIKEv2AppliesDefaultsAndOverrides(t *testing.T) {
 	if !c.IKEv2.Enabled || c.IKEv2.ServerName != "vpn.example.com" || c.IKEv2.XFRMIfID != 77 {
 		t.Fatalf("overrides not applied: %+v", c.IKEv2)
 	}
-	if c.IKEv2.VPNSubnet != DefaultIKEv2VPNSubnet || c.IKEv2.GatewayIP != DefaultIKEv2GatewayIP || c.IKEv2.TProxyPort != DefaultIKEv2TProxyPort {
+	if c.IKEv2.VPNSubnet != DefaultIKEv2VPNSubnet || c.IKEv2.GatewayIP != DefaultIKEv2GatewayIP || c.IKEv2.TProxyPort != DefaultIKEv2TProxyPort || c.IKEv2.TailnetInterface != DefaultIKEv2TailnetInterface || c.IKEv2.TailnetSubnet != DefaultIKEv2TailnetSubnet {
 		t.Fatalf("defaults not applied: %+v", c.IKEv2)
 	}
 }

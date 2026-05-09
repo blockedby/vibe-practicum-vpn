@@ -16,6 +16,7 @@ Default state/config paths:
 ```text
 /etc/vibe-vpn/config.json       # optional CLI config
 /etc/vibe-vpn/sub_url           # root-only subscription URL
+/etc/vibe-vpn/extra-nodes.json  # optional root-only static nodes
 /var/lib/vibe-vpn/last-results.json
 /var/lib/vibe-vpn/current-node.json
 /var/lib/vibe-vpn/current-link.txt
@@ -33,9 +34,10 @@ Example optional config (`/etc/vibe-vpn/config.json`):
   "state_dir": "/var/lib/vibe-vpn",
   "production_socks": "127.0.0.1:10808",
   "test_socks": "127.0.0.1:18080",
-  "test_url": "https://proof.ovh.net/files/10Mb.dat",
+  "test_url": "https://speed.cloudflare.com/__down?bytes=75000000",
   "test_limit_kib": 512,
-  "timeout_seconds": 12
+  "test_duration_seconds": 5,
+  "timeout_seconds": 20
 }
 ```
 
@@ -43,14 +45,14 @@ Dry run: starts a temporary xray SOCKS listener on `test_socks` for each node.
 Production xray and `production_socks` are not touched.
 
 ```bash
-sudo vibe-vpn test --limit-kib 256 --max 10
+sudo vibe-vpn test --duration-sec 5 --max 10
 ```
 
 Pick and apply: benchmarks in isolation, then writes only the winning outbound to
 production xray.
 
 ```bash
-sudo vibe-vpn pick --limit-kib 256
+sudo vibe-vpn pick --duration-sec 5
 ```
 
 Rollback to the newest saved config backup:
