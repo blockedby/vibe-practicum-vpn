@@ -224,6 +224,7 @@ client device
 - [`docs/IKEV2_MVP_DESIGN.md`](./docs/IKEV2_MVP_DESIGN.md) — native-client IKEv2 MVP design for the future Tailscale replacement path.
 - [`docs/IKEV2_CANARY_RUNBOOK.md`](./docs/IKEV2_CANARY_RUNBOOK.md) — safe canary preparation workflow, dry-run gates, and mobile checks.
 - [`docs/IKEV2_ROLLBACK.md`](./docs/IKEV2_ROLLBACK.md) — design-level rollback guidance for the future IKEv2 canary.
+- [`docs/ASUS_OPENVPN_SITE_TO_SITE.md`](./docs/ASUS_OPENVPN_SITE_TO_SITE.md) — safe ASUS OpenVPN site-to-site runbook and scripts entry point.
 - [`docs/PIXEL_ACCEPTANCE_CHECKLIST.md`](./docs/PIXEL_ACCEPTANCE_CHECKLIST.md) — current accepted canary checklist.
 - [`docs/RU_DIRECT_RULESETS.md`](./docs/RU_DIRECT_RULESETS.md) — RU/direct rule-set notes.
 - [`docs/LOCAL_SING_BOX_D1.md`](./docs/LOCAL_SING_BOX_D1.md) — smart local sing-box/TUN mode for `kcnc-pc` gaming split routing.
