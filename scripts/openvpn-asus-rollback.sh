@@ -3,6 +3,7 @@ set -euo pipefail
 
 SSH_HOST="${SSH_HOST:-vibe-practicum}"
 OPENVPN_ASUS_APPLY="${OPENVPN_ASUS_APPLY:-0}"
+OPENVPN_PORT="${OPENVPN_PORT:-1194}"
 OPENVPN_DEV="${OPENVPN_DEV:-tun-asus}"
 OPENVPN_VPN_CIDR="${OPENVPN_VPN_CIDR:-10.89.0.0/24}"
 OPENVPN_ASUS_LAN_CIDR="${OPENVPN_ASUS_LAN_CIDR:-192.168.50.0/24}"
@@ -23,7 +24,7 @@ shell_quote() {
 }
 
 remote_env() {
-  local names=(OPENVPN_DEV OPENVPN_VPN_CIDR OPENVPN_ASUS_LAN_CIDR TPROXY_PORT MARK TABLE VIBE_PRACTICUM_SUDO_PASSWORD)
+  local names=(OPENVPN_PORT OPENVPN_DEV OPENVPN_VPN_CIDR OPENVPN_ASUS_LAN_CIDR TPROXY_PORT MARK TABLE VIBE_PRACTICUM_SUDO_PASSWORD)
   local name
   for name in "${names[@]}"; do
     printf "%s=%s " "$name" "$(shell_quote "${!name:-}")"
@@ -40,6 +41,7 @@ VIBE_PRACTICUM_SUDO_PASSWORD to apply this rollback to SSH_HOST=$SSH_HOST.
 Rollback will remove only ASUS OpenVPN-owned services, files, and exact/comment-scoped rules:
   - stop/disable vibe-openvpn-asus-routing.service
   - stop/disable openvpn-server@vibe-asus.service
+  - delete UFW allow for $OPENVPN_PORT/udp when UFW is active
   - delete exact PREROUTING jump:
       -i $OPENVPN_DEV -s $OPENVPN_VPN_CIDR -m comment --comment ${COMMENT_PREFIX}entry:vpn-pool -j VIBE_ROUTER_OPENVPN_ASUS
   - delete exact PREROUTING jump:
@@ -104,6 +106,10 @@ backup_path() {
 echo "stopping ASUS OpenVPN-owned services"
 sudo_cmd systemctl disable --now vibe-openvpn-asus-routing.service 2>/dev/null || true
 sudo_cmd systemctl disable --now openvpn-server@vibe-asus.service 2>/dev/null || true
+
+if command -v ufw >/dev/null 2>&1 && sudo_cmd ufw status 2>/dev/null | grep -q '^Status: active'; then
+  sudo_cmd ufw delete allow "$OPENVPN_PORT/udp" >/dev/null 2>&1 || true
+fi
 
 echo "removing exact PREROUTING entries"
 delete_rule_while_present PREROUTING -i "$OPENVPN_DEV" -s "$OPENVPN_VPN_CIDR" -m comment --comment "${COMMENT_PREFIX}entry:vpn-pool" -j "$CHAIN"

@@ -59,9 +59,7 @@ Profile defaults:
   remote PUBLIC_ENDPOINT $OPENVPN_PORT
   remote-cert-tls server
   auth SHA256
-  data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
-  data-ciphers-fallback AES-256-CBC
-  cipher AES-256-GCM
+  cipher AES-256-CBC
   tls-auth with key-direction 1
   redirect-gateway def1 only when OPENVPN_ASUS_REDIRECT_GATEWAY=1
 
@@ -99,7 +97,7 @@ export_profile() {
   cert="$tmpdir/$OPENVPN_CLIENT_CN.crt"
   key="$tmpdir/$OPENVPN_CLIENT_CN.key"
   ta="$tmpdir/ta.key"
-  trap 'rm -rf "$tmpdir"' EXIT
+  trap '[[ -n "${tmpdir:-}" ]] && rm -rf "$tmpdir"' EXIT
 
   umask 077
   mkdir -p "$out_dir"
@@ -128,9 +126,7 @@ persist-tun
 remote-cert-tls server
 auth SHA256
 auth-nocache
-data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
-data-ciphers-fallback AES-256-CBC
-cipher AES-256-GCM
+cipher AES-256-CBC
 key-direction 1
 verb 3
 PROFILE

@@ -8,6 +8,7 @@ OPENVPN_DEV="${OPENVPN_DEV:-tun-asus}"
 OPENVPN_VPN_CIDR="${OPENVPN_VPN_CIDR:-10.89.0.0/24}"
 OPENVPN_VPN_NET="${OPENVPN_VPN_NET:-10.89.0.0}"
 OPENVPN_VPN_MASK="${OPENVPN_VPN_MASK:-255.255.255.0}"
+OPENVPN_VPN_GATEWAY="${OPENVPN_VPN_GATEWAY:-10.89.0.1}"
 OPENVPN_ASUS_VPN_IP="${OPENVPN_ASUS_VPN_IP:-10.89.0.2}"
 OPENVPN_CLIENT_POOL_START="${OPENVPN_CLIENT_POOL_START:-10.89.0.20}"
 OPENVPN_CLIENT_POOL_END="${OPENVPN_CLIENT_POOL_END:-10.89.0.254}"
@@ -32,7 +33,7 @@ shell_quote() {
 remote_env() {
   local names=(
     OPENVPN_PORT OPENVPN_DEV OPENVPN_VPN_CIDR OPENVPN_VPN_NET OPENVPN_VPN_MASK
-    OPENVPN_ASUS_VPN_IP OPENVPN_CLIENT_POOL_START OPENVPN_CLIENT_POOL_END
+    OPENVPN_VPN_GATEWAY OPENVPN_ASUS_VPN_IP OPENVPN_CLIENT_POOL_START OPENVPN_CLIENT_POOL_END
     OPENVPN_DIRECT_CLIENT_CN OPENVPN_ASUS_LAN_CIDR TPROXY_PORT MARK TABLE
     VIBE_PRACTICUM_SUDO_PASSWORD
   )
@@ -56,6 +57,7 @@ Defaults / selected values:
   OPENVPN_VPN_CIDR=$OPENVPN_VPN_CIDR
   OPENVPN_VPN_NET=$OPENVPN_VPN_NET
   OPENVPN_VPN_MASK=$OPENVPN_VPN_MASK
+  OPENVPN_VPN_GATEWAY=$OPENVPN_VPN_GATEWAY
   OPENVPN_ASUS_VPN_IP=$OPENVPN_ASUS_VPN_IP
   OPENVPN_CLIENT_POOL_START=$OPENVPN_CLIENT_POOL_START
   OPENVPN_CLIENT_POOL_END=$OPENVPN_CLIENT_POOL_END
@@ -76,19 +78,20 @@ Remote apply will:
      Secret material is never printed.
   6. Render /etc/sysctl.d/99-vibe-openvpn-asus.conf and ensure net.ipv4.ip_forward=1.
   7. Render /etc/openvpn/server/vibe-asus.conf for UDP $OPENVPN_PORT on $OPENVPN_DEV.
-  8. Render /etc/openvpn/ccd-vibe-asus/asus with:
+  8. Render readable /etc/openvpn/ccd-vibe-asus/asus with:
        ifconfig-push $OPENVPN_ASUS_VPN_IP $OPENVPN_VPN_MASK
        iroute $OPENVPN_ASUS_LAN_CIDR
      Render /etc/openvpn/ccd-vibe-asus/$OPENVPN_DIRECT_CLIENT_CN with a pushed
      route to $OPENVPN_ASUS_LAN_CIDR, without pushing that route back to ASUS.
-  9. Install /usr/local/sbin/vibe-openvpn-asus-rules and
+  9. Allow UDP $OPENVPN_PORT in UFW when UFW is active.
+ 10. Install /usr/local/sbin/vibe-openvpn-asus-rules and
      /etc/systemd/system/vibe-openvpn-asus-routing.service.
- 10. Ensure shared TProxy policy routing exists, without deleting it:
+ 11. Ensure shared TProxy policy routing exists, without deleting it:
        ip rule add fwmark $MARK table $TABLE      # only if missing
        ip route add local 0.0.0.0/0 dev lo table $TABLE  # only if missing
- 11. Create/reuse mangle chain VIBE_ROUTER_OPENVPN_ASUS.
- 12. Add exact, comment-scoped bypass and TPROXY rules in that chain.
- 13. Attach only these PREROUTING entries if missing:
+ 12. Create/reuse mangle chain VIBE_ROUTER_OPENVPN_ASUS.
+ 13. Add exact, comment-scoped bypass and TPROXY rules in that chain.
+ 14. Attach only these PREROUTING entries if missing:
        -i $OPENVPN_DEV -s $OPENVPN_VPN_CIDR -m comment --comment ${COMMENT_PREFIX}entry:vpn-pool -j VIBE_ROUTER_OPENVPN_ASUS
        -i $OPENVPN_DEV -s $OPENVPN_ASUS_LAN_CIDR -m comment --comment ${COMMENT_PREFIX}entry:asus-lan -j VIBE_ROUTER_OPENVPN_ASUS
  14. Enable/start vibe-openvpn-asus-routing.service and openvpn-server@vibe-asus.service.
@@ -123,6 +126,12 @@ COMMENT_PREFIX="vibe-vpn-openvpn-asus:"
 
 sudo_cmd() {
   printf '%s\n' "$VIBE_PRACTICUM_SUDO_PASSWORD" | sudo -S -p '' "$@"
+}
+sudo_test_dir() {
+  sudo_cmd test -d "$1"
+}
+sudo_test_file() {
+  sudo_cmd test -f "$1"
 }
 install_root_file() {
   local src="$1" dst="$2" mode="$3"
@@ -166,10 +175,10 @@ else
 fi
 
 sudo_cmd install -d -o root -g root -m 700 "$STATE_DIR"
-sudo_cmd install -d -o root -g root -m 755 "$OPENVPN_SERVER_DIR" "$CCD_DIR"
+sudo_cmd install -d -o root -g root -m 755 "$OPENVPN_SERVER_DIR" "$CCD_DIR" /var/log/openvpn
 sudo_cmd install -d -o root -g root -m 750 /var/lib/openvpn
 
-if [[ ! -d "$EASYRSA_DIR/pki" ]]; then
+if ! sudo_test_dir "$EASYRSA_DIR/pki"; then
   echo "initializing Easy-RSA PKI under $EASYRSA_DIR"
   tmpdir="$(mktemp -d)"
   cp -a /usr/share/easy-rsa/. "$tmpdir/"
@@ -187,14 +196,14 @@ else
   echo "Easy-RSA PKI already exists; not regenerating CA or existing client keys"
 fi
 
-if [[ ! -f "$EASYRSA_DIR/pki/issued/asus.crt" || ! -f "$EASYRSA_DIR/pki/private/asus.key" ]]; then
+if ! sudo_test_file "$EASYRSA_DIR/pki/issued/asus.crt" || ! sudo_test_file "$EASYRSA_DIR/pki/private/asus.key"; then
   sudo_cmd bash -c "cd '$EASYRSA_DIR' && EASYRSA_BATCH=1 ./easyrsa build-client-full asus nopass"
 fi
-if [[ ! -f "$EASYRSA_DIR/pki/issued/$OPENVPN_DIRECT_CLIENT_CN.crt" || ! -f "$EASYRSA_DIR/pki/private/$OPENVPN_DIRECT_CLIENT_CN.key" ]]; then
+if ! sudo_test_file "$EASYRSA_DIR/pki/issued/$OPENVPN_DIRECT_CLIENT_CN.crt" || ! sudo_test_file "$EASYRSA_DIR/pki/private/$OPENVPN_DIRECT_CLIENT_CN.key"; then
   sudo_cmd bash -c "cd '$EASYRSA_DIR' && EASYRSA_BATCH=1 ./easyrsa build-client-full '$OPENVPN_DIRECT_CLIENT_CN' nopass"
 fi
 
-if [[ ! -f "$STATE_DIR/ta.key" ]]; then
+if ! sudo_test_file "$STATE_DIR/ta.key"; then
   tmp_ta="$(mktemp)"
   openvpn --genkey secret "$tmp_ta"
   install_root_file "$tmp_ta" "$STATE_DIR/ta.key" 600
@@ -219,18 +228,26 @@ install_root_file "$tmp_sysctl" "$SYSCTL_CONF" 644
 rm -f "$tmp_sysctl"
 sudo_cmd sysctl -w net.ipv4.ip_forward=1 >/dev/null
 
+if command -v ufw >/dev/null 2>&1 && sudo_cmd ufw status 2>/dev/null | grep -q '^Status: active'; then
+  sudo_cmd ufw allow "$OPENVPN_PORT/udp" comment 'vibe-vpn openvpn asus' >/dev/null || true
+fi
+
 tmp_conf="$(mktemp)"
 cat >"$tmp_conf" <<CONF
 port $OPENVPN_PORT
 proto udp
 dev $OPENVPN_DEV
+mode server
+tls-server
 topology subnet
-server $OPENVPN_VPN_NET $OPENVPN_VPN_MASK
+ifconfig $OPENVPN_VPN_GATEWAY $OPENVPN_VPN_MASK
 ifconfig-pool $OPENVPN_CLIENT_POOL_START $OPENVPN_CLIENT_POOL_END $OPENVPN_VPN_MASK
+push "topology subnet"
+push "route-gateway $OPENVPN_VPN_GATEWAY"
 ifconfig-pool-persist /var/lib/openvpn/vibe-asus-ipp.txt
 client-config-dir $CCD_DIR
 client-to-client
-route $ASUS_LAN_NET $ASUS_LAN_MASK
+route $ASUS_LAN_NET $ASUS_LAN_MASK $OPENVPN_ASUS_VPN_IP
 keepalive 10 120
 persist-key
 persist-tun
@@ -244,7 +261,7 @@ tls-auth $STATE_DIR/ta.key 0
 key-direction 0
 remote-cert-tls client
 auth SHA256
-data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-256-CBC
 data-ciphers-fallback AES-256-CBC
 cipher AES-256-GCM
 status /var/log/openvpn/vibe-asus-status.log
@@ -259,7 +276,7 @@ cat >"$tmp_ccd" <<CCD
 ifconfig-push $OPENVPN_ASUS_VPN_IP $OPENVPN_VPN_MASK
 iroute $ASUS_LAN_NET $ASUS_LAN_MASK
 CCD
-install_root_file "$tmp_ccd" "$CCD_FILE" 600
+install_root_file "$tmp_ccd" "$CCD_FILE" 644
 rm -f "$tmp_ccd"
 
 DIRECT_CLIENT_CCD="$CCD_DIR/$OPENVPN_DIRECT_CLIENT_CN"
@@ -267,7 +284,7 @@ tmp_direct_ccd="$(mktemp)"
 cat >"$tmp_direct_ccd" <<CCD
 push "route $ASUS_LAN_NET $ASUS_LAN_MASK"
 CCD
-install_root_file "$tmp_direct_ccd" "$DIRECT_CLIENT_CCD" 600
+install_root_file "$tmp_direct_ccd" "$DIRECT_CLIENT_CCD" 644
 rm -f "$tmp_direct_ccd"
 
 tmp_helper="$(mktemp)"
@@ -303,7 +320,7 @@ ensure_prerouting() {
 if ! ip rule show | grep -Eq "fwmark ${MARK}(/${MARK})?.*(lookup|table) ${TABLE}(\\b|$)"; then
   ip rule add fwmark "$MARK" table "$TABLE"
 fi
-if ! ip route show table "$TABLE" | grep -q '^local 0.0.0.0/0'; then
+if ! ip route show table "$TABLE" | grep -Eq '^local (default|0\.0\.0\.0/0)'; then
   ip route add local 0.0.0.0/0 dev lo table "$TABLE"
 fi
 
@@ -362,8 +379,9 @@ install_root_file "$tmp_unit" "$UNIT" 644
 rm -f "$tmp_unit"
 
 sudo_cmd systemctl daemon-reload
-sudo_cmd systemctl enable --now vibe-openvpn-asus-routing.service
-sudo_cmd systemctl enable --now openvpn-server@vibe-asus.service
+sudo_cmd systemctl enable vibe-openvpn-asus-routing.service openvpn-server@vibe-asus.service
+sudo_cmd systemctl restart vibe-openvpn-asus-routing.service
+sudo_cmd systemctl restart openvpn-server@vibe-asus.service
 
 echo "=== installed OpenVPN ASUS artifacts ==="
 echo "server_conf=$SERVER_CONF"

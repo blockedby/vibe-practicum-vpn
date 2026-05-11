@@ -57,6 +57,13 @@ else
   echo "skip: passwordless sudo unavailable for: iptables-save -t mangle"
 fi
 
+echo "=== OpenVPN runtime status (sudo -n read only) ==="
+if sudo -n true 2>/dev/null; then
+  sudo -n cat /var/log/openvpn/vibe-asus-status.log 2>/dev/null || true
+else
+  echo "skip: passwordless sudo unavailable for: /var/log/openvpn/vibe-asus-status.log"
+fi
+
 echo "=== OpenVPN unit summaries (sudo -n read only) ==="
 sudo_read systemctl --no-pager --full status openvpn-server@vibe-asus.service vibe-openvpn-asus-routing.service
 

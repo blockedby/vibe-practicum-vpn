@@ -152,10 +152,11 @@ unset VIBE_PRACTICUM_SUDO_PASSWORD
 Apply mode installs `openvpn`/`easy-rsa` if missing, creates root-only PKI state,
 renders the server config and CCD for CN `asus`, generates the default direct
 client CN `direct-client-1`, installs a direct-client CCD route to the ASUS LAN,
-installs the routing helper and systemd unit, and starts
-`openvpn-server@vibe-asus` plus `vibe-openvpn-asus-routing.service`. The ASUS
-LAN route is not pushed back to the ASUS client. The OpenVPN dynamic pool starts
-at `10.89.0.20`, leaving `10.89.0.2` reserved for the ASUS router.
+allows UDP `1194` in UFW when UFW is active, installs the routing helper and
+systemd unit, and starts `openvpn-server@vibe-asus` plus
+`vibe-openvpn-asus-routing.service`. The ASUS LAN route is not pushed back to
+the ASUS client. The OpenVPN dynamic pool starts at `10.89.0.20`, leaving
+`10.89.0.2` reserved for the ASUS router.
 
 ## Profile export for ASUS import
 
@@ -211,9 +212,11 @@ VIBE_PRACTICUM_SUDO_PASSWORD='fill-this-in' \
   ./scripts/openvpn-asus-profile.sh
 ```
 
-ASUS firmware varies. `tls-auth` is used instead of `tls-crypt` for broader ASUS
-compatibility. If import fails, check whether the firmware supports embedded
-`<ca>`, `<cert>`, `<key>`, and `<tls-auth>` blocks and AES-GCM data ciphers.
+ASUS firmware varies. `tls-auth` is used instead of `tls-crypt` and exported
+profiles use `cipher AES-256-CBC` for broader ASUSWRT import compatibility. The
+server still permits modern AES-GCM negotiation for clients that support it. If
+import fails, check whether the firmware supports embedded `<ca>`, `<cert>`,
+`<key>`, and `<tls-auth>` blocks.
 
 ## ASUS router import notes
 
