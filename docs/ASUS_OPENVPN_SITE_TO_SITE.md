@@ -57,6 +57,27 @@ sing-box rules are preserved.
 | policy table | `100` |
 | iptables comment prefix | `vibe-vpn-openvpn-asus:` |
 
+
+## OpenVPN IP allocation map
+
+This is the canonical live allocation map for `tun-asus` / `10.89.0.0/24`:
+
+| Range / IP | Owner / role | Routing intent |
+| --- | --- | --- |
+| `10.89.0.1` | VPS OpenVPN gateway on `tun-asus` | Server-side tunnel endpoint |
+| `10.89.0.2` | ASUS router CN `asus` | Site-to-site / direct NAT / ASUS LAN bridge; do **not** capture into the TPROXY canary by default |
+| `10.89.0.3` | CN `asus-tproxy` | Current phone canary through `VIBE_OVPN_ASUS_TP -> sing-box :2082 -> xray` |
+| `10.89.0.4`-`10.89.0.19` | Reserved future fixed TPROXY clients | Intended for additional per-device OpenVPN profiles that should use sing-box/xray |
+| `10.89.0.20`-`10.89.0.254` | OpenVPN dynamic pool | Ordinary/dynamic clients from `ifconfig-pool`; do not assign fixed CCD clients here |
+| `192.168.50.0/24` | ASUS LAN behind CN `asus` | Routed via `10.89.0.2` for private LAN reachability |
+
+Why this split exists:
+
+- `10.89.0.2` must stay reserved for the ASUS router and LAN bridge.
+- `10.89.0.3`-`10.89.0.19` is outside the dynamic pool, so fixed CCD profiles cannot collide with pooled clients.
+- TPROXY clients need both a mangle PREROUTING capture rule and a filter INPUT accept rule for `MARK=0x1`, because TPROXY packets are delivered locally to sing-box.
+- If converting from one canary IP to a TPROXY range, prefer `10.89.0.3-10.89.0.19` rather than the whole `10.89.0.0/24`.
+
 Override these with env vars such as `OPENVPN_PORT`, `OPENVPN_DEV`,
 `OPENVPN_ASUS_LAN_CIDR`, `OPENVPN_CLIENT_POOL_START`,
 `OPENVPN_CLIENT_POOL_END`, `OPENVPN_DIRECT_CLIENT_CN`, `TPROXY_PORT`, `MARK`, or

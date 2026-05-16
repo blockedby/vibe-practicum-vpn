@@ -21,6 +21,10 @@ The normal ASUS router profile remains separate:
 
 - `asus` / `10.89.0.2`: direct NAT/full-tunnel or site-to-site.
 - `asus-tproxy` / `10.89.0.3`: canary through sing-box/xray.
+- `10.89.0.4`-`10.89.0.19`: reserved for additional fixed TPROXY OpenVPN clients.
+- `10.89.0.20`-`10.89.0.254`: OpenVPN dynamic pool; do not use for fixed CCD TPROXY profiles.
+
+See `docs/ASUS_OPENVPN_SITE_TO_SITE.md` for the canonical OpenVPN IP allocation map.
 
 ## Root cause found
 
