@@ -68,6 +68,15 @@ ssh vibe-practicum 'sudo iptables -t filter -L INPUT -v -n -x --line-numbers | g
 ssh vibe-practicum 'sudo timeout 8 tcpdump -ni tun-asus "host 10.89.0.3 and src port 443" -c 5'
 ```
 
+If the whole apartment/full-tunnel path drops while services are still `active`, also check conntrack saturation:
+
+```bash
+ssh vibe-practicum 'cat /proc/sys/net/netfilter/nf_conntrack_count; cat /proc/sys/net/netfilter/nf_conntrack_max'
+ssh vibe-practicum 'journalctl -k --since "30 min ago" --no-pager | grep -E "nf_conntrack: table full|oom|killed process"'
+```
+
+See `docs/VPS_CONNTRACK_INCIDENT.md` for the 2026-05-16 live incident and sysctl fix.
+
 Success evidence from the live fix:
 
 ```text
