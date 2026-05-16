@@ -74,6 +74,29 @@ Success evidence from the live fix:
 149.154.167.50.443 > 10.89.0.3.<port>  # Telegram replies on tun-asus
 ```
 
+## Dynamic-pool friend profiles
+
+For one-off phone/laptop profiles for friends, use the reusable generator instead of hand-assembling `.ovpn` files:
+
+```bash
+PUBLIC_ENDPOINT=45.12.74.211 \
+OUT_DIR=/home/kcnc/vibe-openvpn-asus-profile \
+  ./scripts/openvpn-asus-pool-tproxy-profile.sh --export friend-phone
+```
+
+The script:
+
+- creates/reuses EasyRSA client credentials for the chosen CN;
+- writes CCD pushes for DNS and `redirect-gateway def1 bypass-dhcp`;
+- intentionally does **not** write `ifconfig-push`, so OpenVPN assigns from `10.89.0.20-10.89.0.254`;
+- exports a single embedded `.ovpn` with mode `0600`;
+- validates that `<ca>`, `<cert>`, `<key>`, and `<tls-auth>` blocks are present and not redacted;
+- never intentionally prints private key/profile contents.
+
+Use a unique CN per person/device, e.g. `misha-phone`, `dima-laptop`. Do not use reserved CNs `asus` or `asus-tproxy`.
+
+Prerequisite: the live/persistent `vibe-openvpn-asus-rules` dynamic-pool capture must exist for `10.89.0.20-10.89.0.254`, with the matching INPUT accept for mark `0x1`.
+
 ## Persistence
 
 Patch `/usr/local/sbin/vibe-openvpn-asus-rules` or run:

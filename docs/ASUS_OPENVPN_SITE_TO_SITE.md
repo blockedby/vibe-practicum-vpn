@@ -68,7 +68,7 @@ This is the canonical live allocation map for `tun-asus` / `10.89.0.0/24`:
 | `10.89.0.2` | ASUS router CN `asus` | Site-to-site / direct NAT / ASUS LAN bridge; do **not** capture into the TPROXY canary by default |
 | `10.89.0.3` | CN `asus-tproxy` | Current phone canary through `VIBE_OVPN_ASUS_TP -> sing-box :2082 -> xray` |
 | `10.89.0.4`-`10.89.0.19` | Reserved future fixed TPROXY clients | Intended for additional per-device OpenVPN profiles that should use sing-box/xray |
-| `10.89.0.20`-`10.89.0.254` | OpenVPN dynamic pool | Ordinary/dynamic clients from `ifconfig-pool`; do not assign fixed CCD clients here |
+| `10.89.0.20`-`10.89.0.254` | OpenVPN dynamic pool | Friend/phone/laptop profiles; server-assigned IPs captured into `VIBE_OVPN_ASUS_TP -> sing-box :2082 -> xray`; do not assign fixed CCD clients here |
 | `192.168.50.0/24` | ASUS LAN behind CN `asus` | Routed via `10.89.0.2` for private LAN reachability |
 
 Why this split exists:
@@ -91,6 +91,7 @@ scripts/openvpn-asus-install.sh
 scripts/openvpn-asus-status.sh
 scripts/openvpn-asus-rollback.sh
 scripts/openvpn-asus-profile.sh
+scripts/openvpn-asus-pool-tproxy-profile.sh
 ```
 
 Remote files created by apply mode:
@@ -186,6 +187,7 @@ prerequisites and the target path only:
 
 ```bash
 ./scripts/openvpn-asus-profile.sh
+./scripts/openvpn-asus-pool-tproxy-profile.sh
 ```
 
 Export only when the VPS materials have been generated and you are ready to store
@@ -204,6 +206,27 @@ unset VIBE_PRACTICUM_SUDO_PASSWORD
 The generated file is `OUT_DIR/asus-vibe-practicum.ovpn` with mode `0600` for
 the default `OPENVPN_CLIENT_CN=asus`. Stdout says `secret_material: not printed`
 and never echoes the embedded key or certificates.
+
+## Dynamic-pool TPROXY profile export for friends/devices
+
+Use this for new phones/laptops that should full-tunnel through the shared sing-box/xray path without reserving a fixed VPN IP:
+
+```bash
+PUBLIC_ENDPOINT=45.12.74.211 \
+OUT_DIR=/home/kcnc/vibe-openvpn-asus-profile \
+  ./scripts/openvpn-asus-pool-tproxy-profile.sh --export friend-phone
+```
+
+Behavior:
+
+- generated profile is `OUT_DIR/<cn>-vibe-practicum-pool-tproxy.ovpn`;
+- output mode is `0600`;
+- private key/profile contents are not printed;
+- server CCD pushes Google DNS and `redirect-gateway def1 bypass-dhcp`;
+- no `ifconfig-push` is written, so clients receive `10.89.0.20`-`10.89.0.254`;
+- those pool IPs are routed by the persistent dynamic-pool TPROXY rules.
+
+Pick one stable CN per person/device (`name-phone`, `name-laptop`) and send the `.ovpn` as a file attachment only.
 
 To export the default direct-client profile instead:
 
@@ -362,7 +385,8 @@ Before opening a PR or issue update, run only local/non-live validation:
 
 ```bash
 bash -n scripts/openvpn-asus-install.sh scripts/openvpn-asus-status.sh \
-  scripts/openvpn-asus-rollback.sh scripts/openvpn-asus-profile.sh
+  scripts/openvpn-asus-rollback.sh scripts/openvpn-asus-profile.sh \
+  scripts/openvpn-asus-pool-tproxy-profile.sh
 
 command -v shellcheck >/dev/null && shellcheck scripts/openvpn-asus-*.sh || true
 
@@ -371,6 +395,7 @@ grep -R "vibe-vpn-openvpn-asus" scripts docs/ASUS_OPENVPN_SITE_TO_SITE.md
 ./scripts/openvpn-asus-install.sh
 ./scripts/openvpn-asus-rollback.sh
 ./scripts/openvpn-asus-profile.sh
+./scripts/openvpn-asus-pool-tproxy-profile.sh
 ```
 
 Do not run local validation with `OPENVPN_ASUS_APPLY=1` or
