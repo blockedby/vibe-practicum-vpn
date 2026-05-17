@@ -94,6 +94,20 @@
       },
       {
         "domain_suffix": [
+          "youtube.com",
+          "youtube-nocookie.com",
+          "youtu.be",
+          "yt.be",
+          "googlevideo.com",
+          "ytimg.com",
+          "youtubei.googleapis.com",
+          "youtube.googleapis.com",
+          "youtubeembeddedplayer.googleapis.com"
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "domain_suffix": [
           "steamcontent.com",
           "steampowered.com",
           "steamstatic.com",
