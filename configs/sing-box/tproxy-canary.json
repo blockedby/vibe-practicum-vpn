@@ -107,6 +107,22 @@
         "outbound": "direct-out"
       },
       {
+        "rule_set": "geosite-kinopoisk",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geosite-yandex",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geoip-yandex",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geosite-category-entertainment-ru",
+        "outbound": "direct-out"
+      },
+      {
         "domain_suffix": [
           "steamcontent.com",
           "steampowered.com",
@@ -183,6 +199,34 @@
         "tag": "geosite-steam",
         "format": "binary",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-steam.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-kinopoisk",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-kinopoisk.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-yandex",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-yandex.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geoip-yandex",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-yandex.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-category-entertainment-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-entertainment-ru.srs",
         "download_detour": "direct-out"
       }
     ]
