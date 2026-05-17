@@ -153,21 +153,15 @@ func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) 
 	if err != nil {
 		return err
 	}
-	var links []string
-	subURLb, err := os.ReadFile(c.SubscriptionFile)
+	links, warnings, err := loadSubscriptionLinks(c)
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "WARN %v\n", w)
+	}
 	if err != nil {
 		if len(extra) == 0 {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "WARN subscription unavailable: %v; testing extra nodes only\n", err)
-	} else {
-		links, err = subscription.Fetch(stringTrim(string(subURLb)), time.Duration(c.TimeoutSeconds)*time.Second)
-		if err != nil {
-			if len(extra) == 0 {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "WARN subscription fetch failed: %v; testing extra nodes only\n", err)
-		}
 	}
 	type candidate struct {
 		idx  int
@@ -465,18 +459,20 @@ func cmdRollback(o *cliOptions) error {
 	}
 	return err
 }
-func stringTrim(s string) string {
-	for len(s) > 0 && (s[0] == '\n' || s[0] == '\r' || s[0] == ' ' || s[0] == '\t') {
-		s = s[1:]
+func loadSubscriptionLinks(c config.Config) ([]string, []error, error) {
+	b, err := os.ReadFile(c.SubscriptionFile)
+	if err != nil {
+		return nil, nil, err
 	}
-	for len(s) > 0 {
-		c := s[len(s)-1]
-		if c != '\n' && c != '\r' && c != ' ' && c != '\t' {
-			break
-		}
-		s = s[:len(s)-1]
+	urls := subscription.URLList(string(b))
+	if len(urls) == 0 {
+		return nil, nil, fmt.Errorf("%s contains no subscription URLs", c.SubscriptionFile)
 	}
-	return s
+	links, warnings := subscription.FetchMany(urls, time.Duration(c.TimeoutSeconds)*time.Second)
+	if len(links) == 0 && len(warnings) > 0 {
+		return nil, warnings, fmt.Errorf("all %d subscription URLs failed", len(urls))
+	}
+	return links, warnings, nil
 }
 
 func sortedOK(results []picker.NodeResult) []picker.NodeResult {
@@ -643,21 +639,15 @@ func cmdRefresh(o *cliOptions) error {
 	if err != nil {
 		return err
 	}
-	var links []string
-	u, err := os.ReadFile(c.SubscriptionFile)
+	links, warnings, err := loadSubscriptionLinks(c)
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "WARN %v\n", w)
+	}
 	if err != nil {
 		if len(extra) == 0 {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "WARN subscription unavailable: %v; showing extra nodes only\n", err)
-	} else {
-		links, err = subscription.Fetch(stringTrim(string(u)), time.Duration(c.TimeoutSeconds)*time.Second)
-		if err != nil {
-			if len(extra) == 0 {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "WARN subscription fetch failed: %v; showing extra nodes only\n", err)
-		}
 	}
 	counts := map[string]int{}
 	for _, l := range links {

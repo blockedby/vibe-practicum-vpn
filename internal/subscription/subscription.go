@@ -2,12 +2,49 @@ package subscription
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
+
+func URLList(s string) []string {
+	s = strings.ReplaceAll(s, "\r", "\n")
+	out := []string{}
+	for _, l := range strings.Split(s, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+func FetchMany(rawURLs []string, timeout time.Duration) ([]string, []error) {
+	out := []string{}
+	errs := []error{}
+	for i, rawURL := range rawURLs {
+		links, err := Fetch(rawURL, timeout)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("subscription %d fetch failed: %s", i+1, safeFetchError(err)))
+			continue
+		}
+		out = append(out, links...)
+	}
+	return out, errs
+}
+
+func safeFetchError(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		return urlErr.Err.Error()
+	}
+	return err.Error()
+}
 
 func Fetch(rawURL string, timeout time.Duration) ([]string, error) {
 	cl := http.Client{Timeout: timeout}

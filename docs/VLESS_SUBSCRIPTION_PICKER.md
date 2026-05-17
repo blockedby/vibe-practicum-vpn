@@ -15,7 +15,7 @@ Default state/config paths:
 
 ```text
 /etc/vibe-vpn/config.json       # optional CLI config
-/etc/vibe-vpn/sub_url           # root-only subscription URL
+/etc/vibe-vpn/sub_url           # root-only subscription URL(s), one per line
 /etc/vibe-vpn/extra-nodes.json  # optional root-only static nodes
 /var/lib/vibe-vpn/last-results.json
 /var/lib/vibe-vpn/current-node.json
@@ -23,6 +23,8 @@ Default state/config paths:
 /var/lib/vibe-vpn/backups/      # xray config backups for rollback
 /usr/local/etc/xray/config.json # production xray config
 ```
+
+`sub_url` can contain either the legacy single subscription URL or several URLs, one per line. Empty lines and lines starting with `#` are ignored; fetched VLESS links are concatenated before filtering/testing.
 
 Example optional config (`/etc/vibe-vpn/config.json`):
 

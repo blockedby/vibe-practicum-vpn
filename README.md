@@ -99,7 +99,7 @@ sudo install -o root -g root -m 755 /tmp/vibe-vpn /usr/local/bin/vibe-vpn
 ### VPS files
 
 ```text
-/etc/vibe-vpn/sub_url                 # root-only subscription URL, not in git
+/etc/vibe-vpn/sub_url                 # root-only subscription URL(s), one per line, not in git
 /etc/vibe-vpn/extra-nodes.json        # optional root-only static nodes, not in git
 /etc/vibe-vpn/lil-sweden-hy2-auth     # Hysteria auth secret, not in git
 /etc/vibe-vpn/config.json             # optional config override
@@ -236,7 +236,7 @@ client device
 ## Security notes
 
 - Do not commit subscription URLs or full `vless://` secrets.
-- Keep `/etc/vibe-vpn/sub_url` mode `0600`.
+- Keep `/etc/vibe-vpn/sub_url` mode `0600`; it may contain multiple subscription URLs, one per line (`#` comments and empty lines are ignored).
 - `vibe-vpn test` is safe for live usage; `vibe-vpn pick` changes production only after the winner is selected.
 
 ## vibe-vpn CLI
