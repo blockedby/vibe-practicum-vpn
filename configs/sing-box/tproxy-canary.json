@@ -89,7 +89,11 @@
         "outbound": "direct-out"
       },
       {
-        "rule_set": "geosite-steam",
+        "rule_set": [
+          "geosite-steam",
+          "geosite-category-games",
+          "geosite-game-platforms-download"
+        ],
         "outbound": "direct-out"
       },
       {
@@ -132,10 +136,17 @@
           "steamusercontent.com",
           "steamcommunity.com",
           "steam-chat.com",
+          "steam-api.com",
           "steam.tv",
+          "s.team",
+          "steamdeck.com",
+          "steamchina.com",
           "valvesoftware.com",
           "valve.net",
-          "dota2.com"
+          "dota2.com",
+          "historyofdota.com",
+          "historyofdota.net",
+          "historyofdota.org"
         ],
         "outbound": "direct-out"
       },
@@ -199,6 +210,20 @@
         "tag": "geosite-steam",
         "format": "binary",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-steam.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-category-games",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-games.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-game-platforms-download",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-game-platforms-download.srs",
         "download_detour": "direct-out"
       },
       {
