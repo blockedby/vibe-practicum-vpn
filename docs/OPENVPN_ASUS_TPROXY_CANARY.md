@@ -59,6 +59,8 @@ iptables -t filter -I INPUT 1 \
 
 `VIBE_OVPN_ASUS_TP` bypasses private/special ranges, then TPROXYs TCP/UDP to `:2082` with mark `0x1/0x1`.
 
+Nested VPN exception: Proofix work VPN (`185.241.192.190:1194/udp`, `vpn.proofix.tv`) must be a scoped `RETURN` before the generic UDP TPROXY rule, otherwise OpenVPN-over-OpenVPN can fail when the outer packet is sent through sing-box/xray instead of direct routing/NAT.
+
 ## Verification commands
 
 ```bash
@@ -114,10 +116,12 @@ Patch `/usr/local/sbin/vibe-openvpn-asus-rules` or run:
 scripts/openvpn-asus-tproxy-canary-rules.sh --apply-live
 ```
 
-The persistent state must recreate both:
+The persistent state must recreate:
 
 - `VIBE_OVPN_ASUS_TP` + exact `10.89.0.3/32` PREROUTING rule;
-- scoped INPUT ACCEPT for `tun-asus + 10.89.0.3/32 + mark 0x1/0x1`.
+- scoped INPUT ACCEPT for `tun-asus + 10.89.0.3/32 + mark 0x1/0x1`;
+- Proofix nested-VPN bypass before UDP TPROXY:
+  `-p udp -d 185.241.192.190/32 --dport 1194 -j RETURN`.
 
 ## Rollback
 

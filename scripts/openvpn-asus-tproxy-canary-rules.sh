@@ -53,6 +53,17 @@ if ! ip route show table "$TABLE" | grep -Eq '^local (default|0\.0\.0\.0/0)'; th
 fi
 
 iptables -t mangle -N "$CHAIN" 2>/dev/null || true
+
+# Proofix work VPN is itself OpenVPN over UDP/1194. If it is captured into
+# sing-box/xray TPROXY, the nested VPN handshake can fail. Keep this scoped
+# bypass before the generic UDP TPROXY rule so it is routed/NATed directly.
+PROOFIX_OPENVPN_DST="${PROOFIX_OPENVPN_DST:-185.241.192.190}"
+PROOFIX_OPENVPN_PORT="${PROOFIX_OPENVPN_PORT:-1194}"
+PROOFIX_OPENVPN_COMMENT="${COMMENT_PREFIX}tproxy:bypass:proofix-openvpn-udp1194"
+if ! iptables -t mangle -C "$CHAIN" -p udp -d "$PROOFIX_OPENVPN_DST/32" --dport "$PROOFIX_OPENVPN_PORT" -m comment --comment "$PROOFIX_OPENVPN_COMMENT" -j RETURN 2>/dev/null; then
+  iptables -t mangle -I "$CHAIN" 1 -p udp -d "$PROOFIX_OPENVPN_DST/32" --dport "$PROOFIX_OPENVPN_PORT" -m comment --comment "$PROOFIX_OPENVPN_COMMENT" -j RETURN
+fi
+
 for cidr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 240.0.0.0/4; do
   ensure_mangle_rule "$CHAIN" -d "$cidr" -m comment --comment "${COMMENT_PREFIX}tproxy:bypass:${cidr}" -j RETURN
 done
