@@ -117,3 +117,57 @@ func splitCSV(s string) []string {
 	return out
 }
 func (n Node) OutboundJSON() json.RawMessage { b, _ := json.Marshal(n.Outbound); return b }
+
+// SingBoxOutbound converts a supported VLESS share link into a sing-box VLESS
+// outbound. Node.Outbound intentionally remains the xray/V2Ray schema used by
+// isolated benchmark tests and explicit xray runtime support.
+func SingBoxOutbound(link string) (map[string]any, error) {
+	n, err := Parse(link)
+	if err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(strings.TrimSpace(link))
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	out := map[string]any{"type": "vless", "server": n.Host, "server_port": n.Port, "uuid": u.User.Username()}
+	if flow := q.Get("flow"); flow != "" {
+		out["flow"] = flow
+	}
+	switch n.Security {
+	case "tls", "reality":
+		tls := map[string]any{"enabled": true, "server_name": first(q.Get("sni"), q.Get("serverName"), n.Host)}
+		if alpn := splitCSV(q.Get("alpn")); len(alpn) > 0 {
+			tls["alpn"] = alpn
+		}
+		if fp := q.Get("fp"); fp != "" {
+			tls["utls"] = map[string]any{"enabled": true, "fingerprint": fp}
+		}
+		if n.Security == "reality" {
+			publicKey := first(q.Get("pbk"), q.Get("publicKey"))
+			if publicKey == "" {
+				return nil, fmt.Errorf("reality link missing public key")
+			}
+			tls["reality"] = map[string]any{"enabled": true, "public_key": publicKey, "short_id": first(q.Get("sid"), q.Get("shortId"))}
+		}
+		out["tls"] = tls
+	case "none":
+	default:
+		return nil, fmt.Errorf("unsupported vless security %q", n.Security)
+	}
+	switch n.Network {
+	case "tcp":
+	case "ws":
+		transport := map[string]any{"type": "ws", "path": first(q.Get("path"), "/")}
+		if h := q.Get("host"); h != "" {
+			transport["headers"] = map[string]any{"Host": h}
+		}
+		out["transport"] = transport
+	case "grpc":
+		out["transport"] = map[string]any{"type": "grpc", "service_name": first(q.Get("serviceName"), q.Get("service_name"))}
+	default:
+		return nil, fmt.Errorf("unsupported vless transport %q", n.Network)
+	}
+	return out, nil
+}
