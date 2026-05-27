@@ -184,6 +184,7 @@ Flag notes:
 See the full design and operational notes:
 
 - [`docs/VLESS_SUBSCRIPTION_PICKER.md`](./docs/VLESS_SUBSCRIPTION_PICKER.md)
+- [`docs/FAILOVER_SERVICE_RUNBOOK.md`](./docs/FAILOVER_SERVICE_RUNBOOK.md) — install/enable/status/logs/smoke/rollback runbook for the long-lived `vibe-vpn` failover service.
 
 ## IKEv2 canary workflow
 

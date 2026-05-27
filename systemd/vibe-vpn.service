@@ -1,0 +1,15 @@
+[Unit]
+Description=Vibe VPN failover daemon
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/vibe-vpn daemon --config /etc/vibe-vpn/config.yaml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

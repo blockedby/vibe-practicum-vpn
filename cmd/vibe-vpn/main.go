@@ -7,15 +7,20 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kcnc/vibe-practicum-vpn/internal/config"
 	"github.com/kcnc/vibe-practicum-vpn/internal/extranodes"
+	"github.com/kcnc/vibe-practicum-vpn/internal/failover"
+	"github.com/kcnc/vibe-practicum-vpn/internal/logging"
 	"github.com/kcnc/vibe-practicum-vpn/internal/nettest"
 	"github.com/kcnc/vibe-practicum-vpn/internal/picker"
+	"github.com/kcnc/vibe-practicum-vpn/internal/service"
 	"github.com/kcnc/vibe-practicum-vpn/internal/state"
 	"github.com/kcnc/vibe-practicum-vpn/internal/subscription"
 	"github.com/kcnc/vibe-practicum-vpn/internal/vless"
@@ -122,8 +127,35 @@ func newRootCommand() *cobra.Command {
 	prune.Flags().Bool("dry-run", false, "show what would be removed without deleting")
 	prune.Flags().Int("keep", 10, "number of newest backups to keep")
 	root.AddCommand(prune)
+	root.AddCommand(&cobra.Command{Use: "daemon", Short: "Run long-lived VPN health and failover service", RunE: func(cmd *cobra.Command, args []string) error { return cmdDaemon(o) }})
 	root.AddCommand(newIKEv2Command(o))
 	return root
+}
+
+func cmdDaemon(o *cliOptions) error {
+	c, err := loadConfig(o.configPath)
+	if err != nil {
+		return err
+	}
+	lg := logging.New(c.Logging.Path, c.Logging.AlsoJournal, os.Stdout)
+	tester := func(ctx context.Context) error { return runScheduledTest(o, c) }
+	apply := func(ctx context.Context, c config.Config, r picker.NodeResult) error { return applyResult(c, r) }
+	fo := service.BuildFailover(c, lg, failover.ApplyFunc(apply))
+	svc := service.New(c, lg, tester, fo)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return svc.Run(ctx)
+}
+
+func runScheduledTest(o *cliOptions, c config.Config) error {
+	path := filepath.Join(c.StateDir, "last-results.json")
+	old, readErr := os.ReadFile(path)
+	err := runTest(o, false, 0, 0, -1, false, false)
+	if err != nil && readErr == nil {
+		_ = os.MkdirAll(c.StateDir, 0700)
+		_ = os.WriteFile(path, old, 0600)
+	}
+	return err
 }
 
 func loadConfig(path string) (config.Config, error) {
