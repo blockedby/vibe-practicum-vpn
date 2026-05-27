@@ -5,7 +5,7 @@ REPORT_PATH: docs/plans/2026-05-27-stack-pr7-readme-update/reports/aad-implement
 PROGRESS_PATH: docs/plans/2026-05-27-stack-pr7-readme-update/progress/aad-implementer-readme.md
 COMMITS:
 - 1f3cd15a4b5f1698d8524b5b04c6540c1a562bc2: Merge PR7 fastest rotation mode into docs branch
-- pending local commit after this report write: README usage docs and task-package verification/report updates
+- a7c6b1077ed1e8075de4977a2344c6d339380191: docs: rewrite README usage guide
 FILES_CHANGED:
 - README.md: rewrote into concise command-heavy usage docs with local checks/build, VPS install/validation/run/rollback commands, paths, and service modes.
 - cmd/vibe-vpn/main.go, internal/config/config.go, internal/failover/failover.go, internal/service/service.go: integrated PR7 fastest-rotation service-mode content via merge.

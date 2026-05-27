@@ -8,3 +8,4 @@
 - 2026-05-27: Verification pass 1 succeeded: `git merge-base --is-ancestor origin/feature/fastest-rotation-mode HEAD`, README required-term grep, and `go test ./...`.
 - 2026-05-27: `go vet ./...` completed successfully; running build and service asset static checks next.
 - 2026-05-27: Wrote `verification/local.md` and implementation report. Preparing local commit for README/task-package updates.
+- 2026-05-27: Created local commit `a7c6b1077ed1e8075de4977a2344c6d339380191 docs: rewrite README usage guide`; updating report with exact commit SHA.
