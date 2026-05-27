@@ -44,7 +44,7 @@ vibe-vpn test
 
 ```text
 https://x.com/
-https://rutracker.org/
+https://www.linkedin.com/
 https://ya.ru/
 ```
 
@@ -58,7 +58,7 @@ https://ya.ru/
 health:
   required_urls:
     - https://x.com/
-    - https://rutracker.org/
+    - https://www.linkedin.com/
 
   diagnostic_urls:
     - https://ya.ru/
@@ -68,7 +68,7 @@ health:
 
 Используются для решения: надо ли переключать ноду.
 
-Если `x.com` и `rutracker.org` не открываются — считаем VPN-ноду плохой.
+Если `x.com` и `www.linkedin.com` не открываются — считаем VPN-ноду плохой.
 
 ### Diagnostic URLs
 
@@ -77,10 +77,10 @@ health:
 Примеры:
 
 ```text
-x.com fail, rutracker fail, ya.ru ok
+x.com fail, linkedin fail, ya.ru ok
 => интернет есть, но VPN плохо обходит блокировки
 
-x.com fail, rutracker fail, ya.ru fail
+x.com fail, linkedin fail, ya.ru fail
 => возможно умер SOCKS/xray/сеть целиком
 ```
 
@@ -188,7 +188,7 @@ health:
 
   required_urls:
     - https://x.com/
-    - https://rutracker.org/
+    - https://www.linkedin.com/
 
   diagnostic_urls:
     - https://ya.ru/
@@ -292,9 +292,9 @@ systemd/vibe-vpn.service
 7. URL проверяются асинхронно/параллельно.
 8. Проверяются:
    - `x.com`
-   - `rutracker.org`
+   - `www.linkedin.com`
    - `ya.ru`
-9. Для failover используются `x.com` и `rutracker.org`.
+9. Для failover используются `x.com` и `www.linkedin.com`.
 10. После первого fail запускается прогрессивная проверка:
     - через 1 секунду
     - через 2 секунды

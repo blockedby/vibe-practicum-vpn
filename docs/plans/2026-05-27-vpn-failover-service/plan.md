@@ -10,7 +10,7 @@ Implement the accepted plan in `docs/vpn-failover-service-plan.md` locally on th
 2. Unit has network-online ordering and `Restart=always`/`RestartSec=5` root service behavior.
 3. `vibe-vpn daemon --config /etc/vibe-vpn/config.yaml|json` entrypoint starts a long-running service and handles SIGTERM/SIGINT.
 4. Scheduled node test loop runs every 30m by default, optional startup test, never applies production node, logs errors without killing daemon, and preserves old `last-results.json`.
-5. Health probes run through production SOCKS/VPN, default every 5s, required URLs `https://x.com/` and `https://rutracker.org/`, diagnostic URL `https://ya.ru/`, URL checks parallel/asynchronous, timeout default 5s.
+5. Health probes run through production SOCKS/VPN, default every 5s, required URLs `https://x.com/` and `https://www.linkedin.com/`, diagnostic URL `https://ya.ru/`, URL checks parallel/asynchronous, timeout default 5s.
 6. Failover decision uses only required URLs; diagnostic URL is reported for diagnosis.
 7. Progressive failure confirmation runs after first failure with 1s, 2s, 3s delays and resets on recovery.
 8. Confirmed failure selects next fast working node from latest test results after current node, applies/restarts runtime, probes again, tries subsequent nodes on failure, logs critical and stays alive if exhausted.

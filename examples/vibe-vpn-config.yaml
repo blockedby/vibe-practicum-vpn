@@ -35,7 +35,7 @@ health:
   probe_timeout: 5s
   required_urls:
     - https://x.com/
-    - https://rutracker.org/
+    - https://www.linkedin.com/
   diagnostic_urls:
     - https://ya.ru/
 

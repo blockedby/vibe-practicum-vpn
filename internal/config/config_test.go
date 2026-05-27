@@ -38,7 +38,7 @@ func TestLoadServiceFoundationDefaults(t *testing.T) {
 	if got := c.Health.FailureRetryDelays; len(got) != 3 || got[0].Duration != time.Second || got[1].Duration != 2*time.Second || got[2].Duration != 3*time.Second {
 		t.Fatalf("retry defaults wrong: %+v", got)
 	}
-	if len(c.Health.RequiredURLs) != 2 || c.Health.RequiredURLs[0] != "https://x.com/" || c.Health.RequiredURLs[1] != "https://rutracker.org/" {
+	if len(c.Health.RequiredURLs) != 2 || c.Health.RequiredURLs[0] != "https://x.com/" || c.Health.RequiredURLs[1] != "https://www.linkedin.com/" {
 		t.Fatalf("required defaults wrong: %+v", c.Health.RequiredURLs)
 	}
 	if len(c.Health.DiagnosticURLs) != 1 || c.Health.DiagnosticURLs[0] != "https://ya.ru/" {
@@ -65,7 +65,7 @@ health:
   probe_timeout: 5s
   required_urls:
     - https://x.com/
-    - https://rutracker.org/
+    - https://www.linkedin.com/
   diagnostic_urls:
     - https://ya.ru/
 logging:
@@ -87,7 +87,7 @@ logging:
 
 func TestLoadJSONFailoverServiceExample(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
-	body := `{"service":{"enabled":true,"startup_test":true},"test":{"interval":"30m"},"health":{"normal_interval":"5s","failure_retry_delays":["1s","2s","3s"],"probe_timeout":"5s","required_urls":["https://x.com/","https://rutracker.org/"],"diagnostic_urls":["https://ya.ru/"]},"logging":{"path":"/var/log/vibe-vpn/","retention":"12h","also_journal":true}}`
+	body := `{"service":{"enabled":true,"startup_test":true},"test":{"interval":"30m"},"health":{"normal_interval":"5s","failure_retry_delays":["1s","2s","3s"],"probe_timeout":"5s","required_urls":["https://x.com/","https://www.linkedin.com/"],"diagnostic_urls":["https://ya.ru/"]},"logging":{"path":"/var/log/vibe-vpn/","retention":"12h","also_journal":true}}`
 	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}

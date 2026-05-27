@@ -25,7 +25,7 @@
   - Evidence present: `internal/service/service.go`, `cmd/vibe-vpn/main.go`, `internal/service/service_test.go`
   - Result: passed
   - Gap: none
-- AC5: health probes run through production SOCKS/VPN, default every 5s, required URLs `x.com`/`rutracker.org`, diagnostic `ya.ru`, parallel/asynchronous, timeout 5s
+- AC5: health probes run through production SOCKS/VPN, default every 5s, required URLs `x.com`/`www.linkedin.com`, diagnostic `ya.ru`, parallel/asynchronous, timeout 5s
   - Evidence present: `internal/health/health.go`, `internal/health/health_test.go`, `internal/config/config.go`
   - Result: passed
   - Gap: none

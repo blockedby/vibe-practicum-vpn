@@ -17,7 +17,7 @@
 ## Spec compliance
 - Config contracts/defaults: done.
   - Evidence: `internal/config/config.go`; tests in `internal/config/config_test.go`.
-  - Defaults: service enabled/startup test true; test interval 30m; health interval 5s, retry delays 1s/2s/3s, probe timeout 5s, required `https://x.com/` + `https://rutracker.org/`, diagnostic `https://ya.ru/`; logging `/var/log/vibe-vpn/`, retention 12h, journal true.
+  - Defaults: service enabled/startup test true; test interval 30m; health interval 5s, retry delays 1s/2s/3s, probe timeout 5s, required `https://x.com/` + `https://www.linkedin.com/`, diagnostic `https://ya.ru/`; logging `/var/log/vibe-vpn/`, retention 12h, journal true.
 - JSON/YAML config examples: done.
   - Evidence: JSON and YAML tests; added `gopkg.in/yaml.v3`.
 - Health probes: done.

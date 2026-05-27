@@ -26,8 +26,8 @@
 5. Health through VPN/SOCKS: passed by implementation evidence; `health.NewRunner(c.ProductionSocks, ...)` in `internal/service` and Slice B report.
 6. Normal 5s checks: passed; config default/tests and sample config `normal_interval: 5s`.
 7. URL checks parallel/asynchronous: passed; `internal/health` tests/Slice A report.
-8. Checks x.com/rutracker/ya.ru: passed; defaults, examples, validation script.
-9. Failover uses x.com/rutracker required URLs: passed; `FailoverNeeded` only required URLs, Slice A report.
+8. Checks x.com/linkedin/ya.ru: passed; defaults, examples, validation script.
+9. Failover uses x.com/linkedin required URLs: passed; `FailoverNeeded` only required URLs, Slice A report.
 10. Progressive 1s/2s/3s confirmation: passed; config default/tests plus new `internal/service` timing tests.
 11. Switch after confirmed fail: passed; `internal/service/service_test.go` and Slice B report.
 12. Switch to next fast working node: passed; `internal/failover/failover_test.go`, Slice B report.

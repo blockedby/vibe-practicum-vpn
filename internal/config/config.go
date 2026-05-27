@@ -149,7 +149,7 @@ func Default() Config {
 			NormalInterval:     NewDuration(5 * time.Second),
 			FailureRetryDelays: []Duration{NewDuration(time.Second), NewDuration(2 * time.Second), NewDuration(3 * time.Second)},
 			ProbeTimeout:       NewDuration(5 * time.Second),
-			RequiredURLs:       []string{"https://x.com/", "https://rutracker.org/"},
+			RequiredURLs:       []string{"https://x.com/", "https://www.linkedin.com/"},
 			DiagnosticURLs:     []string{"https://ya.ru/"},
 		},
 		Logging: LoggingConfig{Path: "/var/log/vibe-vpn/", Retention: NewDuration(12 * time.Hour), AlsoJournal: true},

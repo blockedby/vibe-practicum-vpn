@@ -11,7 +11,7 @@ func TestRunnerParallelAndDiagnosticNotDecisive(t *testing.T) {
 	start := make(chan struct{})
 	var seenMu sync.Mutex
 	seen := 0
-	r := Runner{SocksAddr: "127.0.0.1:10808", RequiredURLs: []string{"https://x.com/", "https://rutracker.org/"}, DiagnosticURLs: []string{"https://ya.ru/"}, Timeout: 5 * time.Second}
+	r := Runner{SocksAddr: "127.0.0.1:10808", RequiredURLs: []string{"https://x.com/", "https://www.linkedin.com/"}, DiagnosticURLs: []string{"https://ya.ru/"}, Timeout: 5 * time.Second}
 	r.Probe = func(ctx context.Context, socks, u string, timeout time.Duration) ProbeResult {
 		if socks != r.SocksAddr {
 			t.Errorf("unexpected socks %s", socks)
