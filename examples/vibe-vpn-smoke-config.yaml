@@ -5,9 +5,9 @@ runtime: singbox
 sing_box_bin: /usr/bin/sing-box
 sing_box_config: /etc/sing-box-vibe/tproxy-canary.json
 sing_box_service: sing-box-vibe-router
-# Temporary benchmark tests may use isolated xray on test_socks only.
+# Temporary benchmark tests use isolated sing-box on test_socks by default.
 xray_bin: /usr/local/bin/xray
-# Legacy production xray config is used only when runtime: xray is explicitly set.
+# xray_bin/xray_config are used only when runtime: xray is explicitly set.
 xray_config: /usr/local/etc/xray/config.json
 state_dir: /var/lib/vibe-vpn
 production_socks: 127.0.0.1:2080

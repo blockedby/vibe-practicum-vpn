@@ -59,7 +59,7 @@ func newRootCommand() *cobra.Command {
 		cmd.Flags().Lookup("no-default-exclude").NoOptDefVal = "false"
 	}
 
-	test := &cobra.Command{Use: "test", Short: "Benchmark subscription nodes with isolated temporary xray; no production changes", RunE: func(cmd *cobra.Command, args []string) error {
+	test := &cobra.Command{Use: "test", Short: "Benchmark subscription nodes with isolated temporary sing-box by default; no production changes", RunE: func(cmd *cobra.Command, args []string) error {
 		max, _ := cmd.Flags().GetInt("max")
 		lim, _ := cmd.Flags().GetInt("limit-kib")
 		verbose, _ := cmd.Flags().GetBool("verbose")
@@ -71,7 +71,7 @@ func newRootCommand() *cobra.Command {
 	test.Flags().Int("limit-kib", 0, "test KiB")
 	test.Flags().Int("duration-sec", -1, "download duration per node in seconds; 0 disables duration mode")
 	test.Flags().Bool("verbose", false, "print every node while testing")
-	test.Flags().Bool("debug", false, "show temporary xray logs")
+	test.Flags().Bool("debug", false, "show temporary benchmark backend logs")
 	addFilters(test)
 	root.AddCommand(test)
 
@@ -87,7 +87,7 @@ func newRootCommand() *cobra.Command {
 	pick.Flags().Int("limit-kib", 0, "test KiB")
 	pick.Flags().Int("duration-sec", -1, "download duration per node in seconds; 0 disables duration mode")
 	pick.Flags().Bool("verbose", false, "print every node while testing")
-	pick.Flags().Bool("debug", false, "show temporary xray logs")
+	pick.Flags().Bool("debug", false, "show temporary benchmark backend logs")
 	addFilters(pick)
 	root.AddCommand(pick)
 
@@ -120,7 +120,7 @@ func newRootCommand() *cobra.Command {
 	logs.Flags().Int("failed", 10, "number of failed results to show")
 	logs.Flags().Bool("json", false, "print raw last-results JSON")
 	root.AddCommand(logs)
-	prune := &cobra.Command{Use: "prune", Short: "Prune stale temporary xray benchmark configs and old runtime backups", RunE: func(cmd *cobra.Command, args []string) error {
+	prune := &cobra.Command{Use: "prune", Short: "Prune stale temporary benchmark backend configs and old runtime backups", RunE: func(cmd *cobra.Command, args []string) error {
 		dry, _ := cmd.Flags().GetBool("dry-run")
 		keep, _ := cmd.Flags().GetInt("keep")
 		return cmdPrune(o, dry, keep)
@@ -230,8 +230,8 @@ func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) 
 		return fmt.Errorf("no nodes match filters")
 	}
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
-		if n := cleanupStaleTestXray(); n > 0 {
-			fmt.Printf("Test SOCKS address %s is busy; cleaned up %d stale temporary xray process(es).\n", c.TestSocks, n)
+		if n := cleanupStaleTestBackends(); n > 0 {
+			fmt.Printf("Test SOCKS address %s is busy; cleaned up %d stale temporary benchmark backend process(es).\n", c.TestSocks, n)
 			time.Sleep(300 * time.Millisecond)
 		}
 	}
@@ -300,28 +300,14 @@ func testOne(c config.Config, n vless.Node, debug bool) (nettest.Result, error) 
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
 		return nettest.Result{}, fmt.Errorf("test SOCKS address %s became busy during run", c.TestSocks)
 	}
-	b, err := xray.TempConfig(n.Outbound, c.TestSocks)
+	backend, err := tempBenchmarkBackend(c, n)
 	if err != nil {
 		return nettest.Result{}, err
 	}
-	f, err := os.CreateTemp("", "vibe-vpn-xray-*.json")
-	if err != nil {
-		return nettest.Result{}, err
-	}
-	path := f.Name()
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		os.Remove(path)
-		return nettest.Result{}, err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(path)
-		return nettest.Result{}, err
-	}
-	defer os.Remove(path)
+	defer os.Remove(backend.configPath)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := exec.CommandContext(ctx, c.XrayBin, "run", "-config", path)
+	cmd := exec.CommandContext(ctx, backend.bin, backend.args...)
 	if debug {
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
@@ -338,6 +324,76 @@ func testOne(c config.Config, n vless.Node, debug bool) (nettest.Result, error) 
 	}
 	return nettest.Download(c.TestSocks, c.TestURL, int64(c.TestLimitKiB)*1024, time.Duration(c.TimeoutSeconds)*time.Second)
 }
+
+type benchmarkBackend struct {
+	bin        string
+	args       []string
+	configPath string
+}
+
+func tempBenchmarkBackend(c config.Config, n vless.Node) (benchmarkBackend, error) {
+	if normalizedRuntime(c) == "xray" {
+		b, err := xray.TempConfig(n.Outbound, c.TestSocks)
+		if err != nil {
+			return benchmarkBackend{}, err
+		}
+		path, err := writeTempBenchmarkConfig("vibe-vpn-xray-*.json", b)
+		if err != nil {
+			return benchmarkBackend{}, err
+		}
+		return benchmarkBackend{bin: c.XrayBin, args: []string{"run", "-config", path}, configPath: path}, nil
+	}
+	b, err := singBoxTempConfig(n, c.TestSocks)
+	if err != nil {
+		return benchmarkBackend{}, err
+	}
+	path, err := writeTempBenchmarkConfig("vibe-vpn-singbox-*.json", b)
+	if err != nil {
+		return benchmarkBackend{}, err
+	}
+	return benchmarkBackend{bin: c.SingBoxBin, args: []string{"run", "-c", path}, configPath: path}, nil
+}
+
+func writeTempBenchmarkConfig(pattern string, b []byte) (string, error) {
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(path)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return "", err
+	}
+	return path, nil
+}
+
+func singBoxTempConfig(n vless.Node, socksAddr string) ([]byte, error) {
+	host, portText, err := net.SplitHostPort(socksAddr)
+	if err != nil {
+		return nil, err
+	}
+	var port int
+	if _, err := fmt.Sscanf(portText, "%d", &port); err != nil {
+		return nil, fmt.Errorf("invalid test_socks port %q: %w", portText, err)
+	}
+	out, err := vless.SingBoxOutbound(n.Link)
+	if err != nil {
+		return nil, err
+	}
+	out["tag"] = "benchmark-out"
+	cfg := map[string]any{
+		"log":       map[string]any{"level": "warn"},
+		"inbounds":  []any{map[string]any{"type": "socks", "tag": "test-socks", "listen": host, "listen_port": port}},
+		"outbounds": []any{out},
+		"route":     map[string]any{"final": "benchmark-out"},
+	}
+	return json.MarshalIndent(cfg, "", "  ")
+}
 func successThreshold(limitBytes int64) int64 {
 	if limitBytes <= 0 {
 		return 1
@@ -349,8 +405,16 @@ func successThreshold(limitBytes int64) int64 {
 	return maxThreshold
 }
 
-func cleanupStaleTestXray() int {
-	out, err := exec.Command("pgrep", "-f", "xray run -config /tmp/vibe-vpn-xray-").Output()
+func cleanupStaleTestXray() int { return cleanupStaleProcesses("xray run -config /tmp/vibe-vpn-xray-") }
+
+func cleanupStaleTestSingBox() int {
+	return cleanupStaleProcesses("sing-box run -c /tmp/vibe-vpn-singbox-")
+}
+
+func cleanupStaleTestBackends() int { return cleanupStaleTestSingBox() + cleanupStaleTestXray() }
+
+func cleanupStaleProcesses(pattern string) int {
+	out, err := exec.Command("pgrep", "-f", pattern).Output()
 	if err != nil {
 		return 0
 	}
@@ -392,7 +456,7 @@ func waitTCP(addr string, d time.Duration) error {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	return fmt.Errorf("temp xray did not open %s", addr)
+	return fmt.Errorf("temp benchmark backend did not open %s", addr)
 }
 func cmdStatus(o *cliOptions) error {
 	c, err := loadConfig(o.configPath)
@@ -851,28 +915,16 @@ func cmdPrune(o *cliOptions, dryRun bool, keep int) error {
 	if keep < 0 {
 		return fmt.Errorf("--keep must be non-negative")
 	}
-	killed := 0
+	killedSingBox, killedXray := 0, 0
 	if dryRun {
-		out, _ := exec.Command("pgrep", "-f", "xray run -config /tmp/vibe-vpn-xray-").Output()
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if strings.TrimSpace(line) != "" {
-				killed++
-			}
-		}
+		killedSingBox = countStaleProcesses("sing-box run -c /tmp/vibe-vpn-singbox-")
+		killedXray = countStaleProcesses("xray run -config /tmp/vibe-vpn-xray-")
 	} else {
-		killed = cleanupStaleTestXray()
+		killedSingBox = cleanupStaleTestSingBox()
+		killedXray = cleanupStaleTestXray()
 	}
-	files, _ := filepath.Glob(filepath.Join(os.TempDir(), "vibe-vpn-xray-*.json"))
-	removed := 0
-	cut := time.Now().Add(-24 * time.Hour)
-	for _, f := range files {
-		if st, err := os.Stat(f); err == nil && st.ModTime().Before(cut) {
-			removed++
-			if !dryRun {
-				_ = os.Remove(f)
-			}
-		}
-	}
+	removedSingBox := pruneTempFiles("vibe-vpn-singbox-*.json", dryRun)
+	removedXray := pruneTempFiles("vibe-vpn-xray-*.json", dryRun)
 	backs, _ := filepath.Glob(filepath.Join(c.StateDir, "backups", "xray-*.json"))
 	sort.Strings(backs)
 	brem := 0
@@ -888,6 +940,35 @@ func cmdPrune(o *cliOptions, dryRun bool, keep int) error {
 	if dryRun {
 		prefix = "would_remove"
 	}
-	fmt.Printf("%s: stale_xray=%d temp_files=%d backups=%d keep=%d\n", prefix, killed, removed, brem, keep)
+	fmt.Printf("%s: stale_singbox=%d stale_xray=%d singbox_temp_files=%d xray_temp_files=%d backups=%d keep=%d\n", prefix, killedSingBox, killedXray, removedSingBox, removedXray, brem, keep)
 	return nil
+}
+
+func countStaleProcesses(pattern string) int {
+	out, err := exec.Command("pgrep", "-f", pattern).Output()
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.TrimSpace(line) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func pruneTempFiles(pattern string, dryRun bool) int {
+	files, _ := filepath.Glob(filepath.Join(os.TempDir(), pattern))
+	removed := 0
+	cut := time.Now().Add(-24 * time.Hour)
+	for _, f := range files {
+		if st, err := os.Stat(f); err == nil && st.ModTime().Before(cut) {
+			removed++
+			if !dryRun {
+				_ = os.Remove(f)
+			}
+		}
+	}
+	return removed
 }
