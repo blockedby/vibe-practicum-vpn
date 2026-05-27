@@ -68,6 +68,7 @@ type ServiceMode string
 const (
 	ServiceModeFailoverOnly    ServiceMode = "failover-only"
 	ServiceModeFastestRotation ServiceMode = "fastest-rotation"
+	DefaultServiceMode                     = ServiceModeFastestRotation
 )
 
 type ServiceConfig struct {
@@ -143,7 +144,7 @@ func Default() Config {
 		TestURL:          "https://proof.ovh.net/files/10Mb.dat",
 		TestLimitKiB:     512,
 		TimeoutSeconds:   12,
-		Service:          ServiceConfig{Enabled: true, StartupTest: true, Mode: ServiceModeFailoverOnly},
+		Service:          ServiceConfig{Enabled: true, StartupTest: true, Mode: DefaultServiceMode},
 		Test:             TestConfig{Interval: NewDuration(30 * time.Minute)},
 		Health: HealthConfig{
 			NormalInterval:     NewDuration(5 * time.Second),
@@ -179,6 +180,9 @@ func Load(path string) (Config, error) {
 	}
 	if err != nil {
 		return c, err
+	}
+	if c.Service.Mode == "" {
+		c.Service.Mode = DefaultServiceMode
 	}
 	if c.IKEv2 != nil {
 		c.IKEv2.ApplyDefaults()
@@ -284,7 +288,7 @@ func (c Config) Validate() error {
 	if !c.Service.Enabled { /* explicit disabled service is valid */
 	}
 	if c.Service.Mode == "" {
-		c.Service.Mode = ServiceModeFailoverOnly
+		c.Service.Mode = DefaultServiceMode
 	}
 	if c.Service.Mode != ServiceModeFailoverOnly && c.Service.Mode != ServiceModeFastestRotation {
 		return fmt.Errorf("service.mode must be %q or %q", ServiceModeFailoverOnly, ServiceModeFastestRotation)

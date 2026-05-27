@@ -115,7 +115,7 @@ func TestCheckHealthProgressiveConfirmationResetsOnRecovery(t *testing.T) {
 	}
 }
 
-func TestRunTestDefaultModeDoesNotRotateAfterSuccess(t *testing.T) {
+func TestRunTestFailoverOnlyModeDoesNotRotateAfterSuccess(t *testing.T) {
 	c := testConfig()
 	c.Service.Mode = config.ServiceModeFailoverOnly
 	tests := 0

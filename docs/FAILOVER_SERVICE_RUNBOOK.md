@@ -46,9 +46,9 @@ sudo vibe-vpn apply <index>
 sudo vibe-vpn rollback
 ```
 
-`test` never applies production changes. In the default daemon mode (`service.mode: failover-only`), the scheduled test loop uses the same safe non-apply path: startup/scheduled benchmarks refresh results, and only confirmed production health failure triggers failover.
+`test` never applies production changes. In the default daemon mode (`service.mode: fastest-rotation`), each successful scheduled/startup test runs the configured production SOCKS health probe (`health.required_urls` determine failover health; `health.diagnostic_urls` are diagnostic), loads the fresh latest benchmark results, and applies the fastest OK non-excluded node even if health is currently OK. If that fastest node is already current by the normal current-node comparison, it skips apply. If the scheduled test fails and old results are restored/preserved, fastest rotation does not apply from those old results; the daemon logs the error and stays alive.
 
-Optional `service.mode: fastest-rotation` changes only the daemon scheduled-test success hook. After each successful scheduled/startup test, the daemon runs the configured production SOCKS health probe (`health.required_urls` determine failover health; `health.diagnostic_urls` are diagnostic), loads the fresh latest benchmark results, and applies the fastest OK non-excluded node even if health is currently OK. If that fastest node is already current by the normal current-node comparison, it skips apply. If the scheduled test fails and old results are restored/preserved, fastest rotation does not apply from those old results; the daemon logs the error and stays alive.
+Set `service.mode: failover-only` to opt out of default fastest rotation. In failover-only mode, the scheduled test loop uses the same safe non-apply path as manual `test`: startup/scheduled benchmarks refresh results, and only confirmed production health failure triggers failover.
 
 ## Config example
 
@@ -56,7 +56,7 @@ Optional `service.mode: fastest-rotation` changes only the daemon scheduled-test
 service:
   enabled: true
   startup_test: true
-  mode: failover-only # default; alternative: fastest-rotation
+  mode: fastest-rotation # default; opt out with failover-only
 
 test:
   interval: 30m
@@ -87,13 +87,13 @@ Full sample: [`examples/vibe-vpn-config.yaml`](../examples/vibe-vpn-config.yaml)
 
 Current `DefaultProbe` uses `nettest.Get`, which accepts only HTTP 2xx as a successful reachability result. HTTP 3xx redirects are therefore not OK today; keep redirect-prone URLs in `diagnostic_urls` unless you intentionally want their current non-2xx behavior to participate as a required failure. If `nettest` redirect/status handling changes later, update this runbook and tests with that contract change.
 
-Fastest-rotation example override:
+Failover-only opt-out override:
 
 ```yaml
 service:
   enabled: true
   startup_test: true
-  mode: fastest-rotation
+  mode: failover-only
 ```
 
 ## Accelerated manual smoke config

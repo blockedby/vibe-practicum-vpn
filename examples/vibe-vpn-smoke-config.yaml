@@ -19,7 +19,9 @@ timeout_seconds: 12
 service:
   enabled: true
   startup_test: true
-  mode: failover-only
+  # Default: rotate to the fastest OK non-excluded node after successful scheduled/startup tests.
+  # Set mode: failover-only to opt out and rotate only after confirmed health failure.
+  mode: fastest-rotation
 
 test:
   interval: 1m

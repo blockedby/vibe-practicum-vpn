@@ -22,9 +22,9 @@ timeout_seconds: 12
 service:
   enabled: true
   startup_test: true
-  # Default: scheduled tests never apply a node; only confirmed health failure triggers failover.
-  # Alternative: fastest-rotation applies the fastest OK non-excluded node after a successful scheduled test.
-  mode: failover-only
+  # Default: fastest-rotation applies the fastest OK non-excluded node after a successful scheduled/startup test.
+  # Opt out with failover-only to apply production changes only after confirmed health failure.
+  mode: fastest-rotation
 
 test:
   interval: 30m

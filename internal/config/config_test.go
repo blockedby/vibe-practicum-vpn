@@ -26,7 +26,7 @@ func TestLoadSnakeCaseOverridesDefaults(t *testing.T) {
 
 func TestLoadServiceFoundationDefaults(t *testing.T) {
 	c := Default()
-	if !c.Service.Enabled || !c.Service.StartupTest || c.Service.Mode != ServiceModeFailoverOnly {
+	if !c.Service.Enabled || !c.Service.StartupTest || c.Service.Mode != ServiceModeFastestRotation {
 		t.Fatalf("service defaults wrong: %+v", c.Service)
 	}
 	if c.Test.Interval.Duration != 30*time.Minute {
@@ -49,7 +49,7 @@ func TestLoadServiceFoundationDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadYAMLFailoverServiceExample(t *testing.T) {
+func TestLoadYAMLServiceExample(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.yaml")
 	body := []byte(`service:
   enabled: true
@@ -85,14 +85,48 @@ logging:
 	}
 }
 
-func TestLoadJSONFailoverServiceExample(t *testing.T) {
+func TestLoadJSONServiceExampleDefaultsMode(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
 	body := `{"service":{"enabled":true,"startup_test":true},"test":{"interval":"30m"},"health":{"normal_interval":"5s","failure_retry_delays":["1s","2s","3s"],"probe_timeout":"5s","required_urls":["https://x.com/","https://www.linkedin.com/"],"diagnostic_urls":["https://ya.ru/"]},"logging":{"path":"/var/log/vibe-vpn/","retention":"12h","also_journal":true}}`
 	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Load(p); err != nil {
+	c, err := Load(p)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if c.Service.Mode != ServiceModeFastestRotation {
+		t.Fatalf("omitted service mode default = %q, want %q", c.Service.Mode, ServiceModeFastestRotation)
+	}
+}
+
+func TestLoadBlankServiceModeDefaultsToFastestRotation(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	body := `{"service":{"enabled":true,"startup_test":true,"mode":""}}`
+	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Service.Mode != ServiceModeFastestRotation {
+		t.Fatalf("blank service mode default = %q, want %q", c.Service.Mode, ServiceModeFastestRotation)
+	}
+}
+
+func TestLoadExplicitFailoverOnlyServiceModeSupported(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	body := `{"service":{"enabled":true,"startup_test":true,"mode":"failover-only"}}`
+	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Service.Mode != ServiceModeFailoverOnly {
+		t.Fatalf("explicit failover-only mode = %q, want %q", c.Service.Mode, ServiceModeFailoverOnly)
 	}
 }
 

@@ -135,21 +135,9 @@ Useful filters for `test`, `pick`, `list`, and `apply best`:
 
 ## Service modes
 
-Set `service.mode` in `/etc/vibe-vpn/config.yaml`.
+`service.mode` defaults to `fastest-rotation` in `/etc/vibe-vpn/config.yaml`.
 
-Default failover-only mode:
-
-```yaml
-service:
-  enabled: true
-  startup_test: true
-  mode: failover-only
-```
-
-- Startup and scheduled tests refresh `/var/lib/vibe-vpn/last-results.json` only.
-- Production changes happen only after confirmed health failure triggers daemon failover.
-
-Fastest rotation mode:
+Default fastest-rotation mode:
 
 ```yaml
 service:
@@ -162,6 +150,18 @@ service:
 - If the fastest node is already current, apply is skipped.
 - If the scheduled test fails, old results may be preserved but fastest rotation does not apply from them.
 - Health-triggered failover still exists.
+
+Explicit failover-only opt-out:
+
+```yaml
+service:
+  enabled: true
+  startup_test: true
+  mode: failover-only
+```
+
+- Startup and scheduled tests refresh `/var/lib/vibe-vpn/last-results.json` only.
+- Production changes happen only after confirmed health failure triggers daemon failover.
 
 ## Config, state, service, and log paths
 
@@ -208,7 +208,7 @@ timeout_seconds: 12
 service:
   enabled: true
   startup_test: true
-  mode: failover-only
+  mode: fastest-rotation
 test:
   interval: 30m
 health:
