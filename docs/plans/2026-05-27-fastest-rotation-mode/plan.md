@@ -136,4 +136,4 @@ Dependencies:
 - 2026-05-27: Task package created on `feature/fastest-rotation-mode`; implementation kept as one coherent task because the slice has one service-mode verification story.
 - 2026-05-27: Nested `aad-implementer` dispatch was blocked by subagent depth; slice owner implemented directly inside requested checkout.
 - 2026-05-27: Local verification passed: `go test ./...`, `go vet ./...`, `go build ./cmd/vibe-vpn`, `bash -n scripts/validate-vibe-vpn-service-assets.sh`, `./scripts/validate-vibe-vpn-service-assets.sh`, `bash -n scripts/install-vibe-vpn-service.sh`.
-- 2026-05-27: Local commit created: `76f5546` (`Add fastest rotation service mode`).
+- 2026-05-27: Local commit created: `2834e3d` (`Add fastest rotation service mode`).
