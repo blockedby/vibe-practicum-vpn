@@ -33,4 +33,5 @@ Branch: pi/singbox-test-backend
   - Covered by fresh checks above.
   - Result: PASS.
 - AC6 commit/push/PR:
-  - Commit/push/PR pending owner finalization after report write.
+  - Covered by pushed branch `pi/singbox-test-backend` and draft PR #8 opened after report write.
+  - Result: PASS.
