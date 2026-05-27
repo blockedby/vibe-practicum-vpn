@@ -26,7 +26,7 @@ func TestLoadSnakeCaseOverridesDefaults(t *testing.T) {
 
 func TestLoadServiceFoundationDefaults(t *testing.T) {
 	c := Default()
-	if !c.Service.Enabled || !c.Service.StartupTest {
+	if !c.Service.Enabled || !c.Service.StartupTest || c.Service.Mode != ServiceModeFailoverOnly {
 		t.Fatalf("service defaults wrong: %+v", c.Service)
 	}
 	if c.Test.Interval.Duration != 30*time.Minute {
@@ -99,6 +99,7 @@ func TestLoadJSONFailoverServiceExample(t *testing.T) {
 func TestLoadRejectsInvalidServiceFoundation(t *testing.T) {
 	cases := map[string]string{
 		"bad interval":        `{"test":{"interval":"nope"}}`,
+		"bad service mode":    `{"service":{"mode":"rotate-maybe"}}`,
 		"empty required":      `{"health":{"required_urls":[]}}`,
 		"empty required item": `{"health":{"required_urls":[""]}}`,
 		"bad retention":       `{"logging":{"retention":"0s"}}`,

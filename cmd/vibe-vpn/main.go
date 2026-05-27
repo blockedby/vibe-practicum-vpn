@@ -141,7 +141,8 @@ func cmdDaemon(o *cliOptions) error {
 	tester := func(ctx context.Context) error { return runScheduledTest(o, c) }
 	apply := func(ctx context.Context, c config.Config, r picker.NodeResult) error { return applyResult(c, r) }
 	fo := service.BuildFailover(c, lg, failover.ApplyFunc(apply))
-	svc := service.New(c, lg, tester, fo)
+	rotation := service.BuildScheduledRotation(c, lg, failover.ApplyFunc(apply))
+	svc := service.New(c, lg, tester, fo, rotation)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return svc.Run(ctx)

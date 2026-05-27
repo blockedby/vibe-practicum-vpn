@@ -34,14 +34,18 @@ func LoadResults(stateDir string) ([]picker.NodeResult, error) {
 	return rs, json.Unmarshal(b, &rs)
 }
 
-func Candidates(results []picker.NodeResult, cur state.Current) []picker.NodeResult {
-	ok := make([]picker.NodeResult, 0, len(results))
-	for _, r := range results {
-		if r.OK && !r.Excluded {
-			ok = append(ok, r)
-		}
+func Fastest(results []picker.NodeResult) (picker.NodeResult, bool) {
+	ok := workingBySpeed(results)
+	if len(ok) == 0 {
+		return picker.NodeResult{}, false
 	}
-	sort.SliceStable(ok, func(i, j int) bool { return ok[i].Mbps > ok[j].Mbps })
+	return ok[0], true
+}
+
+func SameCurrent(r picker.NodeResult, c state.Current) bool { return same(r, c) }
+
+func Candidates(results []picker.NodeResult, cur state.Current) []picker.NodeResult {
+	ok := workingBySpeed(results)
 	if len(ok) < 2 {
 		return ok
 	}
@@ -59,6 +63,17 @@ func Candidates(results []picker.NodeResult, cur state.Current) []picker.NodeRes
 	out = append(out, ok[:pos]...)
 	return out
 }
+func workingBySpeed(results []picker.NodeResult) []picker.NodeResult {
+	ok := make([]picker.NodeResult, 0, len(results))
+	for _, r := range results {
+		if r.OK && !r.Excluded {
+			ok = append(ok, r)
+		}
+	}
+	sort.SliceStable(ok, func(i, j int) bool { return ok[i].Mbps > ok[j].Mbps })
+	return ok
+}
+
 func same(r picker.NodeResult, c state.Current) bool {
 	return (c.Link != "" && r.Link == c.Link) || (r.Host == c.Host && r.Port == c.Port && r.Name == c.Name)
 }

@@ -18,11 +18,13 @@ grep -q '^RestartSec=5$' "$unit"
 grep -q '^After=network-online.target$' "$unit"
 grep -q '^Wants=network-online.target$' "$unit"
 
+grep -q 'mode: failover-only' "$config"
 grep -q 'interval: 30m' "$config"
 grep -q 'retention: 12h' "$config"
 grep -q 'https://x.com/' "$config"
 grep -q 'https://rutracker.org/' "$config"
 grep -q 'https://ya.ru/' "$config"
+grep -q 'mode: failover-only' "$smoke_config"
 grep -q 'interval: 1m' "$smoke_config"
 
 echo "vibe-vpn service assets passed static validation"
