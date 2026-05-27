@@ -79,6 +79,14 @@ logging:
 
 Full sample: [`examples/vibe-vpn-config.yaml`](../examples/vibe-vpn-config.yaml). Accelerated smoke sample: [`examples/vibe-vpn-smoke-config.yaml`](../examples/vibe-vpn-smoke-config.yaml).
 
+## Health semantics
+
+`health.required_urls` are strict: every configured required URL must return OK through the production SOCKS proxy. If any required URL fails, including a TLS handshake error, network timeout, proxy error, or HTTP status that the current probe treats as not OK, the daemon marks health as failover-needed and runs the configured progressive confirmation delays before failover.
+
+`health.diagnostic_urls` are observation-only. Diagnostic failures can appear in probe results/logging, including synthetic or real 3xx/non-OK responses, but they never decide failover by themselves when all required URLs are OK.
+
+Current `DefaultProbe` uses `nettest.Get`, which accepts only HTTP 2xx as a successful reachability result. HTTP 3xx redirects are therefore not OK today; keep redirect-prone URLs in `diagnostic_urls` unless you intentionally want their current non-2xx behavior to participate as a required failure. If `nettest` redirect/status handling changes later, update this runbook and tests with that contract change.
+
 Fastest-rotation example override:
 
 ```yaml

@@ -56,6 +56,35 @@ func TestCheckHealthProgressiveConfirmationTriggersFailoverAfterPersistentFailur
 	}
 }
 
+func TestCheckHealthProgressiveConfirmationTriggersFailoverAfterOnePersistentRequiredFailure(t *testing.T) {
+	c := testConfig()
+	var mu sync.Mutex
+	probeCalls := 0
+	failoverCalls := 0
+	s := &Service{Config: c, Health: health.Runner{RequiredURLs: c.Health.RequiredURLs, Probe: func(_ context.Context, _ string, u string, _ time.Duration) health.ProbeResult {
+		mu.Lock()
+		defer mu.Unlock()
+		probeCalls++
+		return health.ProbeResult{URL: u, OK: u == "https://x.com/"}
+	}}, Failover: func(context.Context) error {
+		mu.Lock()
+		defer mu.Unlock()
+		failoverCalls++
+		return nil
+	}}
+
+	s.checkHealth(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if probeCalls != 8 {
+		t.Fatalf("probe calls = %d, want two required URLs across initial + 3 confirmations", probeCalls)
+	}
+	if failoverCalls != 1 {
+		t.Fatalf("failover calls = %d, want 1", failoverCalls)
+	}
+}
+
 func TestCheckHealthProgressiveConfirmationResetsOnRecovery(t *testing.T) {
 	c := testConfig()
 	var mu sync.Mutex

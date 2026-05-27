@@ -77,10 +77,9 @@ func (r Runner) Run(ctx context.Context) Result {
 		go func() { defer wg.Done(); res.Diagnostic[i] = probe(ctx, r.SocksAddr, u, timeout) }()
 	}
 	wg.Wait()
-	res.FailoverNeeded = len(res.Required) > 0
 	for _, pr := range res.Required {
-		if pr.OK {
-			res.FailoverNeeded = false
+		if !pr.OK {
+			res.FailoverNeeded = true
 			break
 		}
 	}

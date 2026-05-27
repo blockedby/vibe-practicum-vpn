@@ -30,19 +30,21 @@ func TestRunnerParallelAndDiagnosticNotDecisive(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Errorf("probe did not run in parallel")
 		}
-		ok := u != "https://ya.ru/"
-		return ProbeResult{URL: u, OK: ok}
+		if u == "https://ya.ru/" {
+			return ProbeResult{URL: u, StatusCode: 302, OK: false}
+		}
+		return ProbeResult{URL: u, OK: true}
 	}
 	res := r.Run(context.Background())
 	if res.FailoverNeeded {
 		t.Fatalf("diagnostic-only failure must not require failover: %+v", res)
 	}
-	if len(res.Required) != 2 || len(res.Diagnostic) != 1 || res.Diagnostic[0].OK {
+	if len(res.Required) != 2 || len(res.Diagnostic) != 1 || res.Diagnostic[0].OK || res.Diagnostic[0].StatusCode != 302 {
 		t.Fatalf("unexpected result: %+v", res)
 	}
 }
 
-func TestRunnerFailoverNeedsAllRequiredFailed(t *testing.T) {
+func TestRunnerFailoverNeedsEveryRequiredURL(t *testing.T) {
 	r := Runner{RequiredURLs: []string{"a", "b"}, Timeout: time.Second, Probe: func(ctx context.Context, socks, u string, timeout time.Duration) ProbeResult {
 		return ProbeResult{URL: u, OK: false}
 	}}
@@ -52,7 +54,13 @@ func TestRunnerFailoverNeedsAllRequiredFailed(t *testing.T) {
 	r.Probe = func(ctx context.Context, socks, u string, timeout time.Duration) ProbeResult {
 		return ProbeResult{URL: u, OK: u == "b"}
 	}
+	if !r.Run(context.Background()).FailoverNeeded {
+		t.Fatal("expected failover when any required URL fails")
+	}
+	r.Probe = func(ctx context.Context, socks, u string, timeout time.Duration) ProbeResult {
+		return ProbeResult{URL: u, OK: true}
+	}
 	if r.Run(context.Background()).FailoverNeeded {
-		t.Fatal("one successful required URL should avoid failover")
+		t.Fatal("all required URLs succeeded; failover should not be needed")
 	}
 }

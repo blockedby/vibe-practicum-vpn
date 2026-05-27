@@ -226,6 +226,8 @@ logging:
   also_journal: true
 ```
 
+Health behavior is strict for `required_urls`: all required URLs must pass, and any required URL failure enters progressive failover confirmation. `diagnostic_urls` are non-decisive; their failures (including current 3xx/non-OK probe results) do not trigger failover by themselves. Current `DefaultProbe`/`nettest.Get` treats only HTTP 2xx as OK, so redirects, TLS failures, and network/proxy errors are failures when configured as required URLs.
+
 ## Reference docs
 
 - [`docs/FAILOVER_SERVICE_RUNBOOK.md`](./docs/FAILOVER_SERVICE_RUNBOOK.md)
