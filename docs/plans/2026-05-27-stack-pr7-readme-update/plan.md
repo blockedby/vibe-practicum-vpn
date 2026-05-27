@@ -58,3 +58,7 @@ Report path: `docs/plans/2026-05-27-stack-pr7-readme-update/reports/aad-implemen
 
 ## Execution ledger
 - 2026-05-27: Task package and plan created.
+- 2026-05-27: aad-implementer started Task 1; initial workspace clean and pre-merge check confirmed PR7 head was not yet contained in `HEAD`.
+- 2026-05-27: Merged `origin/feature/fastest-rotation-mode` into `docs/failover-service-plan` as `1f3cd15 Merge PR7 fastest rotation mode into docs branch`; no conflicts.
+- 2026-05-27: Rewrote `README.md` into concise command-heavy usage docs covering exact local checks/build, VPS install/validation/run commands, paths, and modes `failover-only` / `fastest-rotation`.
+- 2026-05-27: Local verification recorded in `verification/local.md`: PR7 ancestor/branch containment check passed; README required-term grep/manual inspection passed; `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, and service asset static checks passed.
