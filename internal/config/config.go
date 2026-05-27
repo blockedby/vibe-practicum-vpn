@@ -59,9 +59,17 @@ type Config struct {
 	IKEv2 *IKEv2Config `json:"ikev2,omitempty" yaml:"ikev2,omitempty"`
 }
 
+type ServiceMode string
+
+const (
+	ServiceModeFailoverOnly    ServiceMode = "failover-only"
+	ServiceModeFastestRotation ServiceMode = "fastest-rotation"
+)
+
 type ServiceConfig struct {
-	Enabled     bool `json:"enabled" yaml:"enabled"`
-	StartupTest bool `json:"startup_test" yaml:"startup_test"`
+	Enabled     bool        `json:"enabled" yaml:"enabled"`
+	StartupTest bool        `json:"startup_test" yaml:"startup_test"`
+	Mode        ServiceMode `json:"mode" yaml:"mode"`
 }
 type TestConfig struct {
 	Interval Duration `json:"interval" yaml:"interval"`
@@ -116,7 +124,7 @@ const (
 )
 
 func Default() Config {
-	return Config{SubscriptionFile: "/etc/vibe-vpn/sub_url", ExtraNodesFile: "/etc/vibe-vpn/extra-nodes.json", XrayBin: "/usr/local/bin/xray", XrayConfig: "/usr/local/etc/xray/config.json", StateDir: "/var/lib/vibe-vpn", ProductionSocks: "127.0.0.1:10808", TestSocks: "127.0.0.1:18080", TestURL: "https://proof.ovh.net/files/10Mb.dat", TestLimitKiB: 512, TimeoutSeconds: 12, Service: ServiceConfig{Enabled: true, StartupTest: true}, Test: TestConfig{Interval: NewDuration(30 * time.Minute)}, Health: HealthConfig{NormalInterval: NewDuration(5 * time.Second), FailureRetryDelays: []Duration{NewDuration(time.Second), NewDuration(2 * time.Second), NewDuration(3 * time.Second)}, ProbeTimeout: NewDuration(5 * time.Second), RequiredURLs: []string{"https://x.com/", "https://rutracker.org/"}, DiagnosticURLs: []string{"https://ya.ru/"}}, Logging: LoggingConfig{Path: "/var/log/vibe-vpn/", Retention: NewDuration(12 * time.Hour), AlsoJournal: true}}
+	return Config{SubscriptionFile: "/etc/vibe-vpn/sub_url", ExtraNodesFile: "/etc/vibe-vpn/extra-nodes.json", XrayBin: "/usr/local/bin/xray", XrayConfig: "/usr/local/etc/xray/config.json", StateDir: "/var/lib/vibe-vpn", ProductionSocks: "127.0.0.1:10808", TestSocks: "127.0.0.1:18080", TestURL: "https://proof.ovh.net/files/10Mb.dat", TestLimitKiB: 512, TimeoutSeconds: 12, Service: ServiceConfig{Enabled: true, StartupTest: true, Mode: ServiceModeFailoverOnly}, Test: TestConfig{Interval: NewDuration(30 * time.Minute)}, Health: HealthConfig{NormalInterval: NewDuration(5 * time.Second), FailureRetryDelays: []Duration{NewDuration(time.Second), NewDuration(2 * time.Second), NewDuration(3 * time.Second)}, ProbeTimeout: NewDuration(5 * time.Second), RequiredURLs: []string{"https://x.com/", "https://rutracker.org/"}, DiagnosticURLs: []string{"https://ya.ru/"}}, Logging: LoggingConfig{Path: "/var/log/vibe-vpn/", Retention: NewDuration(12 * time.Hour), AlsoJournal: true}}
 }
 
 func DefaultIKEv2Config() IKEv2Config {
@@ -226,6 +234,12 @@ func (c Config) Validate() error {
 		return fmt.Errorf("timeout_seconds must be positive")
 	}
 	if !c.Service.Enabled { /* explicit disabled service is valid */
+	}
+	if c.Service.Mode == "" {
+		c.Service.Mode = ServiceModeFailoverOnly
+	}
+	if c.Service.Mode != ServiceModeFailoverOnly && c.Service.Mode != ServiceModeFastestRotation {
+		return fmt.Errorf("service.mode must be %q or %q", ServiceModeFailoverOnly, ServiceModeFastestRotation)
 	}
 	if c.Test.Interval.Duration <= 0 {
 		return fmt.Errorf("test.interval must be positive")

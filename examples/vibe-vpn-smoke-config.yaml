@@ -13,6 +13,7 @@ timeout_seconds: 12
 service:
   enabled: true
   startup_test: true
+  mode: failover-only
 
 test:
   interval: 1m

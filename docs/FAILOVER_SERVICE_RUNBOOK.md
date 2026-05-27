@@ -46,7 +46,9 @@ sudo vibe-vpn apply <index>
 sudo vibe-vpn rollback
 ```
 
-`test` never applies production changes. The daemon scheduled test loop uses the same safe non-apply path.
+`test` never applies production changes. In the default daemon mode (`service.mode: failover-only`), the scheduled test loop uses the same safe non-apply path: startup/scheduled benchmarks refresh results, and only confirmed production health failure triggers failover.
+
+Optional `service.mode: fastest-rotation` changes only the daemon scheduled-test success hook. After each successful scheduled/startup test, the daemon runs the configured production SOCKS health probe (`health.required_urls` determine failover health; `health.diagnostic_urls` are diagnostic), loads the fresh latest benchmark results, and applies the fastest OK non-excluded node even if health is currently OK. If that fastest node is already current by the normal current-node comparison, it skips apply. If the scheduled test fails and old results are restored/preserved, fastest rotation does not apply from those old results; the daemon logs the error and stays alive.
 
 ## Config example
 
@@ -54,6 +56,7 @@ sudo vibe-vpn rollback
 service:
   enabled: true
   startup_test: true
+  mode: failover-only # default; alternative: fastest-rotation
 
 test:
   interval: 30m
@@ -75,6 +78,15 @@ logging:
 ```
 
 Full sample: [`examples/vibe-vpn-config.yaml`](../examples/vibe-vpn-config.yaml). Accelerated smoke sample: [`examples/vibe-vpn-smoke-config.yaml`](../examples/vibe-vpn-smoke-config.yaml).
+
+Fastest-rotation example override:
+
+```yaml
+service:
+  enabled: true
+  startup_test: true
+  mode: fastest-rotation
+```
 
 ## Accelerated manual smoke config
 
