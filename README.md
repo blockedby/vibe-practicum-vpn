@@ -121,7 +121,7 @@ sudo vibe-vpn rollback --config /etc/vibe-vpn/config.yaml
 Safety summary:
 
 ```text
-test: isolated temporary xray SOCKS on 127.0.0.1:18080; no production changes
+test: isolated temporary sing-box SOCKS on 127.0.0.1:18080 by default; explicit runtime: xray uses legacy temporary xray; no production changes
 pick: runs isolated benchmark, then applies one winning node to the configured production runtime (sing-box by default)
 apply: applies one saved result from /var/lib/vibe-vpn/last-results.json to configured runtime
 rollback: restores newest backup from /var/lib/vibe-vpn/backups/ for configured runtime
@@ -199,7 +199,7 @@ runtime: singbox
 sing_box_bin: /usr/bin/sing-box
 sing_box_config: /etc/sing-box-vibe/tproxy-canary.json
 sing_box_service: sing-box-vibe-router
-# xray_bin is used for isolated temporary benchmarks; xray_config is only for explicit runtime: xray legacy production.
+# xray_bin/xray_config are only used for explicit runtime: xray legacy benchmarks/production.
 state_dir: /var/lib/vibe-vpn
 production_socks: 127.0.0.1:2080
 test_socks: 127.0.0.1:18080

@@ -11,6 +11,7 @@ import (
 	"github.com/kcnc/vibe-practicum-vpn/internal/config"
 	"github.com/kcnc/vibe-practicum-vpn/internal/picker"
 	"github.com/kcnc/vibe-practicum-vpn/internal/state"
+	"github.com/kcnc/vibe-practicum-vpn/internal/vless"
 )
 
 func TestCobraHelpMentionsSafetyAndFilters(t *testing.T) {
@@ -23,7 +24,7 @@ func TestCobraHelpMentionsSafetyAndFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := out.String()
-	for _, want := range []string{"isolated temporary xray", "--include", "--no-default-exclude", "--min-mbps"} {
+	for _, want := range []string{"isolated temporary sing-box by default", "--include", "--no-default-exclude", "--min-mbps"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("help missing %q in\n%s", want, s)
 		}
@@ -374,5 +375,79 @@ func TestApplyResultSingBoxDerivesOutboundFromLink(t *testing.T) {
 	reality := tls["reality"].(map[string]any)
 	if reality["public_key"] != "public-key" || reality["short_id"] != "abcd" {
 		t.Fatalf("unexpected reality: %#v", reality)
+	}
+}
+
+func TestTempBenchmarkBackendDefaultsToSingBoxAndDoesNotUseProductionConfig(t *testing.T) {
+	c := config.Default()
+	c.Runtime = "singbox"
+	c.SingBoxBin = "/bin/sing-box-test"
+	c.SingBoxConfig = filepath.Join(t.TempDir(), "production.json")
+	c.TestSocks = "127.0.0.1:18080"
+	n, err := vless.Parse("vless://user-id@example.com:443?type=tcp&security=reality&sni=github.com&fp=chrome&pbk=public-key&sid=abcd&flow=xtls-rprx-vision#r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend, err := tempBenchmarkBackend(c, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(backend.configPath)
+	if backend.bin != c.SingBoxBin || strings.Join(backend.args, " ") != "run -c "+backend.configPath {
+		t.Fatalf("unexpected backend command: bin=%q args=%v", backend.bin, backend.args)
+	}
+	if strings.Contains(backend.configPath, c.SingBoxConfig) || !strings.Contains(filepath.Base(backend.configPath), "vibe-vpn-singbox-") {
+		t.Fatalf("unexpected temp config path %q production %q", backend.configPath, c.SingBoxConfig)
+	}
+	b, err := os.ReadFile(backend.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatalf("temp sing-box config is not json: %v\n%s", err, b)
+	}
+	in := cfg["inbounds"].([]any)[0].(map[string]any)
+	if in["type"] != "socks" || in["listen"] != "127.0.0.1" || in["listen_port"].(float64) != 18080 {
+		t.Fatalf("unexpected inbound: %#v", in)
+	}
+	out := cfg["outbounds"].([]any)[0].(map[string]any)
+	if out["type"] != "vless" || out["tag"] != "benchmark-out" || out["server"] != "example.com" {
+		t.Fatalf("unexpected sing-box outbound: %#v", out)
+	}
+	if _, ok := out["protocol"]; ok {
+		t.Fatalf("xray protocol key leaked into sing-box benchmark config: %#v", out)
+	}
+	if _, ok := out["settings"]; ok {
+		t.Fatalf("xray settings key leaked into sing-box benchmark config: %#v", out)
+	}
+}
+
+func TestTempBenchmarkBackendKeepsExplicitXrayRuntime(t *testing.T) {
+	c := config.Default()
+	c.Runtime = "xray"
+	c.XrayBin = "/bin/xray-test"
+	c.TestSocks = "127.0.0.1:18081"
+	n, err := vless.Parse("vless://user-id@example.com:443?type=tcp&security=tls&sni=example.com#n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend, err := tempBenchmarkBackend(c, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(backend.configPath)
+	if backend.bin != c.XrayBin || strings.Join(backend.args, " ") != "run -config "+backend.configPath {
+		t.Fatalf("unexpected backend command: bin=%q args=%v", backend.bin, backend.args)
+	}
+	if !strings.Contains(filepath.Base(backend.configPath), "vibe-vpn-xray-") {
+		t.Fatalf("unexpected xray temp config path: %q", backend.configPath)
+	}
+	b, err := os.ReadFile(backend.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"protocol": "vless"`) {
+		t.Fatalf("expected legacy xray config, got %s", b)
 	}
 }

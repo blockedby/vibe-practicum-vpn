@@ -76,3 +76,8 @@ Executor:
 
 - 2026-05-28: Root worktree created at `.worktrees/pi-singbox-test-backend` on branch `pi/singbox-test-backend` from `origin/main`.
 - 2026-05-28: Root task package created. Delegating one implementation slice to `aad-slice-owner`.
+
+- 2026-05-28: Pre-dispatch gate passed; attempted aad-implementer dispatch but nested subagent depth limit blocked delegation. Slice owner executed implementation directly within delegated worktree.
+- 2026-05-28: Implemented `tempBenchmarkBackend` dispatch: default singbox runtime writes native sing-box temp config (`vibe-vpn-singbox-*.json`) and runs `sing-box run -c`; explicit xray writes legacy `vibe-vpn-xray-*.json` and runs xray.
+- 2026-05-28: Updated CLI/help/prune/docs/examples and tests for sing-box default/legacy xray wording.
+- 2026-05-28: Verification PASS: `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, `./scripts/validate-vibe-vpn-service-assets.sh`. See `verification/slice-local.md`.

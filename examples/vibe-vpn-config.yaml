@@ -2,13 +2,13 @@
 # Do not put subscription URLs, VLESS links, tokens, or auth secrets in git.
 subscription_file: /etc/vibe-vpn/sub_url
 extra_nodes_file: /etc/vibe-vpn/extra-nodes.json
-# Production runtime is sing-box. Temporary node benchmarks may still use isolated xray
-# processes on test_socks only; they do not change the production sing-box service.
+# Production runtime is sing-box. Temporary node benchmarks use isolated sing-box
+# on test_socks by default; they do not change the production sing-box service.
 runtime: singbox
 sing_box_bin: /usr/bin/sing-box
 sing_box_config: /etc/sing-box-vibe/tproxy-canary.json
 sing_box_service: sing-box-vibe-router
-# xray_bin is used only for isolated temporary benchmarks.
+# xray_bin is used only for explicit runtime: xray legacy temporary benchmarks.
 xray_bin: /usr/local/bin/xray
 # Legacy production xray config is used only when runtime: xray is explicitly set.
 xray_config: /usr/local/etc/xray/config.json
