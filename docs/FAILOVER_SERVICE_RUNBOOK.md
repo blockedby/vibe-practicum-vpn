@@ -127,7 +127,7 @@ Disable the daemon first, then use the existing production rollback path:
 ```bash
 sudo systemctl disable --now vibe-vpn
 sudo vibe-vpn rollback --config /etc/vibe-vpn/config.yaml
-sudo systemctl status xray
+sudo systemctl status sing-box-vibe-router
 sudo vibe-vpn status --config /etc/vibe-vpn/config.yaml
 ```
 

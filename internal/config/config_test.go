@@ -119,7 +119,7 @@ func TestLoadRejectsInvalidServiceFoundation(t *testing.T) {
 
 func TestLoadRejectsUnsafeEmptyPath(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(p, []byte(`{"xray_config":""}`), 0600); err != nil {
+	if err := os.WriteFile(p, []byte(`{"runtime":"xray","xray_config":""}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(p); err == nil {

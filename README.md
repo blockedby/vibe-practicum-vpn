@@ -89,12 +89,12 @@ sudo install -o root -g root -m 600 examples/vibe-vpn-smoke-config.yaml /etc/vib
 sudo /usr/local/bin/vibe-vpn daemon --config /etc/vibe-vpn/config-smoke.yaml
 ```
 
-Stop service and rollback production xray config if needed:
+Stop service and rollback production sing-box config if needed:
 
 ```bash
 sudo systemctl disable --now vibe-vpn
 sudo vibe-vpn rollback --config /etc/vibe-vpn/config.yaml
-sudo systemctl status xray
+sudo systemctl status sing-box-vibe-router
 sudo vibe-vpn status --config /etc/vibe-vpn/config.yaml
 ```
 
@@ -122,9 +122,9 @@ Safety summary:
 
 ```text
 test: isolated temporary xray SOCKS on 127.0.0.1:18080; no production changes
-pick: runs isolated benchmark, then applies one winning node and restarts xray once
-apply: applies one saved result from /var/lib/vibe-vpn/last-results.json
-rollback: restores newest backup from /var/lib/vibe-vpn/backups/
+pick: runs isolated benchmark, then applies one winning node to the configured production runtime (sing-box by default)
+apply: applies one saved result from /var/lib/vibe-vpn/last-results.json to configured runtime
+rollback: restores newest backup from /var/lib/vibe-vpn/backups/ for configured runtime
 ```
 
 Useful filters for `test`, `pick`, `list`, and `apply best`:
@@ -177,9 +177,10 @@ systemd/vibe-vpn.service                       # repo source unit
 /var/lib/vibe-vpn/last-results.json            # latest benchmark results
 /var/lib/vibe-vpn/current-node.json            # currently applied node metadata
 /var/lib/vibe-vpn/current-link.txt             # currently applied VLESS link
-/var/lib/vibe-vpn/backups/                     # xray config backups
+/var/lib/vibe-vpn/backups/                     # configured runtime config backups
 /var/log/vibe-vpn/vibe-vpn-YYYY-MM-DD-HH.log   # service log files
-/usr/local/etc/xray/config.json                # production xray config
+/etc/sing-box-vibe/tproxy-canary.json          # production sing-box config
+sing-box-vibe-router                           # production sing-box systemd service
 ```
 
 ## Config examples
@@ -194,10 +195,13 @@ Important config keys:
 ```yaml
 subscription_file: /etc/vibe-vpn/sub_url
 extra_nodes_file: /etc/vibe-vpn/extra-nodes.json
-xray_bin: /usr/local/bin/xray
-xray_config: /usr/local/etc/xray/config.json
+runtime: singbox
+sing_box_bin: /usr/bin/sing-box
+sing_box_config: /etc/sing-box-vibe/tproxy-canary.json
+sing_box_service: sing-box-vibe-router
+# xray_bin is used for isolated temporary benchmarks; xray_config is only for explicit runtime: xray legacy production.
 state_dir: /var/lib/vibe-vpn
-production_socks: 127.0.0.1:10808
+production_socks: 127.0.0.1:2080
 test_socks: 127.0.0.1:18080
 test_limit_kib: 512
 timeout_seconds: 12

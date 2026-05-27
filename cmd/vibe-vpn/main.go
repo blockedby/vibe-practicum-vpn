@@ -21,6 +21,7 @@ import (
 	"github.com/kcnc/vibe-practicum-vpn/internal/nettest"
 	"github.com/kcnc/vibe-practicum-vpn/internal/picker"
 	"github.com/kcnc/vibe-practicum-vpn/internal/service"
+	"github.com/kcnc/vibe-practicum-vpn/internal/singbox"
 	"github.com/kcnc/vibe-practicum-vpn/internal/state"
 	"github.com/kcnc/vibe-practicum-vpn/internal/subscription"
 	"github.com/kcnc/vibe-practicum-vpn/internal/vless"
@@ -108,7 +109,7 @@ func newRootCommand() *cobra.Command {
 	}}
 	cur.Flags().Bool("link", false, "print only current VLESS link")
 	root.AddCommand(cur)
-	root.AddCommand(&cobra.Command{Use: "rollback", Short: "Rollback production xray config to latest backup", RunE: func(cmd *cobra.Command, args []string) error { return cmdRollback(o) }})
+	root.AddCommand(&cobra.Command{Use: "rollback", Short: "Rollback configured production runtime config to latest backup", RunE: func(cmd *cobra.Command, args []string) error { return cmdRollback(o) }})
 	root.AddCommand(&cobra.Command{Use: "refresh", Short: "Fetch subscription and print summary", RunE: func(cmd *cobra.Command, args []string) error { return cmdRefresh(o) }})
 	root.AddCommand(&cobra.Command{Use: "doctor", Short: "Run local configuration and safety checks", RunE: func(cmd *cobra.Command, args []string) error { return cmdDoctor(o) }})
 	logs := &cobra.Command{Use: "logs", Short: "Show vibe-vpn state summary", RunE: func(cmd *cobra.Command, args []string) error {
@@ -119,7 +120,7 @@ func newRootCommand() *cobra.Command {
 	logs.Flags().Int("failed", 10, "number of failed results to show")
 	logs.Flags().Bool("json", false, "print raw last-results JSON")
 	root.AddCommand(logs)
-	prune := &cobra.Command{Use: "prune", Short: "Prune stale temporary xray configs and old backups", RunE: func(cmd *cobra.Command, args []string) error {
+	prune := &cobra.Command{Use: "prune", Short: "Prune stale temporary xray benchmark configs and old runtime backups", RunE: func(cmd *cobra.Command, args []string) error {
 		dry, _ := cmd.Flags().GetBool("dry-run")
 		keep, _ := cmd.Flags().GetInt("keep")
 		return cmdPrune(o, dry, keep)
@@ -398,8 +399,10 @@ func cmdStatus(o *cliOptions) error {
 	if err != nil {
 		return err
 	}
-	out, _ := exec.Command("systemctl", "is-active", "xray").CombinedOutput()
-	fmt.Printf("xray: %s", out)
+	runtime, serviceName := runtimeService(c)
+	out, _ := exec.Command("systemctl", "is-active", serviceName).CombinedOutput()
+	fmt.Printf("runtime: %s\n", runtime)
+	fmt.Printf("%s: %s", serviceName, out)
 	fmt.Printf("production_socks: %s\n", c.ProductionSocks)
 
 	cur, source, curErr := loadCurrentWithLegacy(c.StateDir)
@@ -486,11 +489,17 @@ func cmdRollback(o *cliOptions) error {
 	if err != nil {
 		return err
 	}
-	b, err := xray.Rollback(c.XrayConfig, c.StateDir)
-	if err == nil {
+	var b string
+	var rollbackErr error
+	if normalizedRuntime(c) == "xray" {
+		b, rollbackErr = xray.Rollback(c.XrayConfig, c.StateDir)
+	} else {
+		b, rollbackErr = singbox.Rollback(c.SingBoxConfig, c.StateDir, c.SingBoxService)
+	}
+	if rollbackErr == nil {
 		fmt.Println("Rolled back", b)
 	}
-	return err
+	return rollbackErr
 }
 func loadSubscriptionLinks(c config.Config) ([]string, []error, error) {
 	b, err := os.ReadFile(c.SubscriptionFile)
@@ -544,7 +553,17 @@ func truncate(s string, max int) string {
 }
 
 func applyResult(c config.Config, b picker.NodeResult) error {
-	backup, err := xray.Apply(c.XrayConfig, c.StateDir, b.Outbound)
+	var backup string
+	var err error
+	if normalizedRuntime(c) == "xray" {
+		backup, err = xray.Apply(c.XrayConfig, c.StateDir, b.Outbound)
+	} else {
+		out, convErr := vless.SingBoxOutbound(b.Link)
+		if convErr != nil {
+			return fmt.Errorf("build sing-box outbound from selected link: %w", convErr)
+		}
+		backup, err = singbox.Apply(c.SingBoxConfig, c.StateDir, c.SingBoxService, out)
+	}
 	if err != nil {
 		return err
 	}
@@ -555,8 +574,23 @@ func applyResult(c config.Config, b picker.NodeResult) error {
 	if err := os.WriteFile(filepath.Join(c.StateDir, "current-link.txt"), []byte(b.Link+"\n"), 0600); err != nil {
 		return fmt.Errorf("production applied but current-link update failed: %w", err)
 	}
-	fmt.Println("Applied to production xray. Backup:", backup)
+	fmt.Printf("Applied to production %s. Backup: %s\n", normalizedRuntime(c), backup)
 	return nil
+}
+
+func normalizedRuntime(c config.Config) string {
+	r := strings.ToLower(strings.TrimSpace(c.Runtime))
+	if r == "" || r == "sing-box" {
+		return "singbox"
+	}
+	return r
+}
+
+func runtimeService(c config.Config) (string, string) {
+	if normalizedRuntime(c) == "xray" {
+		return "xray", "xray"
+	}
+	return "singbox", c.SingBoxService
 }
 
 func cmdList(o *cliOptions, cmd *cobra.Command) error {
@@ -708,7 +742,24 @@ func cmdDoctor(o *cliOptions) error {
 		name string
 		err  error
 	}{
-		{"config", c.Validate()}, {"subscription_file", fileReadable(c.SubscriptionFile)}, {"xray_bin", fileExecutable(c.XrayBin)}, {"state_dir", os.MkdirAll(c.StateDir, 0700)}, {"xray_config", fileReadable(c.XrayConfig)},
+		{"config", c.Validate()}, {"subscription_file", fileReadable(c.SubscriptionFile)}, {"state_dir", os.MkdirAll(c.StateDir, 0700)},
+	}
+	if normalizedRuntime(c) == "xray" {
+		checks = append(checks, struct {
+			name string
+			err  error
+		}{"xray_bin", fileExecutable(c.XrayBin)}, struct {
+			name string
+			err  error
+		}{"xray_config", fileReadable(c.XrayConfig)})
+	} else {
+		checks = append(checks, struct {
+			name string
+			err  error
+		}{"sing_box_bin", fileExecutable(c.SingBoxBin)}, struct {
+			name string
+			err  error
+		}{"sing_box_config", fileReadable(c.SingBoxConfig)})
 	}
 	failed := 0
 	for _, ch := range checks {

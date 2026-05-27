@@ -52,3 +52,56 @@ func TestParseTLSALPNAndDefaultName(t *testing.T) {
 		t.Fatal(tls)
 	}
 }
+
+func TestSingBoxOutboundRealityOmitsXraySchema(t *testing.T) {
+	out, err := SingBoxOutbound("vless://user-id@example.com:443?type=tcp&security=reality&sni=github.com&fp=chrome&pbk=public-key&sid=abcd&flow=xtls-rprx-vision#r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["type"] != "vless" || out["server"] != "example.com" || out["server_port"] != 443 || out["uuid"] != "user-id" {
+		t.Fatalf("unexpected sing-box outbound: %#v", out)
+	}
+	if _, ok := out["protocol"]; ok {
+		t.Fatalf("sing-box outbound contains xray protocol key: %#v", out)
+	}
+	if _, ok := out["settings"]; ok {
+		t.Fatalf("sing-box outbound contains xray settings key: %#v", out)
+	}
+	if _, ok := out["streamSettings"]; ok {
+		t.Fatalf("sing-box outbound contains xray streamSettings key: %#v", out)
+	}
+	tls := out["tls"].(map[string]any)
+	if tls["enabled"] != true || tls["server_name"] != "github.com" {
+		t.Fatalf("unexpected tls: %#v", tls)
+	}
+	reality := tls["reality"].(map[string]any)
+	if reality["enabled"] != true || reality["public_key"] != "public-key" || reality["short_id"] != "abcd" {
+		t.Fatalf("unexpected reality: %#v", reality)
+	}
+}
+
+func TestSingBoxOutboundTLSWSAndGRPC(t *testing.T) {
+	ws, err := SingBoxOutbound("vless://u@h:443?security=tls&type=ws&path=%2Fws&host=edge.example&sni=origin.example&fp=firefox&alpn=h2,http/1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tls := ws["tls"].(map[string]any)
+	if tls["server_name"] != "origin.example" {
+		t.Fatalf("unexpected tls: %#v", tls)
+	}
+	tr := ws["transport"].(map[string]any)
+	if tr["type"] != "ws" || tr["path"] != "/ws" {
+		t.Fatalf("unexpected ws transport: %#v", tr)
+	}
+	if tr["headers"].(map[string]any)["Host"] != "edge.example" {
+		t.Fatalf("unexpected ws headers: %#v", tr)
+	}
+	grpc, err := SingBoxOutbound("vless://u@h:443?security=tls&type=grpc&serviceName=svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gtr := grpc["transport"].(map[string]any)
+	if gtr["type"] != "grpc" || gtr["service_name"] != "svc" {
+		t.Fatalf("unexpected grpc transport: %#v", gtr)
+	}
+}

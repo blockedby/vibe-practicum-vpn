@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kcnc/vibe-practicum-vpn/internal/config"
 	"github.com/kcnc/vibe-practicum-vpn/internal/picker"
 	"github.com/kcnc/vibe-practicum-vpn/internal/state"
 )
@@ -295,7 +296,7 @@ func TestApplyBestRespectsFilters(t *testing.T) {
 func writeTestConfig(t *testing.T, dir string) string {
 	t.Helper()
 	cfg := filepath.Join(dir, "config.json")
-	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1}`
+	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","runtime":"xray","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1}`
 	if err := os.WriteFile(cfg, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +309,7 @@ func writeTestConfig(t *testing.T, dir string) string {
 func writeTestConfigWithIKEv2(t *testing.T, dir string) string {
 	t.Helper()
 	cfg := filepath.Join(dir, "config-ikev2.json")
-	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1,"ikev2":{"config_dir":"` + filepath.Join(dir, "ikev2-etc") + `","state_dir":"` + filepath.Join(dir, "ikev2-state") + `","swanctl_dir":"` + filepath.Join(dir, "swanctl") + `","underlay_interface":"ens3"}}`
+	body := `{"subscription_file":"` + filepath.Join(dir, "sub") + `","runtime":"xray","xray_bin":"/bin/echo","xray_config":"` + filepath.Join(dir, "xray.json") + `","state_dir":"` + dir + `","production_socks":"127.0.0.1:1","test_socks":"127.0.0.1:2","test_url":"http://example.invalid","test_limit_kib":1,"timeout_seconds":1,"ikev2":{"config_dir":"` + filepath.Join(dir, "ikev2-etc") + `","state_dir":"` + filepath.Join(dir, "ikev2-state") + `","swanctl_dir":"` + filepath.Join(dir, "swanctl") + `","underlay_interface":"ens3"}}`
 	if err := os.WriteFile(cfg, []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -316,4 +317,62 @@ func writeTestConfigWithIKEv2(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return cfg
+}
+
+func TestApplyResultSingBoxDerivesOutboundFromLink(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cfgPath := filepath.Join(dir, "sing-box.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"xray-socks-out","server":"127.0.0.1","server_port":10808}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := config.Default()
+	c.Runtime = "singbox"
+	c.SingBoxConfig = cfgPath
+	c.SingBoxService = "sing-box-test"
+	c.StateDir = dir
+	res := picker.NodeResult{
+		Name: "reality", Host: "example.com", Port: 443, Network: "tcp", Security: "reality", Mbps: 42,
+		Link:     "vless://user-id@example.com:443?type=tcp&security=reality&sni=github.com&fp=chrome&pbk=public-key&sid=abcd&flow=xtls-rprx-vision#r",
+		Outbound: map[string]any{"protocol": "vless", "settings": map[string]any{}, "streamSettings": map[string]any{}},
+	}
+	if err := applyResult(c, res); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	out := cfg["outbounds"].([]any)[1].(map[string]any)
+	if out["tag"] != "xray-socks-out" || out["type"] != "vless" || out["server"] != "example.com" || out["uuid"] != "user-id" {
+		t.Fatalf("unexpected sing-box outbound: %#v", out)
+	}
+	if _, ok := out["protocol"]; ok {
+		t.Fatalf("xray protocol key leaked into sing-box config: %#v", out)
+	}
+	if _, ok := out["settings"]; ok {
+		t.Fatalf("xray settings key leaked into sing-box config: %#v", out)
+	}
+	if _, ok := out["streamSettings"]; ok {
+		t.Fatalf("xray streamSettings key leaked into sing-box config: %#v", out)
+	}
+	tls := out["tls"].(map[string]any)
+	if tls["enabled"] != true || tls["server_name"] != "github.com" {
+		t.Fatalf("unexpected tls: %#v", tls)
+	}
+	reality := tls["reality"].(map[string]any)
+	if reality["public_key"] != "public-key" || reality["short_id"] != "abcd" {
+		t.Fatalf("unexpected reality: %#v", reality)
+	}
 }

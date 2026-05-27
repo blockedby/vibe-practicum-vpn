@@ -41,8 +41,12 @@ func (d *Duration) parse(s string) error {
 type Config struct {
 	SubscriptionFile    string        `json:"subscription_file" yaml:"subscription_file"`
 	ExtraNodesFile      string        `json:"extra_nodes_file" yaml:"extra_nodes_file"`
+	Runtime             string        `json:"runtime" yaml:"runtime"`
 	XrayBin             string        `json:"xray_bin" yaml:"xray_bin"`
 	XrayConfig          string        `json:"xray_config" yaml:"xray_config"`
+	SingBoxBin          string        `json:"sing_box_bin" yaml:"sing_box_bin"`
+	SingBoxConfig       string        `json:"sing_box_config" yaml:"sing_box_config"`
+	SingBoxService      string        `json:"sing_box_service" yaml:"sing_box_service"`
 	StateDir            string        `json:"state_dir" yaml:"state_dir"`
 	ProductionSocks     string        `json:"production_socks" yaml:"production_socks"`
 	TestSocks           string        `json:"test_socks" yaml:"test_socks"`
@@ -124,7 +128,32 @@ const (
 )
 
 func Default() Config {
-	return Config{SubscriptionFile: "/etc/vibe-vpn/sub_url", ExtraNodesFile: "/etc/vibe-vpn/extra-nodes.json", XrayBin: "/usr/local/bin/xray", XrayConfig: "/usr/local/etc/xray/config.json", StateDir: "/var/lib/vibe-vpn", ProductionSocks: "127.0.0.1:10808", TestSocks: "127.0.0.1:18080", TestURL: "https://proof.ovh.net/files/10Mb.dat", TestLimitKiB: 512, TimeoutSeconds: 12, Service: ServiceConfig{Enabled: true, StartupTest: true, Mode: ServiceModeFailoverOnly}, Test: TestConfig{Interval: NewDuration(30 * time.Minute)}, Health: HealthConfig{NormalInterval: NewDuration(5 * time.Second), FailureRetryDelays: []Duration{NewDuration(time.Second), NewDuration(2 * time.Second), NewDuration(3 * time.Second)}, ProbeTimeout: NewDuration(5 * time.Second), RequiredURLs: []string{"https://x.com/", "https://rutracker.org/"}, DiagnosticURLs: []string{"https://ya.ru/"}}, Logging: LoggingConfig{Path: "/var/log/vibe-vpn/", Retention: NewDuration(12 * time.Hour), AlsoJournal: true}}
+	return Config{
+		SubscriptionFile: "/etc/vibe-vpn/sub_url",
+		ExtraNodesFile:   "/etc/vibe-vpn/extra-nodes.json",
+		Runtime:          "singbox",
+		XrayBin:          "/usr/local/bin/xray",
+		XrayConfig:       "/usr/local/etc/xray/config.json",
+		SingBoxBin:       "/usr/bin/sing-box",
+		SingBoxConfig:    "/etc/sing-box-vibe/tproxy-canary.json",
+		SingBoxService:   "sing-box-vibe-router",
+		StateDir:         "/var/lib/vibe-vpn",
+		ProductionSocks:  "127.0.0.1:2080",
+		TestSocks:        "127.0.0.1:18080",
+		TestURL:          "https://proof.ovh.net/files/10Mb.dat",
+		TestLimitKiB:     512,
+		TimeoutSeconds:   12,
+		Service:          ServiceConfig{Enabled: true, StartupTest: true, Mode: ServiceModeFailoverOnly},
+		Test:             TestConfig{Interval: NewDuration(30 * time.Minute)},
+		Health: HealthConfig{
+			NormalInterval:     NewDuration(5 * time.Second),
+			FailureRetryDelays: []Duration{NewDuration(time.Second), NewDuration(2 * time.Second), NewDuration(3 * time.Second)},
+			ProbeTimeout:       NewDuration(5 * time.Second),
+			RequiredURLs:       []string{"https://x.com/", "https://rutracker.org/"},
+			DiagnosticURLs:     []string{"https://ya.ru/"},
+		},
+		Logging: LoggingConfig{Path: "/var/log/vibe-vpn/", Retention: NewDuration(12 * time.Hour), AlsoJournal: true},
+	}
 }
 
 func DefaultIKEv2Config() IKEv2Config {
@@ -206,11 +235,30 @@ func (c Config) Validate() error {
 	if c.SubscriptionFile == "" {
 		return fmt.Errorf("subscription_file is empty")
 	}
-	if c.XrayBin == "" {
-		return fmt.Errorf("xray_bin is empty")
+	runtime := strings.ToLower(strings.TrimSpace(c.Runtime))
+	if runtime == "" {
+		runtime = "singbox"
 	}
-	if c.XrayConfig == "" {
-		return fmt.Errorf("xray_config is empty")
+	switch runtime {
+	case "singbox", "sing-box":
+		if c.SingBoxBin == "" {
+			return fmt.Errorf("sing_box_bin is empty")
+		}
+		if c.SingBoxConfig == "" {
+			return fmt.Errorf("sing_box_config is empty")
+		}
+		if c.SingBoxService == "" {
+			return fmt.Errorf("sing_box_service is empty")
+		}
+	case "xray":
+		if c.XrayBin == "" {
+			return fmt.Errorf("xray_bin is empty")
+		}
+		if c.XrayConfig == "" {
+			return fmt.Errorf("xray_config is empty")
+		}
+	default:
+		return fmt.Errorf("runtime must be singbox or xray")
 	}
 	if c.StateDir == "" {
 		return fmt.Errorf("state_dir is empty")
