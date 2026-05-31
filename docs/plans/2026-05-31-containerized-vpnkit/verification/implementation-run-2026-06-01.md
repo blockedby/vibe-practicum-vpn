@@ -8,7 +8,7 @@ The requested TPROXY path was tested first and rejected with falsifiable local e
 
 - TCP from `10.89.0.0/24` on `tun0` -> sing-box `redirect` inbound `vpnkit-redirect-in` on `:2082`.
 - UDP/53 from `10.89.0.0/24` on `tun0` -> sing-box `direct` inbound `vpnkit-dns-in` on `:5353`, then route action `hijack-dns`.
-- DNS server `remote-dns` uses `tls://1.1.1.1` detoured through `selected-native-out`.
+- Historical note for this run: DNS server `remote-dns` used `tls://1.1.1.1` detoured through `selected-native-out`; current containerized vpnkit sing-box config is updated separately to Google DoT.
 - Final route is `selected-native-out`.
 - No broad OpenVPN-pool MASQUERADE rule is used.
 
@@ -153,7 +153,7 @@ inbound/direct[vpnkit-dns-in]: inbound packet connection from 10.89.0.2:56545
 inbound/direct[vpnkit-dns-in]: inbound packet connection to 0.0.0.0:5353
 router: match[0] inbound=vpnkit-dns-in => hijack-dns
 dns: exchange example.com. IN A
-outbound/vless[selected-native-out]: outbound connection to 1.1.1.1:853
+outbound/vless[selected-native-out]: outbound connection to 1.1.1.1:853  # historical Cloudflare DoT resolver in this run
 dns: exchanged example.com NOERROR
 ```
 
@@ -178,7 +178,7 @@ Full redacted command output was captured in local temp file `/tmp/vpnkit-final-
 - AC3 traffic enters `vpnkit` `tun0`: passed (OpenVPN server assigns `10.89.0.2`; redirect counters increment from `tun0` PREROUTING chain; earlier tcpdump showed ingress on `tun0`).
 - AC4 traffic reaches sing-box: passed (`vpnkit-redirect-in` and `vpnkit-dns-in` logs from `10.89.0.2`).
 - AC5 selected-native-out VLESS used: passed (sing-box logs show `outbound/vless[selected-native-out]` for DNS-over-TLS and HTTPS destinations).
-- AC6 DNS succeeds and is under sing-box: passed (`dig` NOERROR; `vpnkit-dns-in` + `hijack-dns` + `selected-native-out` to `1.1.1.1:853`).
+- AC6 DNS succeeds and is under sing-box: passed for this historical run (`dig` NOERROR; `vpnkit-dns-in` + `hijack-dns` + `selected-native-out` to then-configured `1.1.1.1:853`).
 - AC7 HTTPS succeeds: passed (`https-test http_code=200`).
 - AC8 literal-IP HTTPS succeeds: passed (`literal-ip-test http_code=200 remote_ip=1.1.1.1`).
 - AC9 no broad permanent MASQUERADE/no xray: passed (`grep` checks; final routing uses REDIRECT only).
