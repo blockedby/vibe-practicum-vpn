@@ -77,3 +77,19 @@ Use read-only live discovery first, then choose implementation slice(s) from evi
 - 2026-05-31: Root owner created isolated worktree `issue-9-openvpn-singbox-tproxy` from `origin/main` under `.worktrees/`.
 - 2026-05-31: Task package created at `docs/plans/2026-05-31-issue-9-openvpn-singbox-tproxy/`.
 - 2026-05-31: Next action is read-only live discovery.
+
+## Integrated discovery summary (Slice A)
+
+Source: `reports/live-discovery.md`, `verification/live-discovery.md`.
+
+- `ignat` still maps to `10.89.0.23` in OpenVPN ipp/journal evidence, but was not connected during discovery; no current DNS/TCP packets were visible on `tun-asus`.
+- Dynamic-pool TPROXY plumbing exists live: PREROUTING `10.89.0.20-10.89.0.254 -> VIBE_OVPN_ASUS_TP`, TCP/UDP TPROXY to `:2082`, INPUT accept for mark `0x1`, `fwmark 0x1 lookup 100`, `local default dev lo`.
+- Active router is `sing-box-vibe-router.service`; package `sing-box.service` is masked/inactive and only one sing-box process is running.
+- Live sing-box default outbound is native VLESS `selected-native-out`, not xray, but legacy `xray.service` remains active separately on `10808`.
+- Live DNS has a `hijack-dns` route rule and detoured resolvers, but still includes direct `yandex-basic`; OpenVPN pushes `8.8.8.8` / `8.8.4.4` to dynamic clients.
+- Broad OpenVPN `10.89.0.0/24 -> eth0 MASQUERADE` and FORWARD accept rules remain present as fallback; they must not count as final success.
+
+Decision after Slice A:
+
+- Do not mutate live VPS yet because no active client traffic was available to prove the failure mode or validate a fix.
+- Proceed with Slice B: produce an implementation plan and repo-side reproducibility changes that are safe without an active client, while preserving a separate gated live-change plan for when the client can reconnect.
