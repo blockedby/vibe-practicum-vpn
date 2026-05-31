@@ -7,22 +7,25 @@
     "strategy": "prefer_ipv4",
     "servers": [
       {
-        "tag": "google",
+        "tag": "google-8",
         "type": "udp",
-        "server": "8.8.8.8"
+        "server": "8.8.8.8",
+        "detour": "selected-native-out"
       },
       {
-        "tag": "quad9",
+        "tag": "google-8844",
         "type": "udp",
-        "server": "9.9.9.9"
+        "server": "8.8.4.4",
+        "detour": "selected-native-out"
       },
       {
-        "tag": "yandex-basic",
+        "tag": "quad9-9",
         "type": "udp",
-        "server": "77.88.8.8"
+        "server": "9.9.9.9",
+        "detour": "selected-native-out"
       }
     ],
-    "final": "yandex-basic"
+    "final": "google-8"
   },
   "inbounds": [
     {
@@ -50,11 +53,16 @@
       "tag": "direct-out"
     },
     {
-      "type": "socks",
-      "tag": "xray-socks-out",
-      "server": "127.0.0.1",
-      "server_port": 10808,
-      "version": "5"
+      "type": "vless",
+      "tag": "selected-native-out",
+      "server": "example.invalid",
+      "server_port": 443,
+      "uuid": "<redacted-vless-uuid>",
+      "packet_encoding": "xudp",
+      "tls": {
+        "enabled": true,
+        "server_name": "example.invalid"
+      }
     },
     {
       "type": "block",
@@ -63,9 +71,16 @@
   ],
   "route": {
     "auto_detect_interface": true,
-    "default_domain_resolver": "yandex-basic",
-    "final": "xray-socks-out",
+    "default_domain_resolver": "google-8",
+    "final": "selected-native-out",
     "rules": [
+      {
+        "inbound": [
+          "canary-tproxy-in"
+        ],
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
       {
         "inbound": [
           "canary-tproxy-in",

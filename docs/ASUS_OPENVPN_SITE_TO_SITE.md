@@ -1,8 +1,8 @@
 # ASUS OpenVPN site-to-site runbook
 
 This runbook prepares an ASUS router to connect to the `vibe-practicum` VPS with
-OpenVPN, then routes ASUS-side traffic through the existing sing-box/xray TProxy
-path. It is intentionally dry-run-first: repo scripts print plans or status by
+OpenVPN, then routes ASUS-side traffic through the existing sing-box TProxy
+path. For dynamic-pool issue #9 clients the intended final upstream is native sing-box VLESS, not xray. It is intentionally dry-run-first: repo scripts print plans or status by
 default and do not change live VPS state unless an explicit apply/export gate is
 set.
 
@@ -31,13 +31,13 @@ ASUS LAN clients
 -> VPS OpenVPN server UDP/1194 on tun-asus
 -> mangle PREROUTING VIBE_ROUTER_OPENVPN_ASUS
 -> sing-box TProxy :2082
--> xray/VLESS upstream
+-> native sing-box VLESS upstream (`selected-native-out` for issue #9 dynamic clients)
 -> internet
 ```
 
 The setup captures only packets arriving on `tun-asus` from the OpenVPN pool or
-ASUS LAN source range. Existing `VIBE_ROUTER_PIXEL`, Tailscale, xray, and
-sing-box rules are preserved.
+ASUS LAN source range. Existing `VIBE_ROUTER_PIXEL`, Tailscale, legacy xray, and
+sing-box rules are preserved; xray is a legacy side service and is not the issue #9 dynamic-client success path.
 
 ## Defaults
 
@@ -66,9 +66,9 @@ This is the canonical live allocation map for `tun-asus` / `10.89.0.0/24`:
 | --- | --- | --- |
 | `10.89.0.1` | VPS OpenVPN gateway on `tun-asus` | Server-side tunnel endpoint |
 | `10.89.0.2` | ASUS router CN `asus` | Site-to-site / direct NAT / ASUS LAN bridge; do **not** capture into the TPROXY canary by default |
-| `10.89.0.3` | CN `asus-tproxy` | Current phone canary through `VIBE_OVPN_ASUS_TP -> sing-box :2082 -> xray` |
-| `10.89.0.4`-`10.89.0.19` | Reserved future fixed TPROXY clients | Intended for additional per-device OpenVPN profiles that should use sing-box/xray |
-| `10.89.0.20`-`10.89.0.254` | OpenVPN dynamic pool | Friend/phone/laptop profiles; server-assigned IPs captured into `VIBE_OVPN_ASUS_TP -> sing-box :2082 -> xray`; do not assign fixed CCD clients here |
+| `10.89.0.3` | CN `asus-tproxy` | Fixed phone canary through `VIBE_OVPN_ASUS_TP -> sing-box :2082`; legacy deployments may have chained to xray, but issue #9 uses native sing-box VLESS |
+| `10.89.0.4`-`10.89.0.19` | Reserved future fixed TPROXY clients | Intended for additional per-device OpenVPN profiles that should use sing-box TPROXY; legacy xray chaining is not the issue #9 target |
+| `10.89.0.20`-`10.89.0.254` | OpenVPN dynamic pool | Friend/phone/laptop profiles; server-assigned IPs captured into `VIBE_OVPN_ASUS_TP -> sing-box :2082 -> native VLESS`; do not assign fixed CCD clients here |
 | `192.168.50.0/24` | ASUS LAN behind CN `asus` | Routed via `10.89.0.2` for private LAN reachability |
 
 Why this split exists:
@@ -209,7 +209,7 @@ and never echoes the embedded key or certificates.
 
 ## Dynamic-pool TPROXY profile export for friends/devices
 
-Use this for new phones/laptops that should full-tunnel through the shared sing-box/xray path without reserving a fixed VPN IP:
+Use this for new phones/laptops that should full-tunnel through the shared sing-box TPROXY path without reserving a fixed VPN IP. For issue #9, success means native sing-box VLESS plus sing-box DNS handling, not xray:
 
 ```bash
 PUBLIC_ENDPOINT=45.12.74.211 \
@@ -292,6 +292,13 @@ Look for:
 - `ip rule` and table `100` still present;
 - `iptables-save` lines with `vibe-vpn-openvpn-asus:` only in the expected
   `VIBE_ROUTER_OPENVPN_ASUS` path.
+
+
+### Dynamic-pool issue #9 DNS / NAT acceptance notes
+
+The dynamic pool is `10.89.0.20`-`10.89.0.254`; observed client `ignat` has used `10.89.0.23`. Persistent routing must include both the mangle PREROUTING capture and a filter INPUT accept for marked packets from this whole pool. A rule that accepts only `10.89.0.3/32` proves the fixed canary, not dynamic clients.
+
+Generated phone profiles may push public DNS IPs as resolver targets for compatibility. Final DNS handling still belongs to sing-box: port 53 should be caught by the `hijack-dns` route rule and resolved by sing-box DNS rules/detours. Direct or NATed DNS is allowed only as a temporary diagnostic/emergency bypass and must not be used as final acceptance evidence. Likewise, broad VPS MASQUERADE for `10.89.0.0/24` is an emergency fallback, not proof that dynamic OpenVPN traffic is using native VLESS.
 
 ## Client acceptance checks
 

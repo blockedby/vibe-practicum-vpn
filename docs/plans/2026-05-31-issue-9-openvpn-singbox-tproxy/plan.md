@@ -93,3 +93,102 @@ Decision after Slice A:
 
 - Do not mutate live VPS yet because no active client traffic was available to prove the failure mode or validate a fix.
 - Proceed with Slice B: produce an implementation plan and repo-side reproducibility changes that are safe without an active client, while preserving a separate gated live-change plan for when the client can reconnect.
+
+## Slice B execution plan: repo-side reproducibility and gated live plan
+
+### Slice B intake gate
+
+Goal: refine the issue #9 plan from Slice A evidence and make safe repo-only documentation/script/config-example improvements so the next live slice can act reversibly when an active dynamic OpenVPN client is available.
+
+In scope:
+- Update issue #9 task package plan/report/verification artifacts.
+- Update narrow docs/scripts/config examples that currently imply `xray` is the intended dynamic OpenVPN TPROXY success path.
+- Document native sing-box VLESS, sing-box-owned DNS (`hijack-dns` plus DNS rules), dynamic-pool INPUT delivery, broad NAT as diagnostic/emergency only, and a gated live runbook.
+
+Out of scope / do-not-touch:
+- No live VPS mutations, service restarts/reloads, iptables changes, `/etc/*` edits, or log-level changes.
+- No secrets, full VLESS links, UUIDs, private keys, subscription URLs, or generated profiles.
+- No broad NAT removal in this slice; only document later gated disable/removal criteria.
+- Do not revive xray as a solution; only label legacy xray side findings.
+
+Blocking unknowns:
+- Active `ignat` client session is unavailable; AC3-AC6 cannot be fully proven live until Slice C.
+- Live sing-box DNS/VLESS behavior must be verified under traffic after any gated config change.
+
+### Repo orientation / reuse for Slice B
+
+Likely repo areas:
+- `docs/OPENVPN_ASUS_TPROXY_CANARY.md`
+- `docs/ASUS_OPENVPN_SITE_TO_SITE.md`
+- `scripts/openvpn-asus-tproxy-canary-rules.sh`
+- `configs/sing-box/tproxy-canary.json`
+- This task package: `docs/plans/2026-05-31-issue-9-openvpn-singbox-tproxy/`
+
+Reuse / patterns:
+- Existing OpenVPN ASUS docs already separate dry-run vs apply/export gates and warn against secret/profile commits.
+- Existing canary doc already explains TPROXY local INPUT delivery; extend it from fixed `10.89.0.3` to dynamic pool `10.89.0.20-10.89.0.254`.
+- Existing script is idempotent and dry-run-first; update its text/defaults safely if needed, but no live execution.
+- Existing README local checks: `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, and `bash -n` for modified scripts.
+
+Missing pieces to add now:
+- Explicit native sing-box VLESS issue #9 success path in docs/config examples, with xray labelled legacy-only.
+- DNS policy note: OpenVPN can push public DNS target IPs to clients, but final handling must be intercepted by sing-box `hijack-dns` and resolved via sing-box DNS rules/detours; direct/NAT DNS is diagnostic/emergency only.
+- Dynamic-pool TPROXY local delivery persistence requirement: mangle capture and filter INPUT accept for marked `10.89.0.20-10.89.0.254`, not only `10.89.0.3/32`.
+- Gated live-change runbook for Slice C: backup, reversible sing-box DNS config adjustment/logging/captures, rollback, and proof commands for DNS, UDP/VLESS behavior, TCP/HTTPS after DNS, service state, and broad NAT not counting as final success.
+
+### Slice B tasks
+
+#### Task B1: Update repo docs/config examples for native sing-box dynamic-pool path
+Goal:
+- Make repo docs/examples distinguish native sing-box VLESS from legacy xray for issue #9 dynamic OpenVPN TPROXY.
+
+Boundary:
+- System area: docs/scripts/config examples only.
+- Primary verification: grep/read checks plus local syntax checks for any changed shell scripts/JSON.
+
+Acceptance criteria:
+- Docs no longer describe dynamic-pool issue #9 success as `sing-box -> xray`.
+- Dynamic-pool `10.89.0.20-10.89.0.254` uses `sing-box :2082 -> native VLESS selected-native-out` as intended final path.
+- Any xray references are labelled legacy / separate / not issue #9 success path.
+
+Test plan:
+- `grep -R "dynamic.*xray\|sing-box/xray\|xray/VLESS" docs scripts configs` and inspect remaining hits.
+- `jq . configs/sing-box/tproxy-canary.json` if JSON changed.
+- `bash -n` for changed shell scripts.
+
+Dependencies: none.
+Executor: `aad-implementer`.
+Report: `reports/aad-implementer-b1-docs.md`.
+
+#### Task B2: Add gated live-change and verification runbook to task package
+Goal:
+- Create a concrete next-step runbook that maps AC1-AC8 to commands/evidence and is safe for a future live slice.
+
+Boundary:
+- System area: task package plan/report/verification docs; optional cross-link from public docs if useful.
+- Primary verification: read-through against AC1-AC8 and no live-mutating commands run now.
+
+Acceptance criteria:
+- AC1-AC8 each have concrete proof commands/evidence targets.
+- Runbook includes backup, reversible sing-box DNS adjustment/log/capture steps, rollback path, and proof for DNS, UDP/VLESS, TCP/HTTPS after DNS, service state, and broad NAT not counting as final success.
+- Runbook states that Slice C should wait for active `ignat` if end-to-end proof is required.
+
+Test plan:
+- Manual read-through of `verification/slice-b-local.md` / plan AC matrix.
+- Local grep to ensure no secrets/full links/UUIDs were added.
+
+Dependencies: Task B1 can run in parallel but final owner integration updates status after B1.
+Executor: slice owner or `aad-implementer`; keep with slice owner if edits are mostly task-package ledger.
+Report: `reports/slice-b-plan-and-repo.md`.
+
+### Slice B dependency graph
+
+- Wave 1: B1 delegated to `aad-implementer`; B2 owner-led task-package/runbook update can proceed in parallel.
+- Wave 2: owner integrates B1 report/diff, runs local checks, records verification, writes Slice B report, and commits coherent repo changes.
+
+### Slice B completion ledger
+
+- Task B1 status: done by slice owner directly because nested subagent delegation was blocked by max subagent depth. Changes updated issue #9 docs, the canary script comment, and the repo sing-box canary example to native sing-box VLESS / hijack-dns semantics.
+- Task B2 status: done. `verification/slice-b-local.md` now contains the AC1-AC8 live proof map, reversible DNS adjustment gate, backup/rollback path, and local verification evidence.
+- Verification: `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, `jq . configs/sing-box/tproxy-canary.json`, and `bash -n scripts/openvpn-asus-tproxy-canary-rules.sh` passed after edits.
+- Remaining blocker for root issue: AC3-AC6 still require live Slice C with an active dynamic client session; no live VPS mutations were made in Slice B.

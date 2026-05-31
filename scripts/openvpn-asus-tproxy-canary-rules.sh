@@ -55,7 +55,7 @@ fi
 iptables -t mangle -N "$CHAIN" 2>/dev/null || true
 
 # Proofix work VPN is itself OpenVPN over UDP/1194. If it is captured into
-# sing-box/xray TPROXY, the nested VPN handshake can fail. Keep this scoped
+# sing-box TPROXY (legacy deployments may have chained to xray), the nested VPN handshake can fail. Keep this scoped
 # bypass before the generic UDP TPROXY rule so it is routed/NATed directly.
 PROOFIX_OPENVPN_DST="${PROOFIX_OPENVPN_DST:-185.241.192.190}"
 PROOFIX_OPENVPN_PORT="${PROOFIX_OPENVPN_PORT:-1194}"
