@@ -1,0 +1,29 @@
+{
+  "log": { "level": "debug", "timestamp": true },
+  "dns": {
+    "servers": [
+      { "tag": "remote-dns", "address": "tls://1.1.1.1", "detour": "selected-native-out" }
+    ],
+    "final": "remote-dns"
+  },
+  "inbounds": [
+    {
+      "type": "tproxy",
+      "tag": "canary-tproxy-in",
+      "listen": "0.0.0.0",
+      "listen_port": 2082,
+      "network": "tcp,udp"
+    }
+  ],
+  "outbounds": [
+    {{SELECTED_NATIVE_OUT_JSON}},
+    { "type": "direct", "tag": "direct-out" },
+    { "type": "block", "tag": "block-out" }
+  ],
+  "route": {
+    "rules": [
+      { "protocol": "dns", "outbound": "selected-native-out" }
+    ],
+    "final": "selected-native-out"
+  }
+}
