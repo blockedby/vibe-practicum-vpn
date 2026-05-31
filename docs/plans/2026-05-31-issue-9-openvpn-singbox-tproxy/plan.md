@@ -192,3 +192,11 @@ Report: `reports/slice-b-plan-and-repo.md`.
 - Task B2 status: done. `verification/slice-b-local.md` now contains the AC1-AC8 live proof map, reversible DNS adjustment gate, backup/rollback path, and local verification evidence.
 - Verification: `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, `jq . configs/sing-box/tproxy-canary.json`, and `bash -n scripts/openvpn-asus-tproxy-canary-rules.sh` passed after edits.
 - Remaining blocker for root issue: AC3-AC6 still require live Slice C with an active dynamic client session; no live VPS mutations were made in Slice B.
+
+## Root integration and current done-state
+
+- Slice B completed repo-side plan/docs/runbook work in commit `d7f0bd1` and root verification/audit follow-ups in later commits.
+- Root verification passed: `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, `jq . configs/sing-box/tproxy-canary.json`, `sing-box check -c configs/sing-box/tproxy-canary.json`, and `bash -n scripts/openvpn-asus-tproxy-canary-rules.sh`.
+- Acceptance audit accepted Slice B with limitations and confirmed root issue #9 is not fixed yet because AC3-AC6 require active dynamic-client proof.
+- Draft PR opened: https://github.com/blockedby/vibe-practicum-vpn/pull/10.
+- Current root done-state: partial. Repo-side readiness is complete; live Slice C should wait for an active `ignat`/dynamic client session unless an operator explicitly wants to stage reversible DNS config changes before end-to-end proof.

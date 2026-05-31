@@ -1,11 +1,11 @@
 # Issue #9: OpenVPN dynamic clients through sing-box TPROXY/VLESS
 
-- Status: running — discovery-first AAD flow
+- Status: partial — repo-side preparation complete; live Slice C pending active dynamic client
 - Root owner: AAD root owner
 - Branch: `issue-9-openvpn-singbox-tproxy`
 - Worktree: `.worktrees/issue-9-openvpn-singbox-tproxy`
 - GitHub issue: https://github.com/blockedby/vibe-practicum-vpn/issues/9
-- PR URL: not opened yet
+- PR URL: https://github.com/blockedby/vibe-practicum-vpn/pull/10
 
 ## Report index
 
