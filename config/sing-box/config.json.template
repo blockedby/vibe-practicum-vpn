@@ -8,10 +8,17 @@
   },
   "inbounds": [
     {
-      "type": "tproxy",
-      "tag": "canary-tproxy-in",
+      "type": "redirect",
+      "tag": "vpnkit-redirect-in",
       "listen": "0.0.0.0",
       "listen_port": 2082
+    },
+    {
+      "type": "direct",
+      "tag": "vpnkit-dns-in",
+      "listen": "0.0.0.0",
+      "listen_port": 5353,
+      "network": "udp"
     }
   ],
   "outbounds": [
@@ -21,7 +28,8 @@
   ],
   "route": {
     "rules": [
-      { "protocol": "dns", "outbound": "selected-native-out" }
+      { "inbound": "vpnkit-dns-in", "action": "hijack-dns" },
+      { "protocol": "dns", "action": "hijack-dns" }
     ],
     "final": "selected-native-out"
   }

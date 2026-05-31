@@ -7,6 +7,7 @@ services:
       - "1194:1194/udp"
     environment:
       ENABLE_DEPRECATED_LEGACY_DNS_SERVERS: "true"
+      VPNKIT_ROUTING_MODE: "redirect"
     privileged: true
     cap_add:
       - NET_ADMIN

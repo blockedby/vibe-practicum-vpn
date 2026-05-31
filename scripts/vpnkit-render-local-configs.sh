@@ -7,13 +7,24 @@ cp config/openvpn/server.tpl "$RENDERED/openvpn/server.conf"
 cp "$BASE/openvpn/pki/ca.crt" "$BASE/openvpn/pki/ta.key" "$BASE/openvpn/pki/vibe-asus.crt" "$BASE/openvpn/pki/vibe-asus.key" "$RENDERED/openvpn/pki/"
 cp "$BASE/openvpn/server/ccd-ignat" "$RENDERED/openvpn/ccd/ignat" 2>/dev/null || true
 python3 - "$BASE/sing-box/tproxy-canary.json" config/sing-box/config.json.template "$RENDERED/sing-box/config.json" <<'PY'
-import json, sys
+import ipaddress, json, socket, sys
 src, tmpl, out = sys.argv[1:]
 data=json.load(open(src))
 vless=[o for o in data.get('outbounds',[]) if o.get('tag')=='selected-native-out' and o.get('type')=='vless']
 if not vless:
     raise SystemExit('selected-native-out vless outbound not found')
-text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', json.dumps(vless[0], indent=4))
+selected=dict(vless[0])
+server=selected.get('server')
+if server:
+    try:
+        ipaddress.ip_address(server)
+    except ValueError:
+        # Avoid a runtime bootstrap loop where sing-box must resolve its own VLESS
+        # server through the VLESS outbound before the outbound is connected. Keep
+        # TLS/SNI settings untouched; only the dial address is pre-resolved during
+        # local secret rendering, and the rendered file remains gitignored.
+        selected['server']=socket.getaddrinfo(server, selected.get('server_port', 443), socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', json.dumps(selected, indent=4))
 open(out,'w').write(text)
 PY
 python3 - "$BASE/openvpn/pki" config/openvpn/test-client.ovpn.template "$BASE/openvpn/client/test-client.ovpn" <<'PY'
