@@ -11,8 +11,7 @@
       "type": "tproxy",
       "tag": "canary-tproxy-in",
       "listen": "0.0.0.0",
-      "listen_port": 2082,
-      "network": "tcp,udp"
+      "listen_port": 2082
     }
   ],
   "outbounds": [

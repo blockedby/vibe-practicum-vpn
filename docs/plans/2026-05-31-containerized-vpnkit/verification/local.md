@@ -13,4 +13,6 @@ grep checks for forbidden broad NAT, xray in lab runtime, UUID/private-key/vless
 # passed
 ```
 
-Live privileged Docker/VLESS validation was not run because real secrets are intentionally absent and operator action is required.
+Live privileged Docker/VLESS validation was later run with real VPS material copied into gitignored `secrets/vps/`. See `verification/live-docker-2026-05-31.md`.
+
+Result: partial success. OpenVPN-in-container works and the separate client container gets `10.89.0.2`; client packets enter `vpnkit` `tun0` and TPROXY counters increase. The remaining failure is the TPROXY handoff to a userland transparent socket: sing-box does not log `inbound/tproxy` accepts for `10.89.0.2`, and client DNS/HTTPS time out.

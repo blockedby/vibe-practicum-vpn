@@ -5,6 +5,9 @@ services:
     restart: unless-stopped
     ports:
       - "1194:1194/udp"
+    environment:
+      ENABLE_DEPRECATED_LEGACY_DNS_SERVERS: "true"
+    privileged: true
     cap_add:
       - NET_ADMIN
       - NET_RAW

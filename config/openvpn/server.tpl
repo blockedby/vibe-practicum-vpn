@@ -8,9 +8,16 @@ push "dhcp-option DNS 10.89.0.1"
 keepalive 10 120
 persist-key
 persist-tun
+remote-cert-tls client
+auth SHA256
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305:AES-256-CBC
+data-ciphers-fallback AES-256-CBC
+cipher AES-256-GCM
+dh none
 verb 3
 ca /etc/openvpn/pki/ca.crt
 cert /etc/openvpn/pki/vibe-asus.crt
 key /etc/openvpn/pki/vibe-asus.key
-tls-crypt /etc/openvpn/pki/ta.key
+tls-auth /etc/openvpn/pki/ta.key 0
+key-direction 0
 client-config-dir /etc/openvpn/ccd

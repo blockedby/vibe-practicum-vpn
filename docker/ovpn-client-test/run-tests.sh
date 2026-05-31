@@ -6,8 +6,10 @@ mkdir -p "$(dirname "$LOG")"
   date -u +%FT%TZ
   ip addr show tun0
   ip route
-  getent hosts example.com || true
-  dig +time=10 +tries=1 example.com || true
-  curl -4 --max-time 20 https://ifconfig.me || true
+  # Query an explicit public resolver so DNS traffic traverses the OpenVPN tunnel
+  # and can be hijacked by sing-box TPROXY. Docker's 127.0.0.11 resolver is local
+  # to this client container and does not exercise the VPN path.
+  dig +time=10 +tries=1 @8.8.8.8 example.com || true
+  curl -4 --max-time 20 --resolve ifconfig.me:443:34.117.59.81 https://ifconfig.me -o /dev/null -w 'https-test http_code=%{http_code} remote_ip=%{remote_ip}\n' || true
   curl -4 --max-time 20 --resolve example.com:443:1.1.1.1 https://example.com/ -o /dev/null -w 'literal-ip-test http_code=%{http_code} remote_ip=%{remote_ip}\n' || true
 } 2>&1 | tee "$LOG"
