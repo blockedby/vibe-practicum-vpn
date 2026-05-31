@@ -35,3 +35,12 @@ Acceptance status after root verification:
 - AC6: partial — broad NAT classified as fallback, but final path not proven live.
 - AC7: mostly passed — `sing-box-vibe-router` active, package `sing-box.service` masked; xray remains a legacy side service.
 - AC8: passed for repo-side documentation/runbook; live final state still pending Slice C.
+
+Additional targeted config validation:
+
+```bash
+sing-box version
+sing-box check -c configs/sing-box/tproxy-canary.json
+```
+
+Result: passed with local `sing-box 1.13.12`; `sing-box check` exited `0`.
