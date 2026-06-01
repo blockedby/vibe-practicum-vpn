@@ -1,10 +1,11 @@
 services:
   vpnkit:
-    build: ./docker/vpnkit
-    container_name: vpnkit
+    build:
+      context: .
+      dockerfile: docker/vpnkit/Dockerfile
     restart: unless-stopped
     ports:
-      - "1194:1194/udp"
+      - "${VPNKIT_OPENVPN_PORT:-1194}:1194/udp"
     environment:
       ENABLE_DEPRECATED_LEGACY_DNS_SERVERS: "true"
       VPNKIT_ROUTING_MODE: "redirect"
@@ -22,11 +23,13 @@ services:
     volumes:
       - ./secrets/vps/rendered/openvpn:/etc/openvpn:ro
       - ./secrets/vps/rendered/sing-box:/etc/sing-box:ro
+      - ./secrets/vps/rendered/vibe-vpn:/etc/vibe-vpn:ro
+      - vpnkit-vibe-vpn-state:/var/lib/vibe-vpn
       - ./logs:/var/log/vpnkit
+      - ./logs/vibe-vpn:/var/log/vibe-vpn
 
   ovpn-client-test:
     build: ./docker/ovpn-client-test
-    container_name: ovpn-client-test
     profiles: ["test"]
     depends_on:
       - vpnkit
@@ -39,3 +42,6 @@ services:
       - ./secrets/vps/openvpn/client:/etc/openvpn/client:ro
       - ./logs:/var/log/vpnkit
     command: ["/etc/openvpn/client/test-client.ovpn"]
+
+volumes:
+  vpnkit-vibe-vpn-state:

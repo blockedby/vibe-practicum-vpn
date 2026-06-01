@@ -5,6 +5,7 @@ mkdir -p "$(dirname "$OUT")"
 redact() {
   sed -E \
     -e 's#vless://[^[:space:]]+#vless://[redacted]#g' \
+    -e 's#(https?://)[^[:space:]]*(token|sub|subscription|api_key|apikey|key)[^[:space:]]*#\1[redacted-url]#ig' \
     -e 's/([0-9a-f]{8}-[0-9a-f-]{27,})/[redacted-uuid]/ig' \
     -e 's/(private[_-]?key[":= ]+)[^", ]+/\1[redacted]/ig' \
     -e 's/(password[":= ]+)[^", ]+/\1[redacted]/ig'
@@ -24,6 +25,10 @@ redact() {
   docker compose exec -T vpnkit iptables -t mangle -L OVPN_TO_SINGBOX -v -n -x || true
   echo '--- vpnkit listeners ---'
   docker compose exec -T vpnkit ss -lntup || true
+  echo '--- vpnkit vibe-vpn binary ---'
+  docker compose exec -T vpnkit /usr/local/bin/vibe-vpn --help 2>&1 | head -40 || true
+  echo '--- vpnkit vibe-vpn doctor ---'
+  docker compose exec -T vpnkit /usr/local/bin/vibe-vpn doctor --config /etc/vibe-vpn/config.yaml 2>&1 | redact || true
   echo '--- vpnkit logs ---'
   docker compose logs --no-color --tail=240 vpnkit | redact
   echo '--- ovpn-client-test logs ---'
