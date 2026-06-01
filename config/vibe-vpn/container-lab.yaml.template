@@ -25,8 +25,9 @@ health:
   failure_retry_delays: [1s, 2s, 3s]
   probe_timeout: 5s
   required_urls:
-    - https://x.com/
+    - https://example.com/
   diagnostic_urls:
+    - https://x.com/
     - https://ya.ru/
 logging:
   path: /var/log/vibe-vpn/
