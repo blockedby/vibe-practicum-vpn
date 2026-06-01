@@ -26,6 +26,7 @@ services:
       - ./secrets/vps/rendered/sing-box:/etc/sing-box:ro
       - ./secrets/vps/rendered/vibe-vpn:/etc/vibe-vpn:ro
       - vpnkit-vibe-vpn-state:/var/lib/vibe-vpn
+      - vpnkit-sing-box-state:/var/lib/vpnkit/sing-box
       - ./logs:/var/log/vpnkit
       - ./logs/vibe-vpn:/var/log/vibe-vpn
 
@@ -46,3 +47,4 @@ services:
 
 volumes:
   vpnkit-vibe-vpn-state:
+  vpnkit-sing-box-state:

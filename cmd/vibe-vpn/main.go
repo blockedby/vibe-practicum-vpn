@@ -558,7 +558,7 @@ func cmdRollback(o *cliOptions) error {
 	if normalizedRuntime(c) == "xray" {
 		b, rollbackErr = xray.Rollback(c.XrayConfig, c.StateDir)
 	} else {
-		b, rollbackErr = singbox.Rollback(c.SingBoxConfig, c.StateDir, c.SingBoxService)
+		b, rollbackErr = singbox.RollbackWithRestart(c.SingBoxConfig, c.StateDir, singboxRestartConfig(c))
 	}
 	if rollbackErr == nil {
 		fmt.Println("Rolled back", b)
@@ -626,7 +626,7 @@ func applyResult(c config.Config, b picker.NodeResult) error {
 		if convErr != nil {
 			return fmt.Errorf("build sing-box outbound from selected link: %w", convErr)
 		}
-		backup, err = singbox.Apply(c.SingBoxConfig, c.StateDir, c.SingBoxService, out)
+		backup, err = singbox.ApplyWithRestart(c.SingBoxConfig, c.StateDir, out, singboxRestartConfig(c))
 	}
 	if err != nil {
 		return err
@@ -640,6 +640,15 @@ func applyResult(c config.Config, b picker.NodeResult) error {
 	}
 	fmt.Printf("Applied to production %s. Backup: %s\n", normalizedRuntime(c), backup)
 	return nil
+}
+
+func singboxRestartConfig(c config.Config) singbox.RestartConfig {
+	return singbox.RestartConfig{
+		Mode:        singbox.RestartMode(c.SingBoxRestartMode),
+		Service:     c.SingBoxService,
+		RequestFile: c.SingBoxRestartFile,
+		SingBoxBin:  c.SingBoxBin,
+	}
 }
 
 func normalizedRuntime(c config.Config) string {

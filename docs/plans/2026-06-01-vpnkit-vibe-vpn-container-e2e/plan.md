@@ -267,3 +267,12 @@ Follow-up CF-1 status (2026-06-01): done.
 - Fixed cleanup command rendering so `--rmi local` appears only when image cleanup is enabled.
 - Updated `docs/VPNKIT_VIBE_VPN_RUNBOOK.md`.
 - Focused verification: `bash -n`; help grep; missing-subscription default failure log; missing-subscription `--cleanup-on-failure --no-cleanup-images` log. See `reports/slice-owner-cleanup-followup.md`.
+
+## Apply adapter slice ledger (2026-06-01)
+
+Status: partial.
+- Added `apply-adapter-plan.md` and implemented a request-file sing-box restart adapter for vpnkit container use while preserving systemd as the default VPS mode.
+- Added writable `/var/lib/vpnkit/sing-box/config.json` active config and supervisor-owned restart handling in `docker/vpnkit/entrypoint.sh`.
+- Added `--switching` to `scripts/vpnkit-vibe-vpn-e2e.sh`.
+- Fresh local checks passed: `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, shell syntax checks, and `docker compose config`.
+- Real e2e with local gitignored inputs passed baseline OpenVPN/DNS/HTTPS/literal-IP before switching and reached `vibe-vpn apply best`; post-switch client DNS failed because the available selected outbound host caused sing-box DNS lookup loop/timeouts. See `verification/apply-adapter.md` and `reports/apply-adapter-slice-owner.md`.

@@ -47,6 +47,8 @@ type Config struct {
 	SingBoxBin          string        `json:"sing_box_bin" yaml:"sing_box_bin"`
 	SingBoxConfig       string        `json:"sing_box_config" yaml:"sing_box_config"`
 	SingBoxService      string        `json:"sing_box_service" yaml:"sing_box_service"`
+	SingBoxRestartMode  string        `json:"sing_box_restart_mode" yaml:"sing_box_restart_mode"`
+	SingBoxRestartFile  string        `json:"sing_box_restart_file" yaml:"sing_box_restart_file"`
 	StateDir            string        `json:"state_dir" yaml:"state_dir"`
 	ProductionSocks     string        `json:"production_socks" yaml:"production_socks"`
 	TestSocks           string        `json:"test_socks" yaml:"test_socks"`
@@ -130,22 +132,23 @@ const (
 
 func Default() Config {
 	return Config{
-		SubscriptionFile: "/etc/vibe-vpn/sub_url",
-		ExtraNodesFile:   "/etc/vibe-vpn/extra-nodes.json",
-		Runtime:          "singbox",
-		XrayBin:          "/usr/local/bin/xray",
-		XrayConfig:       "/usr/local/etc/xray/config.json",
-		SingBoxBin:       "/usr/bin/sing-box",
-		SingBoxConfig:    "/etc/sing-box-vibe/tproxy-canary.json",
-		SingBoxService:   "sing-box-vibe-router",
-		StateDir:         "/var/lib/vibe-vpn",
-		ProductionSocks:  "127.0.0.1:2080",
-		TestSocks:        "127.0.0.1:18080",
-		TestURL:          "https://proof.ovh.net/files/10Mb.dat",
-		TestLimitKiB:     512,
-		TimeoutSeconds:   12,
-		Service:          ServiceConfig{Enabled: true, StartupTest: true, Mode: DefaultServiceMode},
-		Test:             TestConfig{Interval: NewDuration(30 * time.Minute)},
+		SubscriptionFile:   "/etc/vibe-vpn/sub_url",
+		ExtraNodesFile:     "/etc/vibe-vpn/extra-nodes.json",
+		Runtime:            "singbox",
+		XrayBin:            "/usr/local/bin/xray",
+		XrayConfig:         "/usr/local/etc/xray/config.json",
+		SingBoxBin:         "/usr/bin/sing-box",
+		SingBoxConfig:      "/etc/sing-box-vibe/tproxy-canary.json",
+		SingBoxService:     "sing-box-vibe-router",
+		SingBoxRestartMode: "systemd",
+		StateDir:           "/var/lib/vibe-vpn",
+		ProductionSocks:    "127.0.0.1:2080",
+		TestSocks:          "127.0.0.1:18080",
+		TestURL:            "https://proof.ovh.net/files/10Mb.dat",
+		TestLimitKiB:       512,
+		TimeoutSeconds:     12,
+		Service:            ServiceConfig{Enabled: true, StartupTest: true, Mode: DefaultServiceMode},
+		Test:               TestConfig{Interval: NewDuration(30 * time.Minute)},
 		Health: HealthConfig{
 			NormalInterval:     NewDuration(5 * time.Second),
 			FailureRetryDelays: []Duration{NewDuration(time.Second), NewDuration(2 * time.Second), NewDuration(3 * time.Second)},

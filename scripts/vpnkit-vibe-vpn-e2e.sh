@@ -7,6 +7,7 @@ KEEP_ARTIFACTS=0
 CLEANUP_ON_FAILURE=0
 BUILD=1
 CLEANUP_IMAGES=1
+SWITCHING=0
 
 usage() {
   cat <<'EOF'
@@ -20,6 +21,7 @@ Options:
   --no-build                  Skip docker compose build
   --cleanup-images            Remove local e2e-built images during cleanup (default on success)
   --no-cleanup-images         Keep local e2e-built images
+  --switching                 Run apply/switch check and repeat client probes
   -h, --help                  Show this help
 EOF
 }
@@ -33,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     --no-build) BUILD=0; shift ;;
     --cleanup-images) CLEANUP_IMAGES=1; shift ;;
     --no-cleanup-images) CLEANUP_IMAGES=0; shift ;;
+    --switching) SWITCHING=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -146,8 +149,18 @@ fi
 run dc up -d vpnkit
 run dc exec -T vpnkit /usr/local/bin/vibe-vpn doctor --config /etc/vibe-vpn/config.yaml
 run dc exec -T vpnkit /usr/local/bin/vibe-vpn test --config /etc/vibe-vpn/config.yaml --limit-kib 64 --max 2
-run dc exec -T vpnkit /usr/local/bin/sing-box check -c /etc/sing-box/config.json
+run dc exec -T vpnkit /usr/local/bin/sing-box check -c /var/lib/vpnkit/sing-box/config.json
 run dc --profile test up --abort-on-container-exit --exit-code-from ovpn-client-test ovpn-client-test
+if [[ $SWITCHING -eq 1 ]]; then
+  log "running vibe-vpn apply best switching check"
+  run dc exec -T vpnkit /usr/local/bin/vibe-vpn apply --config /etc/vibe-vpn/config.yaml best
+  sleep 3
+  run dc exec -T vpnkit /usr/local/bin/vibe-vpn current --config /etc/vibe-vpn/config.yaml
+  run dc exec -T vpnkit /usr/local/bin/sing-box check -c /var/lib/vpnkit/sing-box/config.json
+  run dc --profile test up --abort-on-container-exit --exit-code-from ovpn-client-test ovpn-client-test
+else
+  log "switching check skipped; pass --switching to run apply best and repeat client probes"
+fi
 EVIDENCE="logs/vpnkit-vibe-vpn-e2e/$RUN_ID-evidence.txt"
 COMPOSE_PROJECT_NAME="$PROJECT" scripts/vpnkit-collect-evidence.sh "$EVIDENCE" || true
 log "evidence: $EVIDENCE"

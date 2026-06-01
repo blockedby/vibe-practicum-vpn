@@ -74,3 +74,58 @@ func TestApplyReplacesSelectedNativeOutboundNotDirect(t *testing.T) {
 		t.Fatalf("selected outbound = %#v", selected)
 	}
 }
+
+func TestApplyRequestFileValidatesBeforeReplace(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	old := []byte(`{"outbounds":[{"tag":"selected-native-out","type":"direct"}]}`)
+	if err := os.WriteFile(cfg, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var checked []string
+	oldRun := runCommand
+	runCommand = func(name string, args ...string) error {
+		checked = append(checked, append([]string{name}, args...)...)
+		return nil
+	}
+	t.Cleanup(func() { runCommand = oldRun })
+	req := filepath.Join(dir, "run", "restart-sing-box")
+	_, err := ApplyWithRestart(cfg, dir, map[string]any{"type": "vless", "server": "new.example"}, RestartConfig{Mode: RestartModeRequestFile, RequestFile: req, SingBoxBin: "sing-box"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(req); err != nil {
+		t.Fatalf("restart request not written: %v", err)
+	}
+	if len(checked) == 0 {
+		t.Fatal("candidate was not checked")
+	}
+	b, _ := os.ReadFile(cfg)
+	if string(b) == string(old) {
+		t.Fatal("config was not replaced after valid check")
+	}
+}
+
+func TestApplyValidationFailureLeavesConfigAndNoRequest(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	old := []byte(`{"outbounds":[{"tag":"selected-native-out","type":"direct"}]}`)
+	if err := os.WriteFile(cfg, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldRun := runCommand
+	runCommand = func(name string, args ...string) error { return os.ErrInvalid }
+	t.Cleanup(func() { runCommand = oldRun })
+	req := filepath.Join(dir, "restart")
+	_, err := ApplyWithRestart(cfg, dir, map[string]any{"type": "vless"}, RestartConfig{Mode: RestartModeRequestFile, RequestFile: req, SingBoxBin: "sing-box"})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	b, _ := os.ReadFile(cfg)
+	if string(b) != string(old) {
+		t.Fatalf("config changed on validation failure: %s", b)
+	}
+	if _, statErr := os.Stat(req); !os.IsNotExist(statErr) {
+		t.Fatalf("request file exists after validation failure: %v", statErr)
+	}
+}
