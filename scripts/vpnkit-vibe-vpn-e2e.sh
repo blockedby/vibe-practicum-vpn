@@ -46,6 +46,7 @@ LOG_FILE=${LOG_FILE:-logs/vpnkit-vibe-vpn-e2e/$RUN_ID.log}
 mkdir -p "$(dirname "$LOG_FILE")"
 PROJECT="vpnkit-vibe-vpn-e2e-$RUN_ID"
 PROJECT=${PROJECT//./-}
+PROJECT=$(printf '%s' "$PROJECT" | tr '[:upper:]' '[:lower:]')
 TMP_OVERRIDE="$(mktemp -t vpnkit-vibe-vpn-e2e-$RUN_ID.XXXXXX.yml)"
 STATUS=1
 
@@ -63,15 +64,17 @@ run() { log "+ $*"; "$@"; }
 dc() { docker compose -p "$PROJECT" -f docker-compose.yml -f "$TMP_OVERRIDE" "$@"; }
 
 compose_down() {
+  # Include the test profile so profile-gated one-shot containers are removed
+  # before local images are deleted.
   if [[ $CLEANUP_IMAGES -eq 1 ]]; then
-    dc down --remove-orphans --volumes --rmi local || true
+    dc --profile test down --remove-orphans --volumes --rmi local || true
   else
-    dc down --remove-orphans --volumes || true
+    dc --profile test down --remove-orphans --volumes || true
   fi
 }
 
 cleanup_command() {
-  local cmd="docker compose -p $PROJECT -f docker-compose.yml -f $TMP_OVERRIDE down --remove-orphans --volumes"
+  local cmd="docker compose -p $PROJECT -f docker-compose.yml -f $TMP_OVERRIDE --profile test down --remove-orphans --volumes"
   if [[ $CLEANUP_IMAGES -eq 1 ]]; then
     cmd+=" --rmi local"
   fi
@@ -103,7 +106,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-exec > >(tee "$LOG_FILE" | redact_stream) 2>&1
+# Redact before writing to both console and per-run log file.
+exec > >(redact_stream | tee "$LOG_FILE") 2>&1
 log "run id: $RUN_ID"
 log "compose project: $PROJECT"
 log "log file: $LOG_FILE"
