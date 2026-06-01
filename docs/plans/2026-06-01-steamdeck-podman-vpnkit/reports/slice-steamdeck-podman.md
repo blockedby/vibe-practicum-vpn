@@ -63,5 +63,5 @@
 - Verification target: `podman ps/logs/exec`, `sing-box check`, `vibe-vpn doctor/test/apply` if feasible, LAN/Tailscale/OpenVPN client checks.
 
 ## Commit / push update
-- Commit: `548a648 Add Steam Deck Podman vpnkit deployment tooling`
+- Commit: `432b9db Add Steam Deck Podman vpnkit deployment tooling`
 - Pushed branch: `origin/pi/steamdeck-podman-vpnkit`
