@@ -5,6 +5,7 @@
 *.qr.png
 secrets/
 clients/
+logs/
 
 # Runtime dumps that may contain sensitive data
 *.pcap

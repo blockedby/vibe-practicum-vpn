@@ -1,0 +1,50 @@
+services:
+  vpnkit:
+    build:
+      context: .
+      dockerfile: docker/vpnkit/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${VPNKIT_OPENVPN_PORT:-1194}:1194/udp"
+    environment:
+      ENABLE_DEPRECATED_LEGACY_DNS_SERVERS: "true"
+      ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER: "true"
+      VPNKIT_ROUTING_MODE: "redirect"
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.src_valid_mark: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
+    volumes:
+      - ./secrets/vps/rendered/openvpn:/etc/openvpn:ro
+      - ./secrets/vps/rendered/sing-box:/etc/sing-box:ro
+      - ./secrets/vps/rendered/vibe-vpn:/etc/vibe-vpn:ro
+      - vpnkit-vibe-vpn-state:/var/lib/vibe-vpn
+      - vpnkit-sing-box-state:/var/lib/vpnkit/sing-box
+      - ./logs:/var/log/vpnkit
+      - ./logs/vibe-vpn:/var/log/vibe-vpn
+
+  ovpn-client-test:
+    build: ./docker/ovpn-client-test
+    profiles: ["test"]
+    depends_on:
+      - vpnkit
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - ./secrets/vps/openvpn/client:/etc/openvpn/client:ro
+      - ./logs:/var/log/vpnkit
+    command: ["/etc/openvpn/client/test-client.ovpn"]
+
+volumes:
+  vpnkit-vibe-vpn-state:
+  vpnkit-sing-box-state:

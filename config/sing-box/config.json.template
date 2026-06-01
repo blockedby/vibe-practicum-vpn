@@ -1,0 +1,37 @@
+{
+  "log": { "level": "debug", "timestamp": true },
+  "dns": {
+    "servers": [
+      { "tag": "remote-dns", "address": "tls://8.8.8.8", "detour": "selected-native-out" },
+      { "tag": "remote-dns-fallback", "address": "tls://8.8.4.4", "detour": "selected-native-out" }
+    ],
+    "final": "remote-dns"
+  },
+  "inbounds": [
+    {
+      "type": "redirect",
+      "tag": "vpnkit-redirect-in",
+      "listen": "0.0.0.0",
+      "listen_port": 2082
+    },
+    {
+      "type": "direct",
+      "tag": "vpnkit-dns-in",
+      "listen": "0.0.0.0",
+      "listen_port": 5353,
+      "network": "udp"
+    }
+  ],
+  "outbounds": [
+    {{SELECTED_NATIVE_OUT_JSON}},
+    { "type": "direct", "tag": "direct-out" },
+    { "type": "block", "tag": "block-out" }
+  ],
+  "route": {
+    "rules": [
+      { "inbound": "vpnkit-dns-in", "action": "hijack-dns" },
+      { "protocol": "dns", "action": "hijack-dns" }
+    ],
+    "final": "selected-native-out"
+  }
+}
