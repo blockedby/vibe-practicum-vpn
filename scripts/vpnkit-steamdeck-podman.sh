@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SSH_TARGET=${VPNKIT_STEAMDECK_SSH_TARGET:-deck}
+REMOTE_DIR=${VPNKIT_STEAMDECK_REMOTE_DIR:-~/.local/state/vpnkit}
+IMAGE=${VPNKIT_STEAMDECK_IMAGE:-localhost/vpnkit:steamdeck}
+CONTAINER=${VPNKIT_STEAMDECK_CONTAINER:-vpnkit}
+OPENVPN_PORT=${VPNKIT_OPENVPN_PORT:-1194}
+CONFIG_SOURCE=${VPNKIT_STEAMDECK_CONFIG_SOURCE:-secrets/vps/rendered}
+LAN_ENDPOINT=${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}
+TAILSCALE_ENDPOINT=${VPNKIT_STEAMDECK_TAILSCALE_ENDPOINT:-}
+SSH_OPTS=()
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/vpnkit-steamdeck-podman.sh [options] <action>
+
+Actions:
+  check-ssh   Read-only SSH and Podman discovery on the Deck
+  sync        Transfer tracked build context plus rendered gitignored configs
+  build       Build the vpnkit image on the Deck with podman
+  run         Recreate/start the vpnkit container on the Deck
+  deploy      sync + build + run + verify
+  status      Show podman container status
+  verify      Run process/config health checks inside the container
+  logs        Show redacted container logs
+  stop        Stop the container if present
+  cleanup     Stop/remove the container and optional image with --remove-image
+
+Options:
+  --ssh-target HOST        SSH alias/host (env VPNKIT_STEAMDECK_SSH_TARGET; default deck)
+  --remote-dir DIR         Remote state dir (env VPNKIT_STEAMDECK_REMOTE_DIR; default ~/.local/state/vpnkit)
+  --image IMAGE            Podman image tag (env VPNKIT_STEAMDECK_IMAGE)
+  --container NAME         Container name (env VPNKIT_STEAMDECK_CONTAINER; default vpnkit)
+  --openvpn-port PORT      Host UDP port mapped to container 1194/udp (env VPNKIT_OPENVPN_PORT)
+  --config-source DIR      Local rendered config dir (env VPNKIT_STEAMDECK_CONFIG_SOURCE; default secrets/vps/rendered)
+  --lan-endpoint HOST      Optional LAN endpoint to ping from this host after deploy
+  --tailscale-endpoint IP  Optional Tailscale endpoint to ping from this host after deploy
+  --ssh-option OPT         Extra ssh option, repeatable (for example '-p 2222')
+  --remove-image           With cleanup, also remove image
+  -h, --help               Show help
+
+The script never prints config file contents. It transfers rendered configs as files and logs only file names,
+sizes, and redacted runtime excerpts.
+EOF
+}
+
+REMOVE_IMAGE=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ssh-target) SSH_TARGET=${2:?missing value}; shift 2 ;;
+    --remote-dir) REMOTE_DIR=${2:?missing value}; shift 2 ;;
+    --image) IMAGE=${2:?missing value}; shift 2 ;;
+    --container) CONTAINER=${2:?missing value}; shift 2 ;;
+    --openvpn-port) OPENVPN_PORT=${2:?missing value}; shift 2 ;;
+    --config-source) CONFIG_SOURCE=${2:?missing value}; shift 2 ;;
+    --lan-endpoint) LAN_ENDPOINT=${2:?missing value}; shift 2 ;;
+    --tailscale-endpoint) TAILSCALE_ENDPOINT=${2:?missing value}; shift 2 ;;
+    --ssh-option)
+      # Accept either one shell-style pair such as '-p 2222' or a single ssh option.
+      read -r -a _vpnkit_ssh_opt <<< "${2:?missing value}"
+      SSH_OPTS+=("${_vpnkit_ssh_opt[@]}")
+      shift 2
+      ;;
+    --remove-image) REMOVE_IMAGE=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+ACTION=${1:-}
+if [[ -z "$ACTION" ]]; then usage >&2; exit 2; fi
+
+redact_stream() {
+  sed -E \
+    -e 's#vless://[^[:space:]]+#vless://[redacted]#g' \
+    -e 's#(https?://)[^[:space:]]*(token|sub|subscription|api_key|apikey|key)[^[:space:]]*#\1[redacted-url]#ig' \
+    -e 's/([0-9a-f]{8}-[0-9a-f-]{27,})/[redacted-uuid]/ig' \
+    -e 's/(private[_-]?key[":= ]+)[^", ]+/\1[redacted]/ig' \
+    -e 's/(password[":= ]+)[^", ]+/\1[redacted]/ig'
+}
+log() { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
+remote() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"; }
+remote_sh() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' -- "$@"; }
+need_config() {
+  for path in "$CONFIG_SOURCE/openvpn/server.conf" "$CONFIG_SOURCE/sing-box/config.json" "$CONFIG_SOURCE/vibe-vpn/config.yaml" "$CONFIG_SOURCE/vibe-vpn/sub_url"; do
+    [[ -r "$path" ]] || { echo "missing required rendered input: $path" >&2; exit 1; }
+  done
+}
+
+sync_context() {
+  need_config
+  log "creating remote directories under $REMOTE_DIR on $SSH_TARGET"
+  remote "mkdir -p '$REMOTE_DIR/src' '$REMOTE_DIR/secrets/vps/rendered' '$REMOTE_DIR/state/vibe-vpn' '$REMOTE_DIR/state/sing-box' '$REMOTE_DIR/logs/vibe-vpn'"
+  log "transferring tracked repository build context (git archive; no .gitignored secrets)"
+  git archive --format=tar HEAD | ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "tar -xf - -C '$REMOTE_DIR/src'"
+  log "transferring rendered config files from $CONFIG_SOURCE (contents not printed)"
+  tar -C "$CONFIG_SOURCE" -cf - openvpn sing-box vibe-vpn | ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "tar -xf - -C '$REMOTE_DIR/secrets/vps/rendered'"
+  remote "find '$REMOTE_DIR/secrets/vps/rendered' -type f -printf '%P %s bytes\\n' | sort"
+}
+
+build_image() {
+  remote "cd '$REMOTE_DIR/src' && podman build -t '$IMAGE' -f docker/vpnkit/Dockerfile ."
+}
+
+run_container() {
+  remote_sh "$REMOTE_DIR" "$CONTAINER" "$IMAGE" "$OPENVPN_PORT" <<'REMOTE'
+set -Eeuo pipefail
+REMOTE_DIR=$1; CONTAINER=$2; IMAGE=$3; OPENVPN_PORT=$4
+podman rm -f "$CONTAINER" >/dev/null 2>&1 || true
+podman run -d --name "$CONTAINER" --replace \
+  --privileged \
+  --cap-add NET_ADMIN --cap-add NET_RAW \
+  --device /dev/net/tun:/dev/net/tun \
+  --sysctl net.ipv4.ip_forward=1 \
+  --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+  --sysctl net.ipv4.conf.all.rp_filter=0 \
+  --sysctl net.ipv4.conf.default.rp_filter=0 \
+  -p "${OPENVPN_PORT}:1194/udp" \
+  -e ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true \
+  -e ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER=true \
+  -e VPNKIT_ROUTING_MODE=redirect \
+  -v "$REMOTE_DIR/secrets/vps/rendered/openvpn:/etc/openvpn:ro" \
+  -v "$REMOTE_DIR/secrets/vps/rendered/sing-box:/etc/sing-box:ro" \
+  -v "$REMOTE_DIR/secrets/vps/rendered/vibe-vpn:/etc/vibe-vpn:ro" \
+  -v "$REMOTE_DIR/state/vibe-vpn:/var/lib/vibe-vpn" \
+  -v "$REMOTE_DIR/state/sing-box:/var/lib/vpnkit/sing-box" \
+  -v "$REMOTE_DIR/logs:/var/log/vpnkit" \
+  -v "$REMOTE_DIR/logs/vibe-vpn:/var/log/vibe-vpn" \
+  "$IMAGE"
+REMOTE
+}
+
+verify_container() {
+  remote_sh "$CONTAINER" <<'REMOTE' | redact_stream
+set -Eeuo pipefail
+CONTAINER=$1
+podman ps --filter "name=^${CONTAINER}$" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+podman logs --tail 80 "$CONTAINER" || true
+podman exec "$CONTAINER" pgrep -a openvpn
+podman exec "$CONTAINER" pgrep -a sing-box
+podman exec "$CONTAINER" sing-box check -c /var/lib/vpnkit/sing-box/config.json
+podman exec "$CONTAINER" /usr/local/bin/vibe-vpn doctor --config /etc/vibe-vpn/config.yaml
+REMOTE
+  [[ -z "$LAN_ENDPOINT" ]] || { log "host LAN ping $LAN_ENDPOINT"; ping -c 2 -W 2 "$LAN_ENDPOINT" || true; }
+  [[ -z "$TAILSCALE_ENDPOINT" ]] || { log "host Tailscale ping $TAILSCALE_ENDPOINT"; ping -c 2 -W 2 "$TAILSCALE_ENDPOINT" || true; }
+}
+
+case "$ACTION" in
+  check-ssh) remote "hostname; podman --version; id -u; test -e /dev/net/tun && echo /dev/net/tun:present || echo /dev/net/tun:missing" ;;
+  sync) sync_context ;;
+  build) build_image ;;
+  run) run_container ;;
+  deploy) sync_context; build_image; run_container; sleep 5; verify_container ;;
+  status) remote "podman ps -a --filter 'name=^${CONTAINER}$' --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}\\t{{.Ports}}'" ;;
+  verify) verify_container ;;
+  logs) remote "podman logs --tail 200 '$CONTAINER'" | redact_stream ;;
+  stop) remote "podman stop '$CONTAINER' || true" ;;
+  cleanup) remote "podman rm -f '$CONTAINER' || true; if [[ '$REMOVE_IMAGE' = 1 ]]; then podman rmi '$IMAGE' || true; fi" ;;
+  *) echo "unknown action: $ACTION" >&2; usage >&2; exit 2 ;;
+esac
