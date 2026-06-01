@@ -19,12 +19,14 @@
 
 ## Commits / push
 - Branch pushed: `origin/pi/steamdeck-podman-vpnkit`.
-- Commits before this final report:
+- Commits integrated at root-report time:
   - `c946ab1 Add Steam Deck Podman vpnkit task plan`
   - `432b9db Add Steam Deck Podman vpnkit deployment tooling`
   - `a55e028 Update Steam Deck Podman report ref`
   - `1744a64 Fix Steam Deck remote dir expansion`
-- `bb91bc8 Add Steam Deck Podman verification report`
+  - `ae9c671 Record remote dir fix report`
+  - `71a3778 Add Steam Deck Podman verification report`
+- Note: a later metadata-only commit may update this report file after this commit list is written; use `git log origin/main..origin/pi/steamdeck-podman-vpnkit` for the exact branch tip.
 
 ## Acceptance verification
 - Scripts/runbook/evidence exist: passed.
