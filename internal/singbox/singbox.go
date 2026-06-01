@@ -3,6 +3,7 @@ package singbox
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 var runCommand = func(name string, args ...string) error { return exec.Command(name, args...).Run() }
 var runSystemctl = func(args ...string) error { return exec.Command("systemctl", args...).Run() }
+var lookupIP = net.LookupIP
 
 type RestartMode string
 
@@ -63,7 +65,11 @@ func ApplyWithRestart(configPath, stateDir string, out map[string]any, restart R
 		return "", fmt.Errorf("no outbounds")
 	}
 	idx := firstProxyOutbound(arr)
-	arr[idx] = outboundWithPreservedTag(out, arr[idx])
+	nextOut, err := outboundForApply(out, arr[idx], restart)
+	if err != nil {
+		return "", err
+	}
+	arr[idx] = nextOut
 	cfg["outbounds"] = arr
 	nb, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -181,6 +187,14 @@ func firstProxyOutbound(arr []any) int {
 	}
 	return 0
 }
+func outboundForApply(out map[string]any, old any, restart RestartConfig) (map[string]any, error) {
+	next := outboundWithPreservedTag(out, old)
+	if restart.Mode != RestartModeRequestFile {
+		return next, nil
+	}
+	return preResolveOutboundServer(next)
+}
+
 func outboundWithPreservedTag(out map[string]any, old any) map[string]any {
 	next := make(map[string]any, len(out)+1)
 	for k, v := range out {
@@ -195,6 +209,31 @@ func outboundWithPreservedTag(out map[string]any, old any) map[string]any {
 		}
 	}
 	return next
+}
+
+func preResolveOutboundServer(out map[string]any) (map[string]any, error) {
+	server, _ := out["server"].(string)
+	if server == "" {
+		return out, nil
+	}
+	if net.ParseIP(server) != nil {
+		return out, nil
+	}
+	ips, err := lookupIP(server)
+	if err != nil {
+		return nil, fmt.Errorf("resolve selected outbound server for container apply: %w", err)
+	}
+	for _, ip := range ips {
+		if v4 := ip.To4(); v4 != nil {
+			out["server"] = v4.String()
+			return out, nil
+		}
+	}
+	if len(ips) > 0 {
+		out["server"] = ips[0].String()
+		return out, nil
+	}
+	return nil, fmt.Errorf("resolve selected outbound server for container apply: no addresses for %s", server)
 }
 
 func writeFileAtomic(path string, b []byte, perm os.FileMode) error {

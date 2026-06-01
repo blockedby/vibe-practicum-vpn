@@ -2,6 +2,7 @@ package singbox
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -88,7 +89,9 @@ func TestApplyRequestFileValidatesBeforeReplace(t *testing.T) {
 		checked = append(checked, append([]string{name}, args...)...)
 		return nil
 	}
-	t.Cleanup(func() { runCommand = oldRun })
+	oldLookup := lookupIP
+	lookupIP = func(host string) ([]net.IP, error) { return []net.IP{net.ParseIP("203.0.113.20")}, nil }
+	t.Cleanup(func() { runCommand = oldRun; lookupIP = oldLookup })
 	req := filepath.Join(dir, "run", "restart-sing-box")
 	_, err := ApplyWithRestart(cfg, dir, map[string]any{"type": "vless", "server": "new.example"}, RestartConfig{Mode: RestartModeRequestFile, RequestFile: req, SingBoxBin: "sing-box"})
 	if err != nil {
@@ -106,6 +109,71 @@ func TestApplyRequestFileValidatesBeforeReplace(t *testing.T) {
 	}
 }
 
+func TestApplyRequestFilePreResolvesDomainServerAndPreservesTLSName(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfg, []byte(`{"outbounds":[{"tag":"selected-native-out","type":"direct"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldRun := runCommand
+	runCommand = func(name string, args ...string) error { return nil }
+	oldLookup := lookupIP
+	lookupIP = func(host string) ([]net.IP, error) {
+		if host != "node.example" {
+			t.Fatalf("lookup host = %q", host)
+		}
+		return []net.IP{net.ParseIP("203.0.113.10")}, nil
+	}
+	t.Cleanup(func() { runCommand = oldRun; lookupIP = oldLookup })
+	req := filepath.Join(dir, "run", "restart-sing-box")
+	_, err := ApplyWithRestart(cfg, dir, map[string]any{"type": "vless", "server": "node.example", "server_port": 443, "tls": map[string]any{"enabled": true, "server_name": "node.example"}}, RestartConfig{Mode: RestartModeRequestFile, RequestFile: req, SingBoxBin: "sing-box"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	out := got["outbounds"].([]any)[0].(map[string]any)
+	if out["server"] != "203.0.113.10" {
+		t.Fatalf("server was not pre-resolved: %#v", out)
+	}
+	tls := out["tls"].(map[string]any)
+	if tls["server_name"] != "node.example" {
+		t.Fatalf("tls server_name changed: %#v", tls)
+	}
+}
+
+func TestApplySystemdDoesNotPreResolveDomainServer(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfg, []byte(`{"outbounds":[{"tag":"selected-native-out","type":"direct"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldSystemctl := runSystemctl
+	runSystemctl = func(args ...string) error { return nil }
+	oldLookup := lookupIP
+	lookupIP = func(host string) ([]net.IP, error) { t.Fatalf("unexpected lookup for systemd mode"); return nil, nil }
+	t.Cleanup(func() { runSystemctl = oldSystemctl; lookupIP = oldLookup })
+	_, err := ApplyWithRestart(cfg, dir, map[string]any{"type": "vless", "server": "node.example"}, RestartConfig{Mode: RestartModeSystemd, Service: "sing-box-vibe-router"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(cfg)
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	out := got["outbounds"].([]any)[0].(map[string]any)
+	if out["server"] != "node.example" {
+		t.Fatalf("systemd apply changed server: %#v", out)
+	}
+}
+
 func TestApplyValidationFailureLeavesConfigAndNoRequest(t *testing.T) {
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "config.json")
@@ -115,7 +183,9 @@ func TestApplyValidationFailureLeavesConfigAndNoRequest(t *testing.T) {
 	}
 	oldRun := runCommand
 	runCommand = func(name string, args ...string) error { return os.ErrInvalid }
-	t.Cleanup(func() { runCommand = oldRun })
+	oldLookup := lookupIP
+	lookupIP = func(host string) ([]net.IP, error) { return []net.IP{net.ParseIP("203.0.113.30")}, nil }
+	t.Cleanup(func() { runCommand = oldRun; lookupIP = oldLookup })
 	req := filepath.Join(dir, "restart")
 	_, err := ApplyWithRestart(cfg, dir, map[string]any{"type": "vless"}, RestartConfig{Mode: RestartModeRequestFile, RequestFile: req, SingBoxBin: "sing-box"})
 	if err == nil {
