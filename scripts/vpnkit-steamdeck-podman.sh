@@ -9,6 +9,7 @@ OPENVPN_PORT=${VPNKIT_OPENVPN_PORT:-1194}
 CONFIG_SOURCE=${VPNKIT_STEAMDECK_CONFIG_SOURCE:-secrets/vps/rendered}
 LAN_ENDPOINT=${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}
 TAILSCALE_ENDPOINT=${VPNKIT_STEAMDECK_TAILSCALE_ENDPOINT:-}
+LOG_FILE=${VPNKIT_STEAMDECK_LOG_FILE:-}
 SSH_OPTS=()
 
 usage() {
@@ -39,6 +40,7 @@ Options:
   --lan-endpoint HOST      Optional LAN endpoint to ping from this host after deploy
   --tailscale-endpoint IP  Optional Tailscale endpoint to ping from this host after deploy
   --ssh-option OPT         Extra ssh option, repeatable (for example '-p 2222')
+  --log-file PATH          Write redacted command output to PATH as well as stdout
   --remove-image           With cleanup, also remove image
   -h, --help               Show help
 
@@ -64,6 +66,7 @@ while [[ $# -gt 0 ]]; do
       SSH_OPTS+=("${_vpnkit_ssh_opt[@]}")
       shift 2
       ;;
+    --log-file) LOG_FILE=${2:?missing value}; shift 2 ;;
     --remove-image) REMOVE_IMAGE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
@@ -82,6 +85,11 @@ redact_stream() {
     -e 's/(private[_-]?key[":= ]+)[^", ]+/\1[redacted]/ig' \
     -e 's/(password[":= ]+)[^", ]+/\1[redacted]/ig'
 }
+if [[ -n "$LOG_FILE" ]]; then
+  mkdir -p "$(dirname "$LOG_FILE")"
+  exec > >(redact_stream | tee "$LOG_FILE") 2>&1
+fi
+
 log() { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
 remote() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"; }
 remote_sh() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' -- "$@"; }

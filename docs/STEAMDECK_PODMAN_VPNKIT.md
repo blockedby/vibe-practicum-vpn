@@ -40,6 +40,7 @@ scripts/vpnkit-steamdeck-podman.sh \
   --container vpnkit \
   --openvpn-port 1194 \
   --lan-endpoint 192.168.50.13 \
+  --log-file logs/steamdeck-podman/deploy-lan-$(date -u +%Y%m%dT%H%M%SZ).log \
   deploy
 ```
 
@@ -54,6 +55,7 @@ scripts/vpnkit-steamdeck-podman.sh \
   --container vpnkit \
   --openvpn-port 1194 \
   --tailscale-endpoint 100.94.95.32 \
+  --log-file logs/steamdeck-podman/deploy-ts-$(date -u +%Y%m%dT%H%M%SZ).log \
   deploy
 ```
 
@@ -92,4 +94,16 @@ Record redacted evidence in the active task package:
 - Deck deploy: `deploy`, `status`, `verify`, `logs`
 - Confirm no real secrets appear in tracked diffs before commit.
 
-OpenVPN client e2e from a separate host/client remains manual: import a generated client profile only through secure operator channels and test UDP connectivity to the Deck endpoint/port. Do not commit generated profiles.
+OpenVPN client e2e from this host can be run with the tracked client test helper. It creates an endpoint-specific temporary profile, runs the existing OpenVPN client test container, and writes redacted logs when `--log-file` is set:
+
+```bash
+scripts/vpnkit-steamdeck-client-test.sh \
+  --endpoint 192.168.50.13 \
+  --log-file logs/steamdeck-podman/client-lan-$(date -u +%Y%m%dT%H%M%SZ).log
+
+scripts/vpnkit-steamdeck-client-test.sh \
+  --endpoint 100.94.95.32 \
+  --log-file logs/steamdeck-podman/client-tailscale-$(date -u +%Y%m%dT%H%M%SZ).log
+```
+
+The helper requires local container runtime access (`docker` by default, or `--runtime podman`) and `/dev/net/tun`. Do not commit generated profiles or logs.
