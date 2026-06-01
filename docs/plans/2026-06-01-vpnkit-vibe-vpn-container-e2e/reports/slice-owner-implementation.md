@@ -139,8 +139,8 @@
 - Non-blocking findings tracked separately: none created; U-02 is an explicit current-goal limitation/deferred capability from the original boundaries.
 
 ## Commits / push / PR
-- Commit: `a56b0a2 Add vpnkit vibe-vpn container e2e`.
-- Push: pending at time this report section was first written; update after final push.
+- Commits: `a56b0a2 Add vpnkit vibe-vpn container e2e`; `7b67de8 Report vpnkit vibe-vpn e2e implementation`.
+- Push: pushed to `origin/pi/containerized-vpnkit-openvpn-singbox`.
 - PR: https://github.com/blockedby/vibe-practicum-vpn/pull/12.
 
 ## Verdict
