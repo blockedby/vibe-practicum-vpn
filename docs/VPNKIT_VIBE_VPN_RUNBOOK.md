@@ -41,6 +41,7 @@ Useful options:
 --run-id ID
 --log-file PATH
 --keep-artifacts
+--cleanup-on-failure
 --no-build
 --cleanup-images / --no-cleanup-images
 ```
@@ -70,7 +71,10 @@ configured node is used.
 
 On success the runner removes containers, volumes, orphans, and local e2e-built
 images by default. On failure it keeps artifacts for debugging and prints the
-exact cleanup command. `--keep-artifacts` keeps artifacts regardless of success.
+exact cleanup command. Use `--cleanup-on-failure` when a failed run should still
+run `docker compose down --remove-orphans --volumes`; combine it with
+`--cleanup-images` or `--no-cleanup-images` to control whether local e2e-built
+images are removed. `--keep-artifacts` keeps artifacts regardless of success.
 Logs and redacted evidence under `logs/` are never deleted automatically.
 
 ## Known limitation

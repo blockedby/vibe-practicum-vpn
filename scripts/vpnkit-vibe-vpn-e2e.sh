@@ -4,6 +4,7 @@ set -Eeuo pipefail
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
 LOG_FILE=""
 KEEP_ARTIFACTS=0
+CLEANUP_ON_FAILURE=0
 BUILD=1
 CLEANUP_IMAGES=1
 
@@ -15,6 +16,7 @@ Options:
   --run-id ID                 Shell-safe run id (default: UTC timestamp + random)
   --log-file PATH             Log file (default: logs/vpnkit-vibe-vpn-e2e/<run-id>.log)
   --keep-artifacts            Keep containers/volumes/images on exit
+  --cleanup-on-failure        Clean up containers/volumes after failed runs
   --no-build                  Skip docker compose build
   --cleanup-images            Remove local e2e-built images during cleanup (default on success)
   --no-cleanup-images         Keep local e2e-built images
@@ -27,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --run-id) RUN_ID=${2:?missing --run-id value}; shift 2 ;;
     --log-file) LOG_FILE=${2:?missing --log-file value}; shift 2 ;;
     --keep-artifacts) KEEP_ARTIFACTS=1; shift ;;
+    --cleanup-on-failure) CLEANUP_ON_FAILURE=1; shift ;;
     --no-build) BUILD=0; shift ;;
     --cleanup-images) CLEANUP_IMAGES=1; shift ;;
     --no-cleanup-images) CLEANUP_IMAGES=0; shift ;;
@@ -59,25 +62,42 @@ log() { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
 run() { log "+ $*"; "$@"; }
 dc() { docker compose -p "$PROJECT" -f docker-compose.yml -f "$TMP_OVERRIDE" "$@"; }
 
+compose_down() {
+  if [[ $CLEANUP_IMAGES -eq 1 ]]; then
+    dc down --remove-orphans --volumes --rmi local || true
+  else
+    dc down --remove-orphans --volumes || true
+  fi
+}
+
+cleanup_command() {
+  local cmd="docker compose -p $PROJECT -f docker-compose.yml -f $TMP_OVERRIDE down --remove-orphans --volumes"
+  if [[ $CLEANUP_IMAGES -eq 1 ]]; then
+    cmd+=" --rmi local"
+  fi
+  printf '%s' "$cmd"
+}
+
 cleanup() {
   local exit_status=$?
   STATUS=$exit_status
   if [[ $KEEP_ARTIFACTS -eq 1 ]]; then
     log "keeping artifacts for project $PROJECT"
     log "inspect with: docker compose -p $PROJECT -f docker-compose.yml -f $TMP_OVERRIDE ps"
-    log "cleanup with: docker compose -p $PROJECT -f docker-compose.yml -f $TMP_OVERRIDE down --remove-orphans --volumes${CLEANUP_IMAGES:+ --rmi local}"
+    log "cleanup with: $(cleanup_command)"
     return $exit_status
   fi
   if [[ $exit_status -eq 0 ]]; then
-    if [[ $CLEANUP_IMAGES -eq 1 ]]; then
-      dc down --remove-orphans --volumes --rmi local || true
-    else
-      dc down --remove-orphans --volumes || true
-    fi
+    compose_down
+    rm -f "$TMP_OVERRIDE"
+  elif [[ $CLEANUP_ON_FAILURE -eq 1 ]]; then
+    log "failure: cleaning up artifacts for project $PROJECT because --cleanup-on-failure was set"
+    log "+ $(cleanup_command)"
+    compose_down
     rm -f "$TMP_OVERRIDE"
   else
     log "failure: preserving artifacts by default for project $PROJECT"
-    log "cleanup with: docker compose -p $PROJECT -f docker-compose.yml -f $TMP_OVERRIDE down --remove-orphans --volumes --rmi local"
+    log "cleanup with: $(cleanup_command)"
   fi
   return $exit_status
 }

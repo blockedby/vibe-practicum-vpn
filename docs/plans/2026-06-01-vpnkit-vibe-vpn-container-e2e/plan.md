@@ -229,3 +229,41 @@ Verification evidence:
 
 Open limitations:
 - Container-safe `apply`, switching, and daemon failover remain deferred because the current apply path uses systemd service restart. This slice intentionally delivers observe-mode e2e and documents the follow-up adapter need.
+
+## Follow-up cleanup-on-failure gap (2026-06-01)
+
+Goal:
+- Confirm whether `scripts/vpnkit-vibe-vpn-e2e.sh` supports explicit automatic cleanup after failed runs; add a clear flag if absent while preserving default failure artifact retention.
+
+Scope / boundaries:
+- In scope: e2e runner cleanup flags/messages, runbook cleanup docs, task-package evidence/report.
+- Out of scope: broader e2e architecture, real secrets, VPS mutation, full Docker e2e success without subscription input.
+
+Reuse discovery:
+- Existing runner already owns run-id/project/log behavior and cleanup toggles (`--keep-artifacts`, image cleanup toggles).
+- Existing runbook documents setup/run/evidence/cleanup for the same runner.
+
+Missing piece:
+- If absent, add an explicit cleanup-on-failure control that runs compose `down --remove-orphans --volumes` on failure and honors image cleanup toggle without misleading cleanup command text.
+
+Plan task CF-1: Cleanup-on-failure flag and focused evidence
+- Acceptance criteria:
+  - Default failure runs keep artifacts and print manual cleanup guidance.
+  - `--cleanup-on-failure` failure runs execute compose cleanup with `down --remove-orphans --volumes` and include/remit image cleanup according to `--cleanup-images`/`--no-cleanup-images`.
+  - Help output and runbook document the flag.
+  - Obvious cleanup message bugs are fixed, including no `--rmi local` when image cleanup is disabled.
+- Test plan:
+  - `bash -n scripts/vpnkit-vibe-vpn-e2e.sh`
+  - Help output/grep for cleanup flags.
+  - Missing-subscription run showing default failure keeps artifacts.
+  - Missing-subscription run with cleanup flag showing cleanup path/log message.
+- Dependencies: none.
+- Executor: aad-implementer.
+- Report path: `docs/plans/2026-06-01-vpnkit-vibe-vpn-container-e2e/reports/aad-implementer-cleanup-followup.md`.
+
+Follow-up CF-1 status (2026-06-01): done.
+- Implemented `--cleanup-on-failure` in `scripts/vpnkit-vibe-vpn-e2e.sh`.
+- Preserved default failed-run artifact retention.
+- Fixed cleanup command rendering so `--rmi local` appears only when image cleanup is enabled.
+- Updated `docs/VPNKIT_VIBE_VPN_RUNBOOK.md`.
+- Focused verification: `bash -n`; help grep; missing-subscription default failure log; missing-subscription `--cleanup-on-failure --no-cleanup-images` log. See `reports/slice-owner-cleanup-followup.md`.
