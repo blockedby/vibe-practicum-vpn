@@ -1,0 +1,13 @@
+[
+  {
+    "name": "lil-sweden hy2",
+    "type": "hysteria2",
+    "host": "84.22.149.216",
+    "port": 443,
+    "auth_file": "/etc/vibe-vpn/lil-sweden-hy2-auth",
+    "server_name": "computer.peacedata.company",
+    "network": "tcp",
+    "up_mbps": 100,
+    "down_mbps": 100
+  }
+]

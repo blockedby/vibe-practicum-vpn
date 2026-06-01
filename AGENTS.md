@@ -93,3 +93,21 @@
     sudo systemctl enable --now openvpn.service || true
   '
   ```
+
+## vibe-vpn daemon and lil-sweden Hysteria2
+
+- `vpnkit` can run `vibe-vpn daemon` inside the container when explicitly enabled with:
+  ```bash
+  -e VPNKIT_ENABLE_VIBE_VPN_DAEMON=true
+  ```
+- The daemon needs production sing-box SOCKS on `127.0.0.1:2080`; keep the container sing-box template's `vpnkit-socks-in` inbound when changing configs.
+- `lil-sweden` Hysteria2 extra node uses gitignored auth material only. Do not commit real auth. Expected operator files before rendering:
+  ```text
+  secrets/vps/vibe-vpn/extra-nodes.json
+  secrets/vps/vibe-vpn/lil-sweden-hy2-auth
+  ```
+- The tracked sanitized template is:
+  ```text
+  config/vibe-vpn/extra-nodes.lil-sweden.hy2.json.template
+  ```
+- The `host` field intentionally dials `84.22.149.216` while `server_name` stays `computer.peacedata.company` to avoid DNS bootstrap loops when sing-box is using the selected outbound for DNS.

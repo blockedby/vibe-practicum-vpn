@@ -381,7 +381,7 @@ func singBoxTempConfig(n vless.Node, socksAddr string) ([]byte, error) {
 	if _, err := fmt.Sscanf(portText, "%d", &port); err != nil {
 		return nil, fmt.Errorf("invalid test_socks port %q: %w", portText, err)
 	}
-	out, err := vless.SingBoxOutbound(n.Link)
+	out, err := singBoxOutboundForNode(n)
 	if err != nil {
 		return nil, err
 	}
@@ -393,6 +393,28 @@ func singBoxTempConfig(n vless.Node, socksAddr string) ([]byte, error) {
 		"route":     map[string]any{"final": "benchmark-out"},
 	}
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+func singBoxOutboundForNode(n vless.Node) (map[string]any, error) {
+	if t, _ := n.Outbound["type"].(string); t != "" {
+		return cloneMap(n.Outbound), nil
+	}
+	return vless.SingBoxOutbound(n.Link)
+}
+
+func singBoxOutboundForResult(r picker.NodeResult) (map[string]any, error) {
+	if t, _ := r.Outbound["type"].(string); t != "" {
+		return cloneMap(r.Outbound), nil
+	}
+	return vless.SingBoxOutbound(r.Link)
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 func successThreshold(limitBytes int64) int64 {
 	if limitBytes <= 0 {
@@ -622,9 +644,9 @@ func applyResult(c config.Config, b picker.NodeResult) error {
 	if normalizedRuntime(c) == "xray" {
 		backup, err = xray.Apply(c.XrayConfig, c.StateDir, b.Outbound)
 	} else {
-		out, convErr := vless.SingBoxOutbound(b.Link)
+		out, convErr := singBoxOutboundForResult(b)
 		if convErr != nil {
-			return fmt.Errorf("build sing-box outbound from selected link: %w", convErr)
+			return fmt.Errorf("build sing-box outbound from selected result: %w", convErr)
 		}
 		backup, err = singbox.ApplyWithRestart(c.SingBoxConfig, c.StateDir, out, singboxRestartConfig(c))
 	}

@@ -20,6 +20,12 @@
       "listen": "0.0.0.0",
       "listen_port": 5353,
       "network": "udp"
+    },
+    {
+      "type": "socks",
+      "tag": "vpnkit-socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
     }
   ],
   "outbounds": [

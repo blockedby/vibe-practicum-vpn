@@ -23,9 +23,14 @@ type Node struct {
 	Outbound   map[string]any `json:"outbound,omitempty"`
 	Auth       string         `json:"auth,omitempty"`
 	AuthFile   string         `json:"auth_file,omitempty"`
+	Password   string         `json:"password,omitempty"`
 	ServerName string         `json:"server_name,omitempty"`
 	SNI        string         `json:"sni,omitempty"`
 	ALPN       []string       `json:"alpn,omitempty"`
+	Obfs       string         `json:"obfs,omitempty"`
+	ObfsFile   string         `json:"obfs_file,omitempty"`
+	UpMbps     int            `json:"up_mbps,omitempty"`
+	DownMbps   int            `json:"down_mbps,omitempty"`
 	BrutalMbps int            `json:"brutal_mbps,omitempty"`
 }
 
@@ -93,57 +98,74 @@ func (d Node) hysteria2Node() (vless.Node, error) {
 	if d.Port <= 0 || d.Port > 65535 {
 		return vless.Node{}, fmt.Errorf("hysteria2 node has invalid port %d", d.Port)
 	}
-	auth, err := d.auth()
+	password, err := d.password()
 	if err != nil {
 		return vless.Node{}, err
 	}
-	if auth == "" {
-		return vless.Node{}, fmt.Errorf("hysteria2 node missing auth/auth_file")
+	if password == "" {
+		return vless.Node{}, fmt.Errorf("hysteria2 node missing auth/auth_file/password")
 	}
 	serverName := first(d.ServerName, d.SNI, host)
-	alpn := d.ALPN
-	if len(alpn) == 0 {
-		alpn = []string{"h3"}
-	}
 	name := strings.TrimSpace(d.Name)
 	if name == "" {
 		name = fmt.Sprintf("%s:%d", host, d.Port)
 	}
-	stream := map[string]any{
-		"network":  "hysteria",
-		"security": "tls",
-		"tlsSettings": map[string]any{
-			"serverName": serverName,
-			"alpn":       alpn,
-		},
-		"hysteriaSettings": map[string]any{
-			"version": 2,
-			"auth":    auth,
-		},
-	}
-	if d.BrutalMbps > 0 {
-		rate := fmt.Sprintf("%d mbps", d.BrutalMbps)
-		stream["finalmask"] = map[string]any{"quicParams": map[string]any{"congestion": "force-brutal", "brutalUp": rate, "brutalDown": rate}}
-	}
 	outbound := map[string]any{
-		"protocol": "hysteria",
-		"settings": map[string]any{
-			"version": 2,
-			"address": host,
-			"port":    d.Port,
+		"type":        "hysteria2",
+		"server":      host,
+		"server_port": d.Port,
+		"password":    password,
+		"network":     first(d.Network, "tcp"),
+		"tls": map[string]any{
+			"enabled":     true,
+			"server_name": serverName,
 		},
-		"streamSettings": stream,
 	}
-	return vless.Node{Link: first(d.Link, "static://"+slug(name)), Name: name, Host: host, Port: d.Port, Network: "hysteria", Security: "tls", Outbound: outbound}, nil
+	if len(d.ALPN) > 0 {
+		outbound["tls"].(map[string]any)["alpn"] = d.ALPN
+	}
+	obfs, err := d.obfsPassword()
+	if err != nil {
+		return vless.Node{}, err
+	}
+	if obfs != "" {
+		outbound["obfs"] = map[string]any{"type": "salamander", "password": obfs}
+	}
+	upMbps := d.UpMbps
+	if upMbps == 0 {
+		upMbps = d.BrutalMbps
+	}
+	downMbps := d.DownMbps
+	if downMbps == 0 {
+		downMbps = d.BrutalMbps
+	}
+	if upMbps > 0 {
+		outbound["up_mbps"] = upMbps
+	}
+	if downMbps > 0 {
+		outbound["down_mbps"] = downMbps
+	}
+	return vless.Node{Link: first(d.Link, "static://"+slug(name)), Name: name, Host: host, Port: d.Port, Network: "hysteria2", Security: "tls", Outbound: outbound}, nil
 }
 
-func (d Node) auth() (string, error) {
+func (d Node) password() (string, error) {
 	if d.AuthFile == "" {
-		return strings.TrimSpace(d.Auth), nil
+		return strings.TrimSpace(first(d.Password, d.Auth)), nil
 	}
 	b, err := os.ReadFile(d.AuthFile)
 	if err != nil {
 		return "", fmt.Errorf("read auth_file %s: %w", d.AuthFile, err)
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func (d Node) obfsPassword() (string, error) {
+	if d.ObfsFile == "" {
+		return strings.TrimSpace(d.Obfs), nil
+	}
+	b, err := os.ReadFile(d.ObfsFile)
+	if err != nil {
+		return "", fmt.Errorf("read obfs_file %s: %w", d.ObfsFile, err)
 	}
 	return strings.TrimSpace(string(b)), nil
 }

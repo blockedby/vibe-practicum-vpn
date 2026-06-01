@@ -64,8 +64,12 @@ if [[ -r "$BASE/vibe-vpn/extra-nodes.json" ]]; then
 else
   printf '[]\n' > "$RENDERED/vibe-vpn/extra-nodes.json"
 fi
+if [[ -r "$BASE/vibe-vpn/lil-sweden-hy2-auth" ]]; then
+  cp "$BASE/vibe-vpn/lil-sweden-hy2-auth" "$RENDERED/vibe-vpn/lil-sweden-hy2-auth"
+fi
 chmod 600 "$RENDERED/sing-box/config.json" "$BASE/openvpn/client/test-client.ovpn" "$RENDERED/vibe-vpn/config.yaml" "$RENDERED/vibe-vpn/extra-nodes.json"
 if [[ -f "$RENDERED/vibe-vpn/sub_url" ]]; then chmod 600 "$RENDERED/vibe-vpn/sub_url"; fi
+if [[ -f "$RENDERED/vibe-vpn/lil-sweden-hy2-auth" ]]; then chmod 600 "$RENDERED/vibe-vpn/lil-sweden-hy2-auth"; fi
 echo "Rendered $RENDERED/openvpn/server.conf, $RENDERED/sing-box/config.json, $RENDERED/vibe-vpn/config.yaml, and $BASE/openvpn/client/test-client.ovpn"
 if [[ ! -f "$RENDERED/vibe-vpn/sub_url" ]]; then
   echo "WARNING: missing vibe-vpn subscription input; see $RENDERED/vibe-vpn/README.missing-subscription" >&2
