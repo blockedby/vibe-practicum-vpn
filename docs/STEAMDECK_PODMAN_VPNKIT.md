@@ -30,7 +30,7 @@ scripts/vpnkit-steamdeck-podman.sh --ssh-target steamdeck-ts --ssh-option '-p 22
 
 ## Deploy
 
-Default remote state is `~/.local/state/vpnkit`. The script transfers a tracked `git archive` build context plus the rendered gitignored config tree. It logs only paths/sizes and redacted runtime excerpts.
+Default remote state is `~/.local/state/vpnkit`. The script resolves `~` / `~/...` over SSH to the Deck user's real `$HOME` before creating directories or using Podman volume mounts; absolute remote paths are used unchanged. It transfers a tracked `git archive` build context plus the rendered gitignored config tree. It logs only paths/sizes and redacted runtime excerpts.
 
 ```bash
 scripts/vpnkit-steamdeck-podman.sh \

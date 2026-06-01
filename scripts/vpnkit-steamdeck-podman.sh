@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 SSH_TARGET=${VPNKIT_STEAMDECK_SSH_TARGET:-deck}
-REMOTE_DIR=${VPNKIT_STEAMDECK_REMOTE_DIR:-~/.local/state/vpnkit}
+REMOTE_DIR=${VPNKIT_STEAMDECK_REMOTE_DIR:-'~/.local/state/vpnkit'}
 IMAGE=${VPNKIT_STEAMDECK_IMAGE:-localhost/vpnkit:steamdeck}
 CONTAINER=${VPNKIT_STEAMDECK_CONTAINER:-vpnkit}
 OPENVPN_PORT=${VPNKIT_OPENVPN_PORT:-1194}
@@ -17,6 +17,8 @@ Usage: scripts/vpnkit-steamdeck-podman.sh [options] <action>
 
 Actions:
   check-ssh   Read-only SSH and Podman discovery on the Deck
+  resolve-remote-dir
+              Read-only check: print the normalized remote state dir
   sync        Transfer tracked build context plus rendered gitignored configs
   build       Build the vpnkit image on the Deck with podman
   run         Recreate/start the vpnkit container on the Deck
@@ -83,6 +85,18 @@ redact_stream() {
 log() { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
 remote() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"; }
 remote_sh() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' -- "$@"; }
+normalize_remote_dir() {
+  remote_sh "$REMOTE_DIR" <<'REMOTE'
+set -Eeuo pipefail
+remote_dir=$1
+case "$remote_dir" in
+  '~') printf '%s\n' "$HOME" ;;
+  '~/'*) printf '%s/%s\n' "$HOME" "${remote_dir#~/}" ;;
+  /*) printf '%s\n' "$remote_dir" ;;
+  *) echo "remote dir must be absolute or start with ~/: $remote_dir" >&2; exit 2 ;;
+esac
+REMOTE
+}
 need_config() {
   for path in "$CONFIG_SOURCE/openvpn/server.conf" "$CONFIG_SOURCE/sing-box/config.json" "$CONFIG_SOURCE/vibe-vpn/config.yaml" "$CONFIG_SOURCE/vibe-vpn/sub_url"; do
     [[ -r "$path" ]] || { echo "missing required rendered input: $path" >&2; exit 1; }
@@ -149,10 +163,11 @@ REMOTE
 
 case "$ACTION" in
   check-ssh) remote "hostname; podman --version; id -u; test -e /dev/net/tun && echo /dev/net/tun:present || echo /dev/net/tun:missing" ;;
-  sync) sync_context ;;
-  build) build_image ;;
-  run) run_container ;;
-  deploy) sync_context; build_image; run_container; sleep 5; verify_container ;;
+  resolve-remote-dir) normalize_remote_dir ;;
+  sync) REMOTE_DIR=$(normalize_remote_dir); sync_context ;;
+  build) REMOTE_DIR=$(normalize_remote_dir); build_image ;;
+  run) REMOTE_DIR=$(normalize_remote_dir); run_container ;;
+  deploy) REMOTE_DIR=$(normalize_remote_dir); sync_context; build_image; run_container; sleep 5; verify_container ;;
   status) remote "podman ps -a --filter 'name=^${CONTAINER}$' --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}\\t{{.Ports}}'" ;;
   verify) verify_container ;;
   logs) remote "podman logs --tail 200 '$CONTAINER'" | redact_stream ;;

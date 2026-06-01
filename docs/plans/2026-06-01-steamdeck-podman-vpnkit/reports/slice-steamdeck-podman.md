@@ -65,3 +65,9 @@
 ## Commit / push update
 - Commit: `432b9db Add Steam Deck Podman vpnkit deployment tooling`
 - Pushed branch: `origin/pi/steamdeck-podman-vpnkit`
+
+## Follow-up integration fix: remote-dir normalization
+- Status: resolved current-goal blocker R-02.
+- Changed: `scripts/vpnkit-steamdeck-podman.sh` now keeps the default remote dir as literal `~/.local/state/vpnkit`, resolves `~`/`~/...` over SSH using the Deck user's `$HOME` before `sync`, `build`, `run`, or `deploy`, preserves absolute remote paths, and rejects unsupported relative paths. Added read-only `resolve-remote-dir` check action.
+- Docs: `docs/STEAMDECK_PODMAN_VPNKIT.md` clarifies `~` resolution and absolute path behavior.
+- Verification: see `verification/steamdeck-podman.md` follow-up section. `bash -n` passed; `check-ssh` still passed; read-only normalization checks resolved default to `/home/deck/.local/state/vpnkit`, `~` to `/home/deck`, absolute `/tmp/vpnkit-test` unchanged, and relative path rejected.

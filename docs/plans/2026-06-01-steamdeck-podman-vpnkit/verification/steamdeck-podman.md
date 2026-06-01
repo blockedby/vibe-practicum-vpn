@@ -92,3 +92,23 @@ podman version 5.3.2
 1000
 /dev/net/tun:present
 ```
+
+## Follow-up remote-dir normalization fix
+```
++ bash -n scripts/vpnkit-steamdeck-podman.sh
+PASS
++ scripts/vpnkit-steamdeck-podman.sh --ssh-target deck check-ssh
+steamdeck
+podman version 5.3.2
+1000
+/dev/net/tun:present
++ scripts/vpnkit-steamdeck-podman.sh --ssh-target deck resolve-remote-dir
+/home/deck/.local/state/vpnkit
++ scripts/vpnkit-steamdeck-podman.sh --ssh-target deck --remote-dir '~' resolve-remote-dir
+/home/deck
++ scripts/vpnkit-steamdeck-podman.sh --ssh-target deck --remote-dir /tmp/vpnkit-test resolve-remote-dir
+/tmp/vpnkit-test
++ scripts/vpnkit-steamdeck-podman.sh --ssh-target deck --remote-dir relative/path resolve-remote-dir
+remote dir must be absolute or start with ~/: relative/path
+EXPECTED_FAIL
+```

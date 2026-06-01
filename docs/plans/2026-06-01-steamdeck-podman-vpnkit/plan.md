@@ -55,3 +55,4 @@ Verification plan:
 - Live deploy was attempted but blocked before remote mutation because required gitignored rendered inputs were absent locally: `secrets/vps/rendered/openvpn/server.conf` (and related rendered config tree). This is U-01 for this slice unless an operator provides/render secrets.
 - LAN and Tailscale host pings to `192.168.50.13` and `100.94.95.32` passed.
 - Docker e2e was skipped because the same rendered secret/config prerequisites are absent; existing compose config checks passed and e2e script was not modified.
+- 2026-06-01 follow-up integration fix: resolved current-goal blocker where literal `~` could be embedded in remote shell commands. `scripts/vpnkit-steamdeck-podman.sh` now resolves `~`/`~/...` to remote `$HOME` over SSH before remote dir use, preserves absolute paths, and rejects relative paths. Verification appended in `verification/steamdeck-podman.md`.
