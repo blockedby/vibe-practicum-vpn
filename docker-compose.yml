@@ -10,6 +10,7 @@ services:
       ENABLE_DEPRECATED_LEGACY_DNS_SERVERS: "true"
       ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER: "true"
       VPNKIT_ROUTING_MODE: "redirect"
+      VPNKIT_ENABLE_VIBE_VPN_DAEMON: "${VPNKIT_ENABLE_VIBE_VPN_DAEMON:-false}"
     privileged: true
     cap_add:
       - NET_ADMIN

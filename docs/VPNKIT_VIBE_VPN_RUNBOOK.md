@@ -29,6 +29,21 @@ The renderer writes gitignored container files to
 `secrets/vps/rendered/vibe-vpn/`, including `config.yaml` from the sanitized
 tracked template at `config/vibe-vpn/container-lab.yaml.template`.
 
+To include `lil-sweden` Hysteria2 in `vibe-vpn test`/daemon periodic tests,
+copy the sanitized template and provide the auth file locally:
+
+```bash
+mkdir -p secrets/vps/vibe-vpn
+cp config/vibe-vpn/extra-nodes.lil-sweden.hy2.json.template \
+  secrets/vps/vibe-vpn/extra-nodes.json
+install -m 600 /path/to/lil-sweden-hy2-auth \
+  secrets/vps/vibe-vpn/lil-sweden-hy2-auth
+scripts/vpnkit-render-local-configs.sh
+```
+
+The tracked template dials `84.22.149.216:443` with TLS/SNI
+`computer.peacedata.company` to avoid DNS bootstrap loops inside sing-box.
+
 ## Run the e2e
 
 ```bash
@@ -77,10 +92,22 @@ run `docker compose down --remove-orphans --volumes`; combine it with
 images are removed. `--keep-artifacts` keeps artifacts regardless of success.
 Logs and redacted evidence under `logs/` are never deleted automatically.
 
-## Known limitation
+## Daemon mode
 
-Container-safe `apply`, switching, and daemon failover are not enabled in this
-slice because the current production sing-box apply path restarts a systemd
-service. A future container adapter should update only the selected sing-box
-outbound/config and ask the single container supervisor to reload/restart
-sing-box without introducing duplicate process ownership.
+By default the container starts OpenVPN and sing-box only. Enable the long-running
+`vibe-vpn daemon` explicitly:
+
+```bash
+VPNKIT_ENABLE_VIBE_VPN_DAEMON=true docker compose up -d vpnkit
+```
+
+or pass the same environment variable to `docker run`/Podman. The daemon uses the
+container-safe sing-box request-file restart adapter from
+`config/vibe-vpn/container-lab.yaml.template`; the vpnkit entrypoint supervises
+OpenVPN, sing-box, and the daemon process. Keep the `vpnkit-socks-in` sing-box
+inbound at `127.0.0.1:2080` because daemon health probes use `production_socks`.
+
+The container template defaults to `service.mode: failover-only`: periodic tests
+update `last-results.json`, while automatic switching is reserved for confirmed
+health failures. Use `mode: fastest-rotation` only when regular fastest-node
+switching is intended.

@@ -15,7 +15,7 @@ test_url: https://proof.ovh.net/files/10Mb.dat
 test_limit_kib: 64
 timeout_seconds: 12
 service:
-  enabled: false
+  enabled: true
   startup_test: false
   mode: failover-only
 test:

@@ -5,6 +5,8 @@ SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.json}
 SINGBOX_CONFIG=${SINGBOX_CONFIG:-/var/lib/vpnkit/sing-box/config.json}
 SINGBOX_RESTART_FILE=${SINGBOX_RESTART_FILE:-/run/vpnkit/restart-sing-box}
 OPENVPN_CONFIG=${OPENVPN_CONFIG:-/etc/openvpn/server.conf}
+VIBE_VPN_CONFIG=${VIBE_VPN_CONFIG:-/etc/vibe-vpn/config.yaml}
+VPNKIT_ENABLE_VIBE_VPN_DAEMON=${VPNKIT_ENABLE_VIBE_VPN_DAEMON:-false}
 
 if [[ ! -r "$SINGBOX_SOURCE_CONFIG" ]]; then
   echo "missing sing-box source config: $SINGBOX_SOURCE_CONFIG" >&2
@@ -23,6 +25,7 @@ fi
 sing-box check -c "$SINGBOX_CONFIG"
 SINGBOX_PID=""
 OVPN_PID=""
+VIBE_VPN_PID=""
 WATCH_PID=""
 
 start_singbox() {
@@ -42,7 +45,7 @@ restart_singbox() {
 }
 
 cleanup() {
-  kill "${WATCH_PID:-}" "${SINGBOX_PID:-}" "${OVPN_PID:-}" 2>/dev/null || true
+  kill "${WATCH_PID:-}" "${SINGBOX_PID:-}" "${OVPN_PID:-}" "${VIBE_VPN_PID:-}" 2>/dev/null || true
 }
 trap cleanup INT TERM EXIT
 
@@ -60,6 +63,21 @@ until ip link show tun0 >/dev/null 2>&1; do
 done
 
 /usr/local/bin/setup-routing.sh
+
+case "${VPNKIT_ENABLE_VIBE_VPN_DAEMON,,}" in
+  1|true|yes|on)
+    if [[ ! -r "$VIBE_VPN_CONFIG" ]]; then
+      echo "missing vibe-vpn config: $VIBE_VPN_CONFIG" >&2
+      exit 1
+    fi
+    vibe-vpn daemon --config "$VIBE_VPN_CONFIG" &
+    VIBE_VPN_PID=$!
+    echo "started vibe-vpn daemon pid=$VIBE_VPN_PID config=$VIBE_VPN_CONFIG"
+    ;;
+  *)
+    echo "vibe-vpn daemon disabled (set VPNKIT_ENABLE_VIBE_VPN_DAEMON=true to enable)"
+    ;;
+esac
 
 last_restart_seen=""
 while true; do
@@ -79,6 +97,11 @@ while true; do
   if ! kill -0 "$OVPN_PID" 2>/dev/null; then
     echo "openvpn exited" >&2
     wait "$OVPN_PID"
+    exit 1
+  fi
+  if [[ -n "${VIBE_VPN_PID:-}" ]] && ! kill -0 "$VIBE_VPN_PID" 2>/dev/null; then
+    echo "vibe-vpn daemon exited" >&2
+    wait "$VIBE_VPN_PID"
     exit 1
   fi
   sleep 1

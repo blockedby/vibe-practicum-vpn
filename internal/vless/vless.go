@@ -11,7 +11,9 @@ import (
 type Node struct {
 	Link, Name, Host, Network, Security string
 	Port                                int
-	Outbound                            map[string]any
+	// Outbound is the runtime outbound used for non-VLESS/static nodes, or the
+	// legacy xray/V2Ray outbound for parsed VLESS subscription links.
+	Outbound map[string]any
 }
 
 func Parse(link string) (Node, error) {
