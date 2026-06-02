@@ -81,3 +81,15 @@ Report: `reports/aad-implementer-routing.md`.
 ## Execution ledger
 - 2026-06-02: created worktree and initial task package.
 - 2026-06-02: aad-implementer implemented Task 1 scoped compatibility bypass in progress; local evidence recorded in `verification/local.md`, final report pending in `reports/aad-implementer-routing.md`.
+
+## Owner final verification (2026-06-02)
+- Fresh `bash -n docker/vpnkit/setup-routing.sh scripts/vpnkit-routing-compat-bypass-test.sh` — passed.
+- Fresh `bash scripts/vpnkit-routing-compat-bypass-test.sh` — passed.
+- Fresh `docker compose config >/tmp/vpnkit-compose-config-owner.out` — passed.
+- Fresh `git diff --check` — passed.
+- Fresh broad-NAT grep over routing/compose source — passed/no broad OpenVPN-client POSTROUTING MASQUERADE match.
+- `shellcheck docker/vpnkit/setup-routing.sh scripts/vpnkit-routing-compat-bypass-test.sh` — not run because `shellcheck` is unavailable in this environment.
+- `gh pr view` — PR #16 open draft, no status checks reported.
+
+## Final done-state
+Task 1 is done. Slice stayed whole and used one `aad-implementer` task. Compatibility bypass is disabled by default, documents `vpn.proofix.tv:1194` UDP default plus explicit proto syntax, and adds only scoped endpoint direct rules with optional endpoint ICMP. No current-goal blockers or required GitHub follow-up issues.
