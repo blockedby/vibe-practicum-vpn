@@ -5,6 +5,7 @@ REPORT_PATH: docs/plans/2026-06-02-ru-direct-singbox/reports/aad-implementer-ru-
 PROGRESS_PATH: docs/plans/2026-06-02-ru-direct-singbox/progress/aad-implementer-ru-direct.md
 COMMITS:
 - 3d4534d: Route RU sing-box traffic direct
+- 6f6a3e2: Record RU direct routing evidence
 FILES_CHANGED:
 - config/sing-box/config.json.template: added RU IP and RU geosite-compatible remote rule-set routes to `direct-out`, preserving DNS hijack first and final `selected-native-out`.
 - internal/singbox/singbox_test.go: added regression coverage for template placeholder JSON parsing, route ordering, RU direct rules, remote rule-set declarations, and final route.
@@ -41,4 +42,4 @@ QUALITY_NOTES:
 SIDE_FINDINGS:
 - Blocking: none.
 - Non-blocking follow-up candidates: existing template uses sing-box legacy DNS server format and lacks `route.default_domain_resolver`, which local sing-box 1.13.12 now gates unless compatibility env vars are set.
-NOTES: Used `geosite-category-ru` as the available sing-box SRS equivalent for broad RU geosite/category routing from the same runetfreedom source family as `geoip-ru`. No VPS commands were run.
+NOTES: Used `geosite-category-ru` as the available sing-box SRS equivalent for broad RU geosite/category routing from the same runetfreedom source family as `geoip-ru`. No VPS commands were run. `git status --short` after commit `6f6a3e2` was clean before this final report SHA update.
