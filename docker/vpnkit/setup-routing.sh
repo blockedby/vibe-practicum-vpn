@@ -143,10 +143,10 @@ resolve_compat_endpoint_ips() {
 }
 
 reset_compat_bypass_chains() {
-  run iptables -t nat -N OVPN_COMPAT_DIRECT_POSTROUTING 2>/dev/null || true
-  run iptables -t nat -F OVPN_COMPAT_DIRECT_POSTROUTING
-  run iptables -N OVPN_COMPAT_DIRECT_FORWARD 2>/dev/null || true
-  run iptables -F OVPN_COMPAT_DIRECT_FORWARD
+  run iptables -t nat -N OVPN_COMPAT_POST 2>/dev/null || true
+  run iptables -t nat -F OVPN_COMPAT_POST
+  run iptables -N OVPN_COMPAT_FWD 2>/dev/null || true
+  run iptables -F OVPN_COMPAT_FWD
 }
 
 install_compat_bypass_rules() {
@@ -166,9 +166,9 @@ install_compat_bypass_rules() {
     return 1
   fi
 
-  ensure_iptables_rule nat POSTROUTING -s "$OVPN_CIDR" -j OVPN_COMPAT_DIRECT_POSTROUTING
-  ensure_iptables_rule filter FORWARD -s "$OVPN_CIDR" -j OVPN_COMPAT_DIRECT_FORWARD
-  ensure_iptables_rule filter FORWARD -d "$OVPN_CIDR" -j OVPN_COMPAT_DIRECT_FORWARD
+  ensure_iptables_rule nat POSTROUTING -s "$OVPN_CIDR" -j OVPN_COMPAT_POST
+  ensure_iptables_rule filter FORWARD -s "$OVPN_CIDR" -j OVPN_COMPAT_FWD
+  ensure_iptables_rule filter FORWARD -d "$OVPN_CIDR" -j OVPN_COMPAT_FWD
 
   for spec in "${specs[@]}"; do
     IFS=$'\t' read -r host port proto < <(parse_compat_endpoint "$spec")
@@ -181,16 +181,16 @@ install_compat_bypass_rules() {
     while IFS= read -r ip; do
       [[ -n $ip ]] || continue
       run iptables -t nat -A OVPN_REDIRECT_TO_SINGBOX -d "$ip" -p "$proto" --dport "$port" -j RETURN
-      run iptables -t nat -A OVPN_COMPAT_DIRECT_POSTROUTING -d "$ip" -p "$proto" --dport "$port" -j MASQUERADE
-      run iptables -A OVPN_COMPAT_DIRECT_FORWARD -s "$OVPN_CIDR" -d "$ip" -p "$proto" --dport "$port" -j ACCEPT
-      run iptables -A OVPN_COMPAT_DIRECT_FORWARD -d "$OVPN_CIDR" -s "$ip" -p "$proto" --sport "$port" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+      run iptables -t nat -A OVPN_COMPAT_POST -d "$ip" -p "$proto" --dport "$port" -j MASQUERADE
+      run iptables -A OVPN_COMPAT_FWD -s "$OVPN_CIDR" -d "$ip" -p "$proto" --dport "$port" -j ACCEPT
+      run iptables -A OVPN_COMPAT_FWD -d "$OVPN_CIDR" -s "$ip" -p "$proto" --sport "$port" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
       if is_truthy "$VPNKIT_COMPAT_BYPASS_ALLOW_ICMP" && [[ -z ${icmp_seen[$ip]:-} ]]; then
         icmp_seen[$ip]=1
         run iptables -t nat -A OVPN_REDIRECT_TO_SINGBOX -d "$ip" -p icmp -j RETURN
-        run iptables -t nat -A OVPN_COMPAT_DIRECT_POSTROUTING -d "$ip" -p icmp -j MASQUERADE
-        run iptables -A OVPN_COMPAT_DIRECT_FORWARD -s "$OVPN_CIDR" -d "$ip" -p icmp -j ACCEPT
-        run iptables -A OVPN_COMPAT_DIRECT_FORWARD -d "$OVPN_CIDR" -s "$ip" -p icmp -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+        run iptables -t nat -A OVPN_COMPAT_POST -d "$ip" -p icmp -j MASQUERADE
+        run iptables -A OVPN_COMPAT_FWD -s "$OVPN_CIDR" -d "$ip" -p icmp -j ACCEPT
+        run iptables -A OVPN_COMPAT_FWD -d "$OVPN_CIDR" -s "$ip" -p icmp -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
       fi
     done <<<"$ips"
   done
@@ -249,8 +249,8 @@ case "$VPNKIT_ROUTING_MODE" in
     run iptables -t nat -A OVPN_REDIRECT_TO_SINGBOX -p udp --dport 53 -j REDIRECT --to-ports "$DNS_REDIRECT_PORT"
     run iptables -t nat -L OVPN_REDIRECT_TO_SINGBOX -v -n -x
     if is_truthy "$VPNKIT_COMPAT_BYPASS_ENABLED"; then
-      run iptables -t nat -L OVPN_COMPAT_DIRECT_POSTROUTING -v -n -x
-      run iptables -L OVPN_COMPAT_DIRECT_FORWARD -v -n -x
+      run iptables -t nat -L OVPN_COMPAT_POST -v -n -x
+      run iptables -L OVPN_COMPAT_FWD -v -n -x
     fi
     ;;
   *)

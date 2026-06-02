@@ -38,10 +38,10 @@ assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -d 198.51.100.10 -p udp -
 assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -d 203.0.113.20 -p tcp --dport 443 -j RETURN"
 assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -p tcp -j REDIRECT --to-ports 2082"
 assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -p udp --dport 53 -j REDIRECT --to-ports 5353"
-assert_contains "$render" "-A OVPN_COMPAT_DIRECT_POSTROUTING -d 198.51.100.10 -p udp --dport 1194 -j MASQUERADE"
-assert_contains "$render" "-A OVPN_COMPAT_DIRECT_POSTROUTING -d 203.0.113.20 -p tcp --dport 443 -j MASQUERADE"
+assert_contains "$render" "-A OVPN_COMPAT_POST -d 198.51.100.10 -p udp --dport 1194 -j MASQUERADE"
+assert_contains "$render" "-A OVPN_COMPAT_POST -d 203.0.113.20 -p tcp --dport 443 -j MASQUERADE"
 assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -d 198.51.100.10 -p icmp -j RETURN"
-assert_contains "$render" "-A OVPN_COMPAT_DIRECT_POSTROUTING -d 198.51.100.10 -p icmp -j MASQUERADE"
+assert_contains "$render" "-A OVPN_COMPAT_POST -d 198.51.100.10 -p icmp -j MASQUERADE"
 assert_not_contains "$render" "-A POSTROUTING -s 10.89.0.0/24 -j MASQUERADE"
 
 if VPNKIT_ROUTING_DRY_RUN=true \
