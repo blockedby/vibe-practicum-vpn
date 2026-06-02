@@ -1,0 +1,99 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "strategy": "prefer_ipv4",
+    "servers": [
+      {
+        "tag": "vps-dns",
+        "type": "udp",
+        "server": "1.1.1.1",
+        "detour": "vps-router"
+      }
+    ],
+    "final": "vps-dns"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "vibe-tun0",
+      "address": [
+        "172.19.0.1/30"
+      ],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "local-direct",
+      "bind_interface": "wlp9s0"
+    },
+    {
+      "type": "socks",
+      "tag": "vps-router",
+      "server": "192.0.2.10",
+      "server_port": 2080,
+      "version": "5"
+    },
+    {
+      "type": "block",
+      "tag": "block-out"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "vps-dns",
+    "final": "vps-router",
+    "rules": [
+      {
+        "inbound": [
+          "tun-in"
+        ],
+        "action": "sniff",
+        "timeout": "1s"
+      },
+      {
+        "process_name": [
+          "steam",
+          "steamwebhelper",
+          "steam-runtime",
+          "steam-runtime-supervisor",
+          "steam-runtime-launcher-service",
+          "steam-runtime-system-info",
+          "steam.sh",
+          "dota2",
+          "dota2.sh"
+        ],
+        "outbound": "local-direct"
+      },
+      {
+        "process_path_regex": [
+          ".*/Steam/.*",
+          ".*/steamapps/.*",
+          ".*/dota 2 beta/.*"
+        ],
+        "outbound": "local-direct"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "local-direct"
+      },
+      {
+        "ip_cidr": [
+          "100.64.0.0/10",
+          "127.0.0.0/8",
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16"
+        ],
+        "outbound": "local-direct"
+      }
+    ]
+  }
+}

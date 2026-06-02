@@ -1,0 +1,259 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "strategy": "prefer_ipv4",
+    "servers": [
+      {
+        "tag": "google",
+        "type": "udp",
+        "server": "8.8.8.8"
+      },
+      {
+        "tag": "quad9",
+        "type": "udp",
+        "server": "9.9.9.9"
+      },
+      {
+        "tag": "yandex-basic",
+        "type": "udp",
+        "server": "77.88.8.8"
+      }
+    ],
+    "final": "yandex-basic"
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "test-socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
+    },
+    {
+      "type": "socks",
+      "tag": "tailnet-socks-in",
+      "listen": "192.0.2.10",
+      "listen_port": 2080
+    },
+    {
+      "type": "tproxy",
+      "tag": "canary-tproxy-in",
+      "listen": "0.0.0.0",
+      "listen_port": 2082
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct-out"
+    },
+    {
+      "type": "socks",
+      "tag": "xray-socks-out",
+      "server": "127.0.0.1",
+      "server_port": 10808,
+      "version": "5"
+    },
+    {
+      "type": "block",
+      "tag": "block-out"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "yandex-basic",
+    "final": "xray-socks-out",
+    "rules": [
+      {
+        "inbound": [
+          "canary-tproxy-in",
+          "tailnet-socks-in"
+        ],
+        "action": "sniff",
+        "timeout": "1s"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct-out"
+      },
+      {
+        "ip_cidr": [
+          "100.64.0.0/10",
+          "127.0.0.0/8",
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16"
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": [
+          "geosite-steam",
+          "geosite-category-games",
+          "geosite-game-platforms-download"
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "domain_suffix": [
+          "youtube.com",
+          "youtube-nocookie.com",
+          "youtu.be",
+          "yt.be",
+          "googlevideo.com",
+          "ytimg.com",
+          "youtubei.googleapis.com",
+          "youtube.googleapis.com",
+          "youtubeembeddedplayer.googleapis.com"
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geosite-kinopoisk",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geosite-yandex",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geoip-yandex",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geosite-category-entertainment-ru",
+        "outbound": "direct-out"
+      },
+      {
+        "domain_suffix": [
+          "steamcontent.com",
+          "steampowered.com",
+          "steamstatic.com",
+          "steamserver.net",
+          "steamgames.com",
+          "steamusercontent.com",
+          "steamcommunity.com",
+          "steam-chat.com",
+          "steam-api.com",
+          "steam.tv",
+          "s.team",
+          "steamdeck.com",
+          "steamchina.com",
+          "valvesoftware.com",
+          "valve.net",
+          "dota2.com",
+          "historyofdota.com",
+          "historyofdota.net",
+          "historyofdota.org"
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geoip-ru",
+        "outbound": "direct-out"
+      },
+      {
+        "rule_set": "geosite-ru-available-only-inside",
+        "outbound": "direct-out"
+      },
+      {
+        "domain_suffix": [
+          "ru",
+          "su",
+          "xn--p1ai",
+          "xn--p1acf",
+          "xn--80adxhks",
+          "moscow",
+          "tatar",
+          "xn--d1acj3b",
+          "xn--80aswg",
+          "xn--c1avg",
+          "xn--j1aef"
+        ],
+        "outbound": "direct-out"
+      },
+      {
+        "domain_suffix": [
+          "yandex.com",
+          "yandex.net",
+          "yastatic.net",
+          "yandexcloud.net",
+          "2gis.com",
+          "2gis.ae",
+          "dublgis.com",
+          "dgis.com",
+          "avito.st",
+          "avito.net"
+        ],
+        "outbound": "direct-out"
+      }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-ru-available-only-inside",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-ru-available-only-inside.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-steam",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-steam.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-category-games",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-games.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-game-platforms-download",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-game-platforms-download.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-kinopoisk",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-kinopoisk.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-yandex",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-yandex.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geoip-yandex",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-yandex.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-category-entertainment-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-entertainment-ru.srs",
+        "download_detour": "direct-out"
+      }
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "log": { "level": "debug", "timestamp": true },
+  "dns": {
+    "servers": [
+      { "tag": "remote-dns", "address": "tls://8.8.8.8", "detour": "selected-native-out" },
+      { "tag": "remote-dns-fallback", "address": "tls://8.8.4.4", "detour": "selected-native-out" }
+    ],
+    "final": "remote-dns",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "redirect",
+      "tag": "vpnkit-redirect-in",
+      "listen": "0.0.0.0",
+      "listen_port": 2082
+    },
+    {
+      "type": "direct",
+      "tag": "vpnkit-dns-in",
+      "listen": "0.0.0.0",
+      "listen_port": 5353,
+      "network": "udp"
+    },
+    {
+      "type": "socks",
+      "tag": "vpnkit-socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
+    }
+  ],
+  "outbounds": [
+    {{SELECTED_NATIVE_OUT_JSON}},
+    { "type": "direct", "tag": "direct-out" },
+    { "type": "block", "tag": "block-out" }
+  ],
+  "route": {
+    "rules": [
+      { "inbound": "vpnkit-dns-in", "action": "hijack-dns" },
+      { "protocol": "dns", "action": "hijack-dns" },
+      { "inbound": ["vpnkit-redirect-in", "vpnkit-socks-in"], "action": "sniff", "timeout": "1s" },
+      { "rule_set": "geoip-ru", "outbound": "direct-out" },
+      { "rule_set": "geosite-category-ru", "outbound": "direct-out" }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-category-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs",
+        "download_detour": "direct-out"
+      }
+    ],
+    "final": "selected-native-out"
+  }
+}

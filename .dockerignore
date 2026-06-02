@@ -1,0 +1,9 @@
+.git
+.worktrees
+.hermes
+secrets
+logs
+clients
+*.pcap
+*.dump
+vibe-vpn

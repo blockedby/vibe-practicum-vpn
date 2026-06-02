@@ -1,0 +1,42 @@
+# Accelerated operator smoke config. Copy manually; do not commit secrets.
+subscription_file: /etc/vibe-vpn/sub_url
+extra_nodes_file: /etc/vibe-vpn/extra-nodes.json
+runtime: singbox
+sing_box_bin: /usr/bin/sing-box
+sing_box_config: /etc/sing-box-vibe/tproxy-canary.json
+sing_box_service: sing-box-vibe-router
+# Temporary benchmark tests use isolated sing-box on test_socks by default.
+xray_bin: /usr/local/bin/xray
+# xray_bin/xray_config are used only when runtime: xray is explicitly set.
+xray_config: /usr/local/etc/xray/config.json
+state_dir: /var/lib/vibe-vpn
+production_socks: 127.0.0.1:2080
+test_socks: 127.0.0.1:18080
+test_url: https://proof.ovh.net/files/10Mb.dat
+test_limit_kib: 64
+timeout_seconds: 12
+
+service:
+  enabled: true
+  startup_test: true
+  # Default: rotate to the fastest OK non-excluded node after successful scheduled/startup tests.
+  # Set mode: failover-only to opt out and rotate only after confirmed health failure.
+  mode: fastest-rotation
+
+test:
+  interval: 1m
+
+health:
+  normal_interval: 5s
+  failure_retry_delays: [1s, 2s, 3s]
+  probe_timeout: 5s
+  required_urls:
+    - https://x.com/
+    - https://www.linkedin.com/
+  diagnostic_urls:
+    - https://ya.ru/
+
+logging:
+  path: /var/log/vibe-vpn/
+  retention: 12h
+  also_journal: true

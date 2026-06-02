@@ -1,0 +1,144 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "strategy": "prefer_ipv4",
+    "servers": [
+      {
+        "tag": "google",
+        "type": "tls",
+        "server": "8.8.8.8",
+        "server_port": 853,
+        "domain_resolver": "bootstrap"
+      },
+      {
+        "tag": "quad9-unfiltered",
+        "type": "tls",
+        "server": "9.9.9.10",
+        "server_port": 853,
+        "domain_resolver": "bootstrap"
+      },
+      {
+        "tag": "bootstrap",
+        "type": "udp",
+        "server": "8.8.8.8"
+      }
+    ],
+    "rules": [
+      {
+        "action": "route",
+        "server": "google"
+      },
+      {
+        "action": "route",
+        "server": "quad9-unfiltered"
+      }
+    ],
+    "final": "google"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "vibe-tun0",
+      "address": [
+        "172.19.0.1/30"
+      ],
+      "mtu": 1400,
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed",
+      "route_exclude_address": [
+        "100.64.0.0/10",
+        "192.168.0.0/16",
+        "172.16.0.0/12",
+        "10.0.0.0/8",
+        "127.0.0.0/8"
+      ]
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct-auto"
+    },
+    {
+      "type": "direct",
+      "tag": "local-internet",
+      "bind_interface": "wlan0"
+    },
+    {
+      "type": "socks",
+      "tag": "vps-router",
+      "server": "192.0.2.10",
+      "server_port": 2080,
+      "version": "5"
+    },
+    {
+      "type": "block",
+      "tag": "block-out"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "google",
+    "final": "vps-router",
+    "rules": [
+      {
+        "inbound": [
+          "tun-in"
+        ],
+        "action": "sniff",
+        "timeout": "1s"
+      },
+      {
+        "ip_cidr": [
+          "192.0.2.10/32",
+          "100.64.0.0/10",
+          "127.0.0.0/8",
+          "10.0.0.0/8",
+          "172.16.0.0/12",
+          "192.168.0.0/16"
+        ],
+        "outbound": "direct-auto"
+      },
+      {
+        "process_name": [
+          "steam",
+          "steamwebhelper",
+          "steam-runtime",
+          "steam-runtime-supervisor",
+          "steam-runtime-launcher-service",
+          "steam-runtime-system-info",
+          "steam.sh",
+          "dota2",
+          "dota2.sh"
+        ],
+        "outbound": "local-internet"
+      },
+      {
+        "process_path_regex": [
+          ".*/Steam/.*",
+          ".*/steamapps/.*",
+          ".*/dota 2 beta/.*"
+        ],
+        "outbound": "local-internet"
+      },
+      {
+        "domain_suffix": [
+          ".ru",
+          ".su",
+          ".xn--p1ai",
+          "yandex.ru",
+          "ya.ru",
+          "yastatic.net",
+          "yandex.net",
+          "telemost.yandex.ru"
+        ],
+        "outbound": "local-internet"
+      }
+    ]
+  }
+}

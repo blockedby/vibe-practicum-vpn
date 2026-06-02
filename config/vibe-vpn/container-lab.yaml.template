@@ -1,0 +1,35 @@
+# Sanitized container-lab config for vibe-vpn inside vpnkit.
+# Render with scripts/vpnkit-render-local-configs.sh. Do not put secrets here.
+subscription_file: /etc/vibe-vpn/sub_url
+extra_nodes_file: /etc/vibe-vpn/extra-nodes.json
+runtime: singbox
+sing_box_bin: /usr/local/bin/sing-box
+sing_box_config: /var/lib/vpnkit/sing-box/config.json
+sing_box_service: vpnkit-supervised-sing-box
+sing_box_restart_mode: request-file
+sing_box_restart_file: /run/vpnkit/restart-sing-box
+state_dir: /var/lib/vibe-vpn
+production_socks: 127.0.0.1:2080
+test_socks: 127.0.0.1:18080
+test_url: https://proof.ovh.net/files/10Mb.dat
+test_limit_kib: 64
+timeout_seconds: 12
+service:
+  enabled: true
+  startup_test: false
+  mode: failover-only
+test:
+  interval: 30m
+health:
+  normal_interval: 5s
+  failure_retry_delays: [1s, 2s, 3s]
+  probe_timeout: 5s
+  required_urls:
+    - https://example.com/
+  diagnostic_urls:
+    - https://x.com/
+    - https://ya.ru/
+logging:
+  path: /var/log/vibe-vpn/
+  retention: 12h
+  also_journal: false
