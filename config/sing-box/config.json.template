@@ -5,7 +5,8 @@
       { "tag": "remote-dns", "address": "tls://8.8.8.8", "detour": "selected-native-out" },
       { "tag": "remote-dns-fallback", "address": "tls://8.8.4.4", "detour": "selected-native-out" }
     ],
-    "final": "remote-dns"
+    "final": "remote-dns",
+    "strategy": "ipv4_only"
   },
   "inbounds": [
     {

@@ -94,6 +94,66 @@
   '
   ```
 
+## Default testing workflow before VPS deploy
+
+For `vpnkit` runtime, routing, OpenVPN, sing-box, DNS, IPv6, or `vibe-vpn` daemon changes, do **not** deploy directly to `vibe-practicum` first. Use the local Docker lab and client-test container as the default acceptance path, then deploy live only after local evidence passes.
+
+Recommended workflow from the target worktree:
+
+```bash
+# 1. Make gitignored local secrets available in this worktree.
+# Prefer a copy from an existing local worktree; never commit secrets/.
+rm -rf secrets
+cp -a /home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/steamdeck-podman-vpnkit/secrets ./secrets
+
+# 2. Render local configs from the current branch.
+scripts/vpnkit-render-local-configs.sh
+
+# 3. Start from clean compose state so persisted sing-box config cannot hide template changes.
+docker compose down -v --remove-orphans || true
+
+# 4. Build/start local vpnkit with the same feature flags intended for VPS.
+VPNKIT_ENABLE_VIBE_VPN_DAEMON=true \
+VPNKIT_ROUTING_MODE=redirect \
+VPNKIT_IPV6_POLICY=block \
+VPNKIT_COMPAT_BYPASS_ENABLED=true \
+VPNKIT_COMPAT_BYPASS_ENDPOINTS='vpn.proofix.tv:1194/udp,vpn.proofix.tv:1194/tcp' \
+docker compose up -d --build vpnkit
+
+# 5. Confirm all three runtime processes are alive.
+docker compose exec vpnkit ps auxww | grep -E '[o]penvpn|[s]ing-box|[v]ibe-vpn'
+
+# 6. Run the OpenVPN client regression through the compose test container.
+VPNKIT_ENABLE_VIBE_VPN_DAEMON=true \
+VPNKIT_ROUTING_MODE=redirect \
+VPNKIT_IPV6_POLICY=block \
+VPNKIT_COMPAT_BYPASS_ENABLED=true \
+VPNKIT_COMPAT_BYPASS_ENDPOINTS='vpn.proofix.tv:1194/udp,vpn.proofix.tv:1194/tcp' \
+docker compose --profile test run --rm ovpn-client-test
+```
+
+Expected client-test result: OpenVPN connects, client gets `10.89.0.2/24`, DNS returns `NOERROR`, HTTPS returns `200`, literal-IP HTTPS returns `200`.
+
+For IPv4-only / IPv6 policy changes, also run an explicit AAAA check inside a client-test container connected through OpenVPN. Expected with `dns.strategy=ipv4_only`: A records are returned, while AAAA returns `NOERROR` with zero answers.
+
+```bash
+VPNKIT_ENABLE_VIBE_VPN_DAEMON=true VPNKIT_IPV6_POLICY=block docker compose --profile test run --rm --entrypoint bash ovpn-client-test -lc '
+set -euo pipefail
+openvpn --config /etc/openvpn/client/test-client.ovpn >/tmp/openvpn.log 2>&1 & pid=$!
+trap "kill $pid 2>/dev/null || true" EXIT
+for i in $(seq 1 60); do
+  ip -4 addr show tun0 2>/dev/null | grep -q "10\\.89\\.0\\." && break
+  if ! kill -0 $pid 2>/dev/null; then cat /tmp/openvpn.log; wait $pid; fi
+  sleep 0.5
+done
+dig +time=10 +tries=1 @8.8.8.8 api.openai.com A
+dig +time=10 +tries=1 @8.8.8.8 api.openai.com AAAA
+curl -4 --max-time 20 -sS -o /dev/null -w "code=%{http_code} ip=%{remote_ip}\\n" https://api.openai.com/v1/models || true
+'
+```
+
+Only after local evidence passes should the VPS Docker runtime be mutated. When live-deploying sing-box template changes, remember `/var/lib/vpnkit/sing-box/config.json` is persisted; rerender or recreate it intentionally and verify the live file, not only `/etc/sing-box/config.json`.
+
 ## vibe-vpn daemon and lil-sweden Hysteria2
 
 - `vpnkit` can run `vibe-vpn daemon` inside the container when explicitly enabled with:
