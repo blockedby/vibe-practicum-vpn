@@ -5,6 +5,7 @@ REPORT_PATH: docs/plans/2026-06-02-vpnkit-compat-bypass/reports/aad-implementer-
 PROGRESS_PATH: docs/plans/2026-06-02-vpnkit-compat-bypass/progress/aad-implementer-routing.md
 COMMITS:
 - c4d0cc7cbcfe3824e4a339d1338c273028bf57bd: Add scoped vpnkit compatibility bypass
+- dd6bc85ee30f40d14857c7785d883065f4e5999e: Add compat bypass implementation report
 FILES_CHANGED:
 - docker/vpnkit/setup-routing.sh: added redirect-mode compatibility bypass envs, endpoint parsing/validation, hostname-to-IPv4 resolution, dry-run rendering for tests, scoped RETURN/FORWARD/MASQUERADE rules for configured endpoint IP/proto/port, and optional endpoint-only ICMP direct rules.
 - docker-compose.yml: wired compatibility bypass env defaults and made routing mode configurable with redirect as default.
@@ -39,4 +40,4 @@ QUALITY_NOTES:
 SIDE_FINDINGS:
 - Blocking: none.
 - Non-blocking follow-up candidates: shellcheck could be run by an environment that has it installed; live container/OpenVPN runtime validation was outside scope and not run.
-NOTES: No live VPS mutation performed. Branch still needs push after report artifact commit.
+NOTES: No live VPS mutation performed. Branch `vpnkit-compat-bypass` was pushed to `origin` after implementation/report commits.

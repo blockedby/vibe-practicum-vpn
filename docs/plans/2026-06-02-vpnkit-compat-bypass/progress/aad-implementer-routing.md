@@ -7,4 +7,4 @@
 - 2026-06-02: Refactored parser to reject conflicting explicit proto declarations and made DNS resolution failures use the explicit unresolved-host error path. Re-ran `bash -n docker/vpnkit/setup-routing.sh scripts/vpnkit-routing-compat-bypass-test.sh && bash scripts/vpnkit-routing-compat-bypass-test.sh`: passed.
 - 2026-06-02: Final targeted verification passed: bash syntax, render test, `docker compose config`, source grep for no broad MASQUERADE. `shellcheck` not available. Wrote verification evidence to `verification/local.md`.
 - 2026-06-02: Committed implementation: `c4d0cc7cbcfe3824e4a339d1338c273028bf57bd Add scoped vpnkit compatibility bypass`.
-- 2026-06-02: Wrote final implementation report to `reports/aad-implementer-routing.md`; preparing report artifact commit and push.
+- 2026-06-02: Wrote final implementation report to `reports/aad-implementer-routing.md`; committed report artifact as `dd6bc85ee30f40d14857c7785d883065f4e5999e Add compat bypass implementation report` and pushed branch `vpnkit-compat-bypass` to `origin`.
