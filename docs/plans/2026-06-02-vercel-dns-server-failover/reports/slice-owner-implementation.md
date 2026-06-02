@@ -57,7 +57,7 @@
 - AC1: Public-safe tracked files and placeholders only.
   - Covered by: grep over changed tracked files for delegated private endpoint IPs/token-like values.
   - Result: passed.
-  - Evidence: no matches for `178.20.45.245`, `45.12.74.211`, direct name+IP combinations, Vercel-token/JWT-like strings.
+  - Evidence: no matches for delegated concrete endpoint IPs, direct name+IP combinations, Vercel-token/JWT-like strings.
 - AC2: Read-only Vercel discovery/dry-run with current, expected, proposed target, TTL, rollback redacted.
   - Covered by: `tests/vercel-dns-failover-test.sh` `dns-plan` case.
   - Result: passed.

@@ -11,7 +11,7 @@ Branch: `aad/vercel-dns-server-failover-plan`
 - `git diff --check` — passed.
 - `go test ./...` — passed for all packages.
 - Public-safety grep over changed tracked files for delegated private endpoint IPs and token-like values — passed/no matches:
-  - pattern included `178.20.45.245`, `45.12.74.211`, name+IP combinations, Vercel-token/JWT-like strings.
+  - pattern included delegated concrete endpoint IPs, name+IP combinations, Vercel-token/JWT-like strings.
 
 ## No-mutation ledger
 
