@@ -1,6 +1,6 @@
 # RU direct sing-box routing
 
-- Status: running
+- Status: success; local Docker lab DNS/HTTPS regression green
 - Owner: aad-slice-owner
 - Branch: ru-direct-singbox
 - Worktree: .worktrees/ru-direct-singbox

@@ -61,6 +61,7 @@ Executor:
 - 2026-06-02: Verification evidence recorded in `verification/local.md`: targeted regression passed, `go test ./...` passed, temp `sing-box check` passed with documented compatibility env for pre-existing deprecation gates; Docker lab waived because `secrets/` is absent and secrets are out of scope.
 - 2026-06-02: Implementer completed Task 1 in commits `3d4534d`, `6f6a3e2`, `ccef739`; targeted tests, full Go tests, diff check, and sing-box check passed per report.
 - 2026-06-02: Owner reran targeted/full Go verification and render. Docker lab debug continuation found and fixed a repo runtime startup race: OpenVPN could accept clients before sing-box redirect/DNS inbounds were ready when compat bypass/RU rule-set startup was slow. Added sing-box inbound readiness wait before starting OpenVPN; fresh AGENTS-equivalent Docker lab passed on alternate host UDP port 1196. No VPS touched; secrets/logs removed from worktree.
+- 2026-06-02: Root owner integrated slice results and reran final verification: `go test ./...`, `git diff --check`, render, Docker build/start, process check (`sing-box`, `openvpn`, `vibe-vpn daemon`), and OpenVPN client DNS/HTTPS/literal-IP acceptance all passed with `VPNKIT_OPENVPN_PORT=1196`.
 
 ## Final done-state
 - Spec compliance: template and regression coverage implement explicit RU IP/geosite direct routing while preserving DNS hijack ordering and default proxy final.

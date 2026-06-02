@@ -1,47 +1,63 @@
 ## Task
-- Mission: Add Docker/vpnkit sing-box routing so RU IP and RU geosite traffic goes direct, not through proxy.
-- Target: `config/sing-box/config.json.template` and regression coverage.
-- Boundaries: no VPS mutation; no committed secrets/generated artifacts.
+- Mission: Finish the RU-direct sing-box change and close the Docker lab DNS/HTTPS regression.
+- Target: `config/sing-box/config.json.template`, `internal/singbox/singbox_test.go`, Docker vpnkit startup wiring, and local Docker lab acceptance.
+- Boundaries: no VPS mutation; no committed secrets/logs/generated artifacts; preserve RU direct routing behavior.
+- Done when: RU IP/geosite traffic routes direct, existing DNS/default proxy behavior is preserved, and the local Docker OpenVPN client lab passes DNS/HTTPS acceptance.
 
 ## Context
-- Slice stayed whole under one slice owner; implementation delegated to one `aad-implementer` task.
 - Worktree: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/ru-direct-singbox`
 - Branch: `ru-direct-singbox`
 - Task package: `docs/plans/2026-06-02-ru-direct-singbox`
+- Slice structure: one implementation/debugging slice, because the remaining work had one runtime ownership boundary and one acceptance story.
 
 ## Spec compliance
-- RU IP traffic routes direct: done via `geoip-ru` remote binary rule set and route to `direct-out`.
-- RU geosite traffic routes direct: done via `geosite-category-ru` remote binary rule set and route to `direct-out`.
+- RU IP traffic routes direct: done via `geoip-ru` remote rule set routed to `direct-out`.
+- RU geosite traffic routes direct: done via `geosite-category-ru` remote rule set routed to `direct-out`.
 - Existing DNS/default behavior preserved: done; DNS hijack rules remain first and route final remains `selected-native-out`.
+- Docker lab DNS/HTTPS regression fixed: done; root cause was a vpnkit startup race, fixed by waiting for sing-box redirect/DNS inbounds before starting OpenVPN.
 - VPS untouched/secrets uncommitted: done.
 
 ## Acceptance verification
-- Template parses after placeholder substitution: passed (`TestDockerTemplateRoutingInvariants`, temp `sing-box check` with existing deprecation env vars).
-- RU direct rules present: passed (`go test ./internal/singbox -run TestDockerTemplateRoutingInvariants -count=1`).
-- Broader regression: passed (`go test ./...`, `git diff --check`).
-- Local Docker lab: partial. Render passed; `vpnkit` built/started and OpenVPN client connected on retry, but client DNS regression failed (`dig @8.8.8.8` timed out). No VPS deploy attempted.
-
-## System readiness
-- Runtime/deployment wiring: code branch is review-ready, but live deployment should wait for a green Docker lab DNS/HTTPS regression or resolution of the local lab/runtime issue.
+- Template parses and RU direct invariants hold:
+  - Covered by: `go test ./internal/singbox -run TestDockerTemplateRoutingInvariants -count=1` and `go test ./...`.
+  - Result: passed.
+- OpenVPN client connects and gets `10.89.0.2/24`:
+  - Covered by: fresh Docker compose client test with AGENTS flags and `VPNKIT_OPENVPN_PORT=1196` because host UDP 1194 is occupied locally.
+  - Result: passed; output included `inet 10.89.0.2/24 scope global tun0`.
+- DNS through tunnel returns NOERROR:
+  - Covered by: same client test, `dig @8.8.8.8 example.com`.
+  - Result: passed; `status: NOERROR`, A records returned.
+- HTTPS and literal-IP HTTPS return HTTP 200:
+  - Covered by: same client test.
+  - Result: passed; `https-test http_code=200`, `literal-ip-test http_code=200`.
+- Runtime processes alive:
+  - Covered by: root process check after start.
+  - Result: passed; `sing-box`, `openvpn`, and `vibe-vpn daemon` were all running.
+- No secrets/logs/generated artifacts committed:
+  - Covered by: copied gitignored `secrets/` removed after local lab; `git status --short --branch` clean.
+  - Result: passed.
 
 ## Verification run
-- `go test ./internal/singbox -run TestDockerTemplateRoutingInvariants -count=1`: passed.
 - `go test ./...`: passed.
 - `git diff --check`: passed.
 - `scripts/vpnkit-render-local-configs.sh`: passed using copied gitignored local secrets, then secrets removed.
-- Docker compose client test: failed at DNS timeout after OpenVPN connection; see `verification/local.md`.
+- `docker compose up -d --build vpnkit` with AGENTS flags and `VPNKIT_OPENVPN_PORT=1196`: passed.
+- `docker compose exec vpnkit ps auxww | grep -E '[o]penvpn|[s]ing-box|[v]ibe-vpn daemon'`: passed.
+- `docker compose --profile test run --rm ovpn-client-test` with same flags: passed DNS/HTTPS/literal-IP checks.
+- Remote/VPS checks: not run by constraint.
 
 ## Issues
-### Issue U-01: Docker lab DNS/HTTPS regression not green
-- Description: Local Docker acceptance did not fully pass. First run hit host port 1194 conflict; retry on port 1195 started vpnkit and connected OpenVPN, but DNS query through the tunnel timed out.
-- Evidence: `dig @8.8.8.8 example.com` returned `no servers could be reached` in the OpenVPN client test.
-- Why unresolved: resolving the broader local vpnkit DNS/proxy runtime issue would exceed the minimal RU routing slice; VPS deploy is explicitly forbidden.
-- Needed next: debug local Docker lab runtime/proxy/DNS path, then rerun AGENTS full client regression before deployment.
+### Issue R-01: Docker lab DNS timeout was a vpnkit startup race
+- Description: With compat bypass enabled and RU remote rule-set startup work, OpenVPN could accept a client before sing-box DNS/redirect inbounds were listening; the client's first DNS query then timed out.
+- Evidence: failing slice reproduction showed OpenVPN connected before sing-box logged `vpnkit-dns-in` readiness; control without compat bypass passed; fixed run with compat bypass passed.
+- Resolution: `docker/vpnkit/entrypoint.sh` waits for TCP redirect port `2082` and UDP DNS port `5353` before starting OpenVPN.
 
-## Side findings
-- Existing sing-box config still relies on legacy DNS server format/default domain resolver compatibility env vars for sing-box 1.13.x. This was not changed.
+## System readiness
+- Local Docker lab: ready; DNS/HTTPS regression is green.
+- VPS/deploy: not touched; deploy remains a separate explicit action after review.
+- Known non-blocking note: existing sing-box legacy DNS/default-domain-resolver deprecation compatibility env vars remain pre-existing.
 
 ## Verdict
-- Status: partial-success.
-- Goal state: code/config behavior implemented and locally unit-verified; full runtime acceptance remains blocked by U-01.
-- Final readiness: ready for review, not ready for deployment.
+- Status: success.
+- Goal state: fully achieved.
+- Final readiness: ready for review / next explicit deploy step; not pushed.

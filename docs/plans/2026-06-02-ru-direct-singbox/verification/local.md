@@ -96,3 +96,23 @@ Used a temp-rendered config with `{{SELECTED_NATIVE_OUT_JSON}}` replaced by a sa
   - Literal-IP HTTPS: passed; `literal-ip-test http_code=200 remote_ip=1.1.1.1`.
   - RU direct behavior visible during runtime: vpnkit logs included `router: match[3] rule_set=geosite-category-ru => route(direct-out)` for `ya.ru`.
 - Cleanup: copied gitignored `secrets/` were removed before finishing; no VPS commands were run.
+
+## Root-owner final verification refresh
+
+- `go test ./...`
+  - Result: passed.
+- `git diff --check`
+  - Result: passed.
+- `scripts/vpnkit-render-local-configs.sh`
+  - Result: passed using copied gitignored local secrets from `.worktrees/steamdeck-podman-vpnkit/secrets`; copied `secrets/` removed after verification.
+- Docker lab start with AGENTS flags and alternate host port:
+  - Command shape: `VPNKIT_OPENVPN_PORT=1196 VPNKIT_ENABLE_VIBE_VPN_DAEMON=true VPNKIT_ROUTING_MODE=redirect VPNKIT_IPV6_POLICY=block VPNKIT_COMPAT_BYPASS_ENABLED=true VPNKIT_COMPAT_BYPASS_ENDPOINTS='vpn.proofix.tv:1194/udp,vpn.proofix.tv:1194/tcp' docker compose up -d --build vpnkit`.
+  - Result: passed; host UDP 1194 remained occupied locally, so 1196 was used only for host publishing while the compose client still dialed internal `vpnkit:1194/udp`.
+- Runtime process check:
+  - Result: passed; `ps` showed `sing-box run -c /var/lib/vpnkit/sing-box/config.json`, `openvpn --config /etc/openvpn/server.conf`, and `vibe-vpn daemon --config /etc/vibe-vpn/config.yaml`.
+- Docker client acceptance:
+  - Command shape: same env flags with `docker compose --profile test run --rm ovpn-client-test`.
+  - Result: passed.
+  - Evidence: OpenVPN got `10.89.0.2/24`; `dig @8.8.8.8 example.com` returned `status: NOERROR` with A records; `https-test http_code=200`; `literal-ip-test http_code=200`.
+- Cleanup/status:
+  - Result: passed; `docker compose down -v --remove-orphans` run for this project, copied `secrets/` removed, and `git status --short --branch` showed only the branch line before final report edits.
