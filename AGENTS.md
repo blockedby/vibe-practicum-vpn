@@ -19,6 +19,8 @@
 - Use the current Docker setup documentation in `docs/DOCKER_SETUP.md` for local validation.
 - Steam Deck deployment remains Podman-only when intentionally operating on a Deck, but tracked public docs must not include real Deck LAN endpoints.
 - Docker/Podman images are build artifacts, not source artifacts. Do not commit generated image exports or logs.
+- For tests or experiments on a live host, start separate throwaway containers with distinct names, Compose project names, ports, networks, volumes, and state directories. Do **not** reuse, remove, recreate, restart, or adopt the production `vpnkit` container for tests.
+- Mutating the production `vpnkit` container is allowed only for an explicit deploy/rollback/maintenance action after operator approval, with a backup/rollback path and post-change smoke tests.
 
 ## Default testing workflow before live deploy
 
