@@ -111,3 +111,15 @@ Executor:
 
 ## Execution status
 - 2026-06-02: plan created; pre-dispatch gate passed for Task 1.
+
+## Owner verification / final status
+- 2026-06-02: Implementer completed Task 1 with commits `184fe34` and `fa51f37`; report at `reports/aad-implementer-ipv4-policy.md`.
+- Owner reran fresh checks:
+  - `bash -n docker/vpnkit/entrypoint.sh docker/vpnkit/setup-routing.sh scripts/vpnkit-render-local-configs.sh scripts/vpnkit-routing-compat-bypass-test.sh` — passed.
+  - `scripts/vpnkit-routing-compat-bypass-test.sh` — passed.
+  - `docker compose config >/tmp/vpnkit-compose-config-owner.out && grep -n "VPNKIT_IPV6_POLICY" /tmp/vpnkit-compose-config-owner.out` — passed, `VPNKIT_IPV6_POLICY: block` rendered.
+  - `git diff --check` — passed.
+  - `ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER=true sing-box check -c <temp rendered config>` — passed with existing deprecation warnings.
+- Acceptance: all acceptance criteria met locally; live deploy intentionally not performed.
+- PR: existing PR #16 (`https://github.com/blockedby/vibe-practicum-vpn/pull/16`) targeted for push/update.
+- Side findings: no blocking issues. Non-blocking note only: sing-box legacy DNS format deprecation remains pre-existing; no GitHub follow-up created because it is outside requested IPv4-only Phase 1 and already surfaced as operator risk in verification.
