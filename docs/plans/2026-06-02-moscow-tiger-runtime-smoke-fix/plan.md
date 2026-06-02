@@ -116,3 +116,20 @@ Current done-state after source-finalization pass:
 - AC5 baseline smoke: user-reported pass after live hotfix; source-based fresh rerun from this branch is blocked here.
 - AC6 2ip smoke: blocked here; no source-based 2ip rerun possible without usable endpoint/profile access.
 - AC7 public safety/checks: local checks passed; final public-safety review still required before any commit.
+
+### 2026-06-02 — root integration / acceptance audit
+
+- Integrated slice result from commit `cd7562e`.
+- Source durability is complete: tracked OpenVPN template includes `tun-mtu 1400` and `mssfix 1360`, with `internal/config/openvpn_template_test.go` guarding both directives.
+- Root reran local verification: `go test ./internal/config`, `bash -n scripts/*.sh`, `git diff --check HEAD~1..HEAD`, template grep, and `go test ./...` all passed.
+- Acceptance audit result: blocked for final readiness because source-based live deploy and fresh baseline/2ip smokes cannot run while `config/private-endpoints.local.env` resolves to the example SSH placeholder in this environment.
+- Final report updated: `final-report.md`.
+
+## Root integration done-state
+
+- Source/docs/tests: done in commit `cd7562e`.
+- Public safety: passed for tracked changes; no generated configs, profiles, subscriptions, logs, snapshots, or private endpoint values committed.
+- Live source-based deploy: blocked by unusable gitignored endpoint inventory.
+- Fresh host Docker baseline smoke: blocked until source-based deploy can run.
+- Explicit 2ip smoke: blocked until source-based deploy can run.
+- Final root readiness: blocked / partial; do not merge or push as successful completion until live source deploy and smokes are evidenced.

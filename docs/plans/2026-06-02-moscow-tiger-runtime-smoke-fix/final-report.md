@@ -1,74 +1,84 @@
-# Final report — Moscow tiger runtime smoke fix
+# Final report — Moscow tiger OpenVPN MTU/MSS cleanup/finalization
 
 ## Task
-- Mission: Diagnose and fix the existing `moscow-tiger` Docker `vpnkit` runtime after an independent client smoke showed OpenVPN and DNS success but HTTPS timeout.
-- Target: Existing `moscow-tiger` Docker runtime and host Docker OpenVPN client smoke.
-- Boundaries: No Vercel/DNS, no Steam Deck, no unrelated deployment mutation, and no committed/revealed private endpoint values or generated artifacts.
-- Done when: Runtime root cause is classified, minimal fix is applied if safe, and DNS/HTTPS/literal-IP/RU smoke is green; or a hard blocker is reported with evidence.
+- Mission: Make the user-confirmed `moscow-tiger` MTU/MSS live hotfix durable in repo source, keep docs/evidence public-safe, and verify source-based deploy plus baseline/2ip smokes.
+- Target: OpenVPN render source, Docker setup docs, task-package evidence, and `moscow-tiger` source-based runtime readiness.
+- Boundaries: No Vercel/DNS, no Steam Deck, no unrelated `vibe-practicum` mutation, and no committed/revealed private endpoints, generated profiles/configs, subscriptions, auth files, logs, snapshots, or secrets.
+- Done when: tracked source renders `tun-mtu 1400` and `mssfix 1360`; `moscow-tiger` is redeployed from that source; fresh host Docker baseline and explicit 2ip smokes pass with sanitized evidence.
 
 ## Context
 - Task package: `docs/plans/2026-06-02-moscow-tiger-runtime-smoke-fix`
 - Plan: `docs/plans/2026-06-02-moscow-tiger-runtime-smoke-fix/plan.md`
 - Slice report: `docs/plans/2026-06-02-moscow-tiger-runtime-smoke-fix/reports/slice-owner-runtime-diagnosis-fix.md`
-- Verification artifact: `docs/plans/2026-06-02-moscow-tiger-runtime-smoke-fix/verification/runtime-smoke.md`
+- Acceptance audit: `docs/plans/2026-06-02-moscow-tiger-runtime-smoke-fix/reports/acceptance-auditor.md`
+- Verification: `docs/plans/2026-06-02-moscow-tiger-runtime-smoke-fix/verification/runtime-smoke.md`
 - Worktree: `.worktrees/moscow-tiger-runtime-smoke-fix`
 - Branch: `aad/moscow-tiger-runtime-smoke-fix`
+- Source commit: `cd7562e` (`Persist moscow-tiger OpenVPN MTU fix`)
 
 ## Slice structure used
-- One slice: runtime diagnosis, minimal fix, and smoke verification.
-- Reason: one target, one runtime ownership boundary, one acceptance story, and no useful parallelism until target access/root cause classification succeeds.
+- One slice: source/runtime finalization.
+- Reason: the source template, render path, live deploy, and host-client smokes share one runtime acceptance story and one live target; parallel slices would add coordination without reducing risk.
 
 ## Integrated slice outcome
-- Slice owner could not inspect or mutate the live runtime.
-- First blocker: `config/private-endpoints.local.env` was absent in the worktree.
-- Root owner copied the gitignored local endpoint file from the main checkout into the worktree.
-- Second/current blocker: the copied local file contains the example placeholder SSH target, so the narrow live-read gate failed before reaching `moscow-tiger`.
-- No runtime fix, source change, or live mutation was applied.
-
-## Spec compliance
-- AC1 Reproduce/classify reported failure: blocked; target access could not begin.
-- AC2 Inspect Docker logs/config/processes/routes/iptables: blocked; no resolvable SSH target.
-- AC3 Targeted direct-out/selected-native/proxy/route/DNS checks: blocked; no live container access.
-- AC4 Minimal safe fix: not applicable; no confirmed root cause.
-- AC5 Fresh client smoke green: blocked; no usable target/profile access from this environment.
-- AC6 Public-safety check: passed for current artifacts; no private values were printed, staged, or committed.
+- Source durability completed: `config/openvpn/server.tpl` now includes `tun-mtu 1400` and `mssfix 1360`.
+- Guard completed: `internal/config/openvpn_template_test.go` checks both directives remain in the OpenVPN server template.
+- Docs/evidence completed: `docs/DOCKER_SETUP.md` and task-package reports record the public-safe MTU/MSS rationale and gitignored `sub_url` / `extra-nodes.json` handling.
+- Local render guard completed: a throwaway render from this branch contained both MTU/MSS directives and wrote `extra-nodes.json` as `[]` when no gitignored extra-nodes input exists.
+- Live source-based deploy and fresh smokes remain blocked: `config/private-endpoints.local.env` in this environment still resolves to the example SSH placeholder, so SSH fails before `moscow-tiger` access.
 
 ## Acceptance verification
-- Private endpoint gate:
-  - Result: failed/blocking.
-  - Evidence: after sourcing the gitignored file, `ssh -o BatchMode=yes "$VPNKIT_VPS_SSH_HOST" ...` failed with unresolved example placeholder host.
-- Public-safety gate:
-  - Result: passed for current work.
-  - Evidence: `git status --short` shows only the untracked task package; ignored private env remains ignored.
-- Source/runtime tests:
-  - Result: not run.
-  - Reason: no source/runtime change was made.
+- AC1 Persistent source MTU/MSS fix:
+  - Result: passed locally.
+  - Evidence: `config/openvpn/server.tpl`; `grep -nE '^(tun-mtu 1400|mssfix 1360)$' config/openvpn/server.tpl`; throwaway rendered `server.conf` grep.
+- AC2 Tests/docs/evidence updated public-safely:
+  - Result: passed locally.
+  - Evidence: `internal/config/openvpn_template_test.go`, `docs/DOCKER_SETUP.md`, updated task package.
+- AC3 Source-based deploy/render on `moscow-tiger`:
+  - Result: blocked / not confirmed.
+  - Evidence: SSH gate fails before live access because the gitignored endpoint file contains the example SSH placeholder.
+- AC4 `sub_url` / `extra-nodes` safety:
+  - Result: passed locally.
+  - Evidence: docs mention only gitignored paths; throwaway render verified `extra-nodes=[]`; no values or generated artifacts tracked.
+- AC5 Fresh host Docker baseline smoke after source deploy:
+  - Result: blocked / not run here.
+  - Evidence: no usable live target/profile access. User-provided manual-hotfix smoke pass is historical evidence only, not source-based acceptance.
+- AC6 Explicit 2ip smoke after source deploy:
+  - Result: blocked / not run here.
+  - Evidence: same live access blocker.
+- AC7 Repo checks/public safety:
+  - Result: passed locally.
+  - Evidence: root reran `go test ./internal/config`, `bash -n scripts/*.sh`, `git diff --check HEAD~1..HEAD`, template grep, and `go test ./...`; worktree clean before acceptance audit files/final report.
 
 ## System readiness
-- Config/env/secrets: not ready; operator-local endpoint inventory is not populated with usable `moscow-tiger` access values in this environment.
-- Runtime/deployment wiring: not verified.
-- Docker/OpenVPN/sing-box routes: not verified.
-- CI/remote checks: not available; branch not pushed.
+- Config / env / secrets: source config ready; live endpoint inventory unusable in this environment.
+- Docker / containers: local render path verified; live container state not verified from source deploy.
+- Runtime / deployment wiring: not ready to claim complete until source-based deploy and smokes run.
+- CI / remote checks: not available before push; branch not pushed because final runtime acceptance is blocked.
 
 ## Issues
-### U-01: Placeholder private endpoint inventory blocks live diagnosis
-- Description: The required gitignored endpoint file exists in the worktree but contains an example SSH target rather than a usable `moscow-tiger` target.
-- Evidence: slice report and `verification/runtime-smoke.md` record the sanitized failed SSH gate.
-- Needed next: populate `config/private-endpoints.local.env` with operator-local `moscow-tiger` SSH/client-smoke values, then rerun the existing slice packet.
+### R-01: Live MTU/MSS hotfix was not persistent in source
+- Resolution: Added MTU/MSS directives to tracked OpenVPN server template and a guard test.
+- Evidence: commit `cd7562e`; local render and tests passed.
+
+### U-01: Source-based deploy and fresh baseline/2ip smokes blocked by endpoint inventory
+- Description: The environment's gitignored `config/private-endpoints.local.env` still contains the example SSH placeholder, preventing live access.
+- Evidence: slice report, runtime verification, and acceptance audit record the sanitized SSH gate failure.
+- Needed next: populate usable operator-local `moscow-tiger` access/profile values, deploy/re-render from branch `aad/moscow-tiger-runtime-smoke-fix`, then rerun baseline and 2ip smokes with sanitized evidence.
 
 ## Side findings
 - Blocking findings folded into active work: U-01.
 - Non-blocking follow-ups: none.
 
 ## Verdict
-- Status: blocked.
-- Goal state: not achieved.
-- Final readiness: not ready.
-- Summary: The task cannot be completed from this environment until the gitignored private endpoint inventory contains usable `moscow-tiger` access values. No failures were hidden and no unsafe mutation was attempted.
+- Status: blocked / partial.
+- Goal state: source durability achieved; final runtime readiness not achieved from this environment.
+- Final readiness: not ready to claim complete runtime finalization.
+- Merge/push: not performed because the user allowed merge/push only if successful and source-based live deploy/smokes are still blocked.
 
 ## Next-agent brief
-- Objective: Continue diagnosis/fix once usable `moscow-tiger` private endpoint values are available.
-- Target: Existing `moscow-tiger` Docker `vpnkit` runtime and fresh host Docker OpenVPN client smoke.
-- Settled already: Task package and plan exist; current blocker is access/config, not a classified runtime bug.
-- Boundaries: Keep private endpoints, profiles, rendered configs, subscriptions, auth files, logs, snapshots, and raw secrets out of tracked artifacts.
-- Verification target: AC1-AC5 with sanitized runtime evidence; AC6 with `git status --short` and public-safety grep before any commit.
+- Objective: Complete live source-based deploy and final smokes once usable gitignored endpoint values are available.
+- Target: `moscow-tiger` Docker `vpnkit` runtime from branch `aad/moscow-tiger-runtime-smoke-fix` / commit `cd7562e` or later.
+- Settled already: MTU/MSS root cause accepted from user live evidence; source template and guard are in place; do not reopen broad diagnosis first.
+- Boundaries: Keep endpoints, profiles, rendered configs, subscriptions, auth files, logs, snapshots, and private values out of tracked files/chat.
+- Verification target: running OpenVPN config contains `tun-mtu 1400` and `mssfix 1360` from source render; fresh host Docker client tunnel/DNS/HTTPS/literal-IP; explicit 2ip route evidence.
