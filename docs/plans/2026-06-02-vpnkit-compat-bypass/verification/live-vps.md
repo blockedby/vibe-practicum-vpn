@@ -16,7 +16,7 @@ Container `vpnkit` was restarted with:
 VPNKIT_ROUTING_MODE=redirect
 VPNKIT_ENABLE_VIBE_VPN_DAEMON=true
 VPNKIT_COMPAT_BYPASS_ENABLED=true
-VPNKIT_COMPAT_BYPASS_ENDPOINTS=vpn.proofix.tv:1194
+VPNKIT_COMPAT_BYPASS_ENDPOINTS=vpn.proofix.tv:1194/udp,vpn.proofix.tv:1194/tcp
 VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=false
 ```
 
@@ -33,6 +33,7 @@ VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=false
 ```text
 -N OVPN_REDIRECT_TO_SINGBOX
 -A OVPN_REDIRECT_TO_SINGBOX -d 185.241.192.190/32 -p udp -m udp --dport 1194 -j RETURN
+-A OVPN_REDIRECT_TO_SINGBOX -d 185.241.192.190/32 -p tcp -m tcp --dport 1194 -j RETURN
 -A OVPN_REDIRECT_TO_SINGBOX -p tcp -j REDIRECT --to-ports 2082
 -A OVPN_REDIRECT_TO_SINGBOX -p udp -m udp --dport 53 -j REDIRECT --to-ports 5353
 ```
@@ -42,6 +43,7 @@ VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=false
 ```text
 -N OVPN_COMPAT_POST
 -A OVPN_COMPAT_POST -d 185.241.192.190/32 -p udp -m udp --dport 1194 -j MASQUERADE
+-A OVPN_COMPAT_POST -d 185.241.192.190/32 -p tcp -m tcp --dport 1194 -j MASQUERADE
 ```
 
 `iptables -S OVPN_COMPAT_FWD`:
@@ -50,6 +52,8 @@ VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=false
 -N OVPN_COMPAT_FWD
 -A OVPN_COMPAT_FWD -s 10.89.0.0/24 -d 185.241.192.190/32 -p udp -m udp --dport 1194 -j ACCEPT
 -A OVPN_COMPAT_FWD -s 185.241.192.190/32 -d 10.89.0.0/24 -p udp -m udp --sport 1194 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A OVPN_COMPAT_FWD -s 10.89.0.0/24 -d 185.241.192.190/32 -p tcp -m tcp --dport 1194 -j ACCEPT
+-A OVPN_COMPAT_FWD -s 185.241.192.190/32 -d 10.89.0.0/24 -p tcp -m tcp --sport 1194 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 ```
 
 This is endpoint-scoped NAT/forwarding, not broad `10.89.0.0/24` direct NAT.
@@ -76,7 +80,7 @@ scripts/vpnkit-steamdeck-client-test.sh \
   --profile /home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/steamdeck-podman-vpnkit/secrets/vps/openvpn/client/test-client.ovpn
 ```
 
-Result after switching the current backend back to `lil-sweden hy2` and replacing the flaky `ifconfig.me` test target with `example.com`:
+Result after switching the current backend back to `lil-sweden hy2`, replacing the flaky `ifconfig.me` test target with `example.com`, and enabling both UDP/TCP scoped bypass entries for the unknown Proofix OpenVPN protocol:
 
 ```text
 OpenVPN connected
@@ -89,5 +93,4 @@ literal-ip-test http_code=200 remote_ip=1.1.1.1
 ## Follow-up required
 
 - User should test the real KDE/NetworkManager work VPN from behind the router.
-- Expected work VPN protocol is UDP because OpenVPN defaults to UDP when protocol is omitted.
-- If the real work VPN uses TCP instead, set `VPNKIT_COMPAT_BYPASS_ENDPOINTS=vpn.proofix.tv:1194/tcp` or include both UDP and TCP entries.
+- OpenVPN defaults to UDP when protocol is omitted, but live VPS configuration currently includes both scoped entries: `vpn.proofix.tv:1194/udp,vpn.proofix.tv:1194/tcp`.
