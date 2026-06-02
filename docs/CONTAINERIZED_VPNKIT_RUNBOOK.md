@@ -11,6 +11,23 @@ ovpn-client-test -> vpnkit:1194/udp -> vpnkit tun0
 
 TPROXY remains available as a diagnostic mode in `docker/vpnkit/setup-routing.sh`, but the default Docker lab uses REDIRECT because this local Docker/kernel path matched TPROXY counters while neither sing-box nor a minimal `IP_TRANSPARENT` listener received accepted transparent sockets. REDIRECT is not a broad NAT bypass: TCP and UDP/53 are locally redirected to sing-box only, and there is intentionally no `POSTROUTING -s 10.89.0.0/24 -j MASQUERADE` rule.
 
+## Scoped compatibility bypass
+
+For nested OpenVPN/router compatibility, redirect mode can install direct rules for exact configured endpoint IPs while leaving ordinary TCP and DNS on the sing-box redirect path. Enable it only when clients behind vpnkit must reach a nested VPN endpoint directly:
+
+```bash
+VPNKIT_COMPAT_BYPASS_ENABLED=true docker compose up -d vpnkit
+```
+
+Defaults are intentionally narrow:
+
+- `VPNKIT_COMPAT_BYPASS_ENDPOINTS=vpn.proofix.tv:1194` resolves the host at container startup and treats the endpoint as UDP when no protocol is specified.
+- Explicit protocol is supported with suffix or prefix syntax, for example `vpn.proofix.tv:1194/tcp`, `vpn.proofix.tv:1194/udp`, or `tcp://vpn.proofix.tv:1194`.
+- Multiple endpoints may be separated by commas, spaces, or semicolons.
+- `VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=true` additionally bypasses ICMP only for the resolved compatibility endpoint IPs.
+
+The bypass adds scoped `RETURN`, `FORWARD`, and `MASQUERADE` rules for the resolved endpoint IP + protocol + port (and optional endpoint ICMP). It does not add broad OpenVPN-client NAT; TCP traffic that does not match a configured bypass endpoint and UDP/53 DNS continue to be redirected to sing-box.
+
 Real VPS material must stay under gitignored `secrets/vps/`; never commit VLESS UUIDs, private keys, `ta.key`, full profiles, tokens, or copied VPS configs.
 
 ## Prepare secrets (operator-bound)

@@ -80,3 +80,4 @@ Report: `reports/aad-implementer-routing.md`.
 
 ## Execution ledger
 - 2026-06-02: created worktree and initial task package.
+- 2026-06-02: aad-implementer implemented Task 1 scoped compatibility bypass in progress; local evidence recorded in `verification/local.md`, final report pending in `reports/aad-implementer-routing.md`.
