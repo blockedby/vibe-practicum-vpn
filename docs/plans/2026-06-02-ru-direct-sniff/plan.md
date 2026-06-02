@@ -48,7 +48,7 @@
 - Test plan: sync/build/recreate existing Docker topology; grep mounted config; live client smoke with baseline and 2ip curl; inspect sanitized logs.
 - Dependencies: Task 1, Task 2.
 - Executor: owner.
-- Status: pending.
+- Status: blocked. Evidence: `verification/vps-deploy.md`; SSH/network access to `vibe-practicum` timed out before any remote mutation.
 
 ## Dependency graph
 - Task 1 -> Task 2 -> Task 3 -> final report.
@@ -57,3 +57,11 @@
 - 2026-06-02: Task package and executable plan created. Pre-dispatch/implementation gate satisfied; slice kept whole, with tiny owner-level source/test edit to avoid unnecessary delegation in a user-specified main worktree.
 - 2026-06-02: Added route-action sniff rule after DNS hijack and before RU rules; updated template invariant regression.
 - 2026-06-02: Local verification passed: targeted Go test, `go test ./...`, rendered sing-box config check with compatibility env, Docker lab baseline client, and local 2ip.ru route logs showing sniffed SNI `2ip.ru` matched `geosite-category-ru` and routed `direct-out`.
+- 2026-06-02: Committed and pushed source/test/task-package fix to main at `0e4cbfb`.
+- 2026-06-02: VPS deploy blocked before mutation because SSH/network access to `vibe-practicum` timed out. See `verification/vps-deploy.md` and `reports/aad-slice-owner.md`.
+
+## Current done-state
+- Source fix: done and pushed (`0e4cbfb`).
+- Local acceptance: done.
+- Live deploy: blocked before mutation by VPS reachability timeout.
+- Open issue: U-01 in `reports/aad-slice-owner.md`.
