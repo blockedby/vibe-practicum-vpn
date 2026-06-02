@@ -60,20 +60,40 @@ docs/plans/2026-06-02-vercel-dns-server-failover/verification/local.md
 No commands were run that mutate DNS, Vercel records, remote hosts, local secrets, rendered configs, or generated artifacts. Only mkdir/cat/find/git/grep checks touched the task package.
 ```
 
-## Post-commit status
+## Post-commit/root verification status
+
+Fresh root-owner verification after slice integration:
 
 ```text
 $ git status --short
- M docs/plans/2026-06-02-vercel-dns-server-failover/verification/local.md
 (clean)
+
+$ git rev-parse --short HEAD
+ecbb1f9
 ```
 
 ## Commit evidence
 
 ```text
-d0cceae Add Vercel DNS failover task plan
-docs/plans/2026-06-02-vercel-dns-server-failover/README.md
-docs/plans/2026-06-02-vercel-dns-server-failover/plan.md
-docs/plans/2026-06-02-vercel-dns-server-failover/reports/slice-owner.md
-docs/plans/2026-06-02-vercel-dns-server-failover/verification/local.md
+ecbb1f9 Add Vercel DNS failover task plan
+ docs/plans/2026-06-02-vercel-dns-server-failover/README.md              |  19 ++
+ docs/plans/2026-06-02-vercel-dns-server-failover/plan.md                | 326 +++++++++++++++++++++
+ docs/plans/2026-06-02-vercel-dns-server-failover/reports/slice-owner.md | 103 +++++++
+ docs/plans/2026-06-02-vercel-dns-server-failover/verification/local.md  |  79 +++++
+ 4 files changed, 527 insertions(+)
+```
+
+## Root-owner final verification addendum
+
+```text
+$ git diff --check HEAD~1..HEAD
+exit=0
+
+$ grep -R -nE '45\.12\.74\.211|178\.20\.45\.245' docs/plans/2026-06-02-vercel-dns-server-failover
+(no matches; no exact user-provided endpoint literals found)
+exit=0
+
+$ grep -R -nE --exclude='local.md' 'BEGIN (RSA |OPENSSH |EC |DSA |PGP )?PRIVATE KEY|PRIVATE KEY-----|https?://[^[:space:]@]+:[^[:space:]@]+@|-----BEGIN|vca_[A-Za-z0-9]+' docs/plans/2026-06-02-vercel-dns-server-failover
+(no matches; no obvious secret markers found in package docs)
+exit=0
 ```

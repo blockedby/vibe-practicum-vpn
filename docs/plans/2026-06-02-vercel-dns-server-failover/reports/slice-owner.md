@@ -78,7 +78,7 @@
   - Not available before push; branch was not pushed.
 
 ## Commit
-- Commit: current branch HEAD for this package; final short hash reported in chat response (`git rev-parse --short HEAD`).
+- Commit: `ecbb1f9 Add Vercel DNS failover task plan`.
 - Pushed: no; user requested not to push unless mandatory, and no repo convention required push for this doc-only planning slice.
 
 ## Issues
