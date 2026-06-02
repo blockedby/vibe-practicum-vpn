@@ -63,8 +63,8 @@ func TestRenderServerConfigRejectsUnsafeServerName(t *testing.T) {
 		{"server_name semicolon", func(c *config.IKEv2Config) { c.ServerName = "vpn.example.test; include /etc/shadow" }},
 		{"server_name backtick", func(c *config.IKEv2Config) { c.ServerName = "vpn.example.test`touch /tmp/pwned`" }},
 		{"server_name shell", func(c *config.IKEv2Config) { c.ServerName = "vpn.example.test$(touch /tmp/pwned)" }},
-		{"public_endpoint newline", func(c *config.IKEv2Config) { c.PublicEndpoint = "45.12.74.211\nconnections { injected { } }" }},
-		{"public_endpoint space", func(c *config.IKEv2Config) { c.PublicEndpoint = "45.12.74.211 extra" }},
+		{"public_endpoint newline", func(c *config.IKEv2Config) { c.PublicEndpoint = "${VPNKIT_VPS_PUBLIC_ENDPOINT:-203.0.113.10}\nconnections { injected { } }" }},
+		{"public_endpoint space", func(c *config.IKEv2Config) { c.PublicEndpoint = "${VPNKIT_VPS_PUBLIC_ENDPOINT:-203.0.113.10} extra" }},
 	} {
 		t.Run(tc.field, func(t *testing.T) {
 			cfg := config.DefaultIKEv2Config()

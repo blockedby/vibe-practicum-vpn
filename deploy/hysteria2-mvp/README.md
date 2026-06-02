@@ -1,11 +1,11 @@
 # Hysteria 2 MVP
 
-Isolated Hysteria 2 MVP for `positions.peacedata.company`.
+Isolated Hysteria 2 MVP for `example-private-node.invalid`.
 
 Server side uses the existing VPS Docker runtime in host-network mode and binds
 only UDP `18443`. It does not use NET_ADMIN, TUN, TProxy, policy routing, or
 broad iptables chains. Hysteria outbound traffic is forced through the existing
-sing-box SOCKS listener at `100.121.107.112:2080` by default.
+sing-box SOCKS listener at `192.0.2.10:2080` by default.
 
 Client-side onboarding avoids host route changes: the local sandbox client runs
 in a Podman container and exposes only loopback proxies on the workstation.
@@ -15,13 +15,13 @@ in a Podman container and exposes only loopback proxies on the workstation.
 Review first:
 
 ```sh
-HY2_PUBLIC_HOST=positions.peacedata.company ./install-vps.sh --dry-run
+HY2_PUBLIC_HOST=example-private-node.invalid ./install-vps.sh --dry-run
 ```
 
 Install on the VPS as root:
 
 ```sh
-HY2_PUBLIC_HOST=positions.peacedata.company ./install-vps.sh
+HY2_PUBLIC_HOST=example-private-node.invalid ./install-vps.sh
 ```
 
 Useful overrides:
@@ -29,7 +29,7 @@ Useful overrides:
 ```sh
 HY2_PUBLIC_PORT=18443
 HY2_LISTEN_PORT=18443
-SING_BOX_SOCKS_ADDR=100.121.107.112:2080
+SING_BOX_SOCKS_ADDR=192.0.2.10:2080
 HY2_IMAGE=docker.io/tobyxdd/hysteria:v2.8.2
 ```
 
@@ -57,12 +57,12 @@ scp root@VPS:/opt/vibe-hy2-mvp/server.env ./server.env
 Expected keys:
 
 ```sh
-HY2_HOST=positions.peacedata.company # or VPS IP; alternatively set HY2_SERVER=host:18443
+HY2_HOST=example-private-node.invalid # or VPS IP; alternatively set HY2_SERVER=host:18443
 HY2_PORT=18443                       # optional, defaults to 18443
 HY2_AUTH_PASSWORD=...
 HY2_OBFS_PASSWORD=...
 HY2_PIN_SHA256=BA:88:45:17:A1:... # or HY2_CERT_PIN_SHA256 from server state
-HY2_SNI=positions.peacedata.company # optional default
+HY2_SNI=example-private-node.invalid # optional default
 HY2_INSECURE=true                   # required for the self-signed MVP cert
 ```
 
@@ -99,7 +99,7 @@ Useful variants:
 
 ```sh
 ./make-client-uri-vps.sh --no-qr
-./make-client-uri-vps.sh --ssh-host vibe-practicum
+./make-client-uri-vps.sh --ssh-host ${VPNKIT_VPS_SSH_HOST:-example-vps-host}
 ./make-client-uri-vps.sh --local-env ./server.env
 ```
 
@@ -159,7 +159,7 @@ The URI carries the MVP settings: `insecure=1`, `pinSHA256`,
 
 If import drops any TLS fields, edit the profile manually and ensure insecure TLS
 is allowed for the self-signed cert, the SHA-256 certificate pin is present, SNI
-is set to `positions.peacedata.company` unless overridden, and Salamander password matches
+is set to `example-private-node.invalid` unless overridden, and Salamander password matches
 `HY2_OBFS_PASSWORD`.
 
 ## iOS: Streisand
@@ -180,7 +180,7 @@ Confirm the imported profile preserves the self-signed-cert settings
    - server: `HY2_HOST`/`HY2_SERVER` and UDP port `18443` (or `HY2_PORT`)
    - auth/password: `HY2_AUTH_PASSWORD`
    - TLS: allow insecure for the self-signed MVP cert and set the SHA-256 pin
-   - SNI: `positions.peacedata.company` unless overridden
+   - SNI: `example-private-node.invalid` unless overridden
    - obfs: Salamander with `HY2_OBFS_PASSWORD`
 4. Connect and check `https://ifconfig.me`.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u -o pipefail
 
-REPO_DIR="/home/kcnc/code/tools/vibe-practicum-vpn"
+REPO_DIR="/home/kcnc/code/tools/${VPNKIT_VPS_SSH_HOST:-example-vps-host}-vpn"
 SNAP_DIR="$REPO_DIR/snapshots/kcnc-oneshot"
 TS="$(date +%Y%m%d-%H%M%S)"
 LOG="$SNAP_DIR/stop-$TS.log"

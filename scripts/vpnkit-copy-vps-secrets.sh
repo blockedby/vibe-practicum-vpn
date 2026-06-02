@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-HOST=${1:-vibe-practicum}
+HOST=${1:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}
 BASE=${VPNKIT_SECRETS_DIR:-secrets/vps}
 mkdir -p "$BASE/sing-box" "$BASE/openvpn/server" "$BASE/openvpn/pki" "$BASE/openvpn/client"
 cat <<MSG

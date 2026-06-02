@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
 OPENVPN_ASUS_EXPORT="${OPENVPN_ASUS_EXPORT:-0}"
 OPENVPN_PORT="${OPENVPN_PORT:-1194}"
 OPENVPN_ASUS_REDIRECT_GATEWAY="${OPENVPN_ASUS_REDIRECT_GATEWAY:-0}"
 REMOTE_STATE_DIR="${REMOTE_STATE_DIR:-/etc/vibe-vpn/openvpn-asus}"
 OPENVPN_CLIENT_CN="${OPENVPN_CLIENT_CN:-asus}"
-PROFILE_NAME="${PROFILE_NAME:-${OPENVPN_CLIENT_CN}-vibe-practicum.ovpn}"
+PROFILE_NAME="${PROFILE_NAME:-${OPENVPN_CLIENT_CN}-${VPNKIT_VPS_SSH_HOST:-example-vps-host}.ovpn}"
 
 require_export_inputs() {
   if [[ "$OPENVPN_ASUS_EXPORT" != "1" ]]; then

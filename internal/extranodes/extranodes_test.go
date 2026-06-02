@@ -17,12 +17,12 @@ func TestLoadHysteria2NodeBuildsSingBoxOutbound(t *testing.T) {
 	cfg := filepath.Join(dir, "extra-nodes.json")
 	body := `[
   {
-    "name": "lil-sweden hy2",
+    "name": "example-extra-node hy2",
     "type": "hysteria2",
-    "host": "84.22.149.216",
+    "host": "203.0.113.20",
     "port": 443,
     "auth_file": "` + authFile + `",
-    "server_name": "computer.peacedata.company",
+    "server_name": "example-private-node.invalid",
     "up_mbps": 100,
     "down_mbps": 100
   }
@@ -38,12 +38,12 @@ func TestLoadHysteria2NodeBuildsSingBoxOutbound(t *testing.T) {
 		t.Fatalf("len=%d", len(nodes))
 	}
 	n := nodes[0]
-	if n.Name != "lil-sweden hy2" || n.Host != "84.22.149.216" || n.Port != 443 || n.Network != "hysteria2" || n.Security != "tls" {
+	if n.Name != "example-extra-node hy2" || n.Host != "203.0.113.20" || n.Port != 443 || n.Network != "hysteria2" || n.Security != "tls" {
 		t.Fatalf("unexpected node: %+v", n)
 	}
 	b, _ := json.Marshal(n.Outbound)
 	s := string(b)
-	for _, want := range []string{`"type":"hysteria2"`, `"server":"84.22.149.216"`, `"server_port":443`, `"server_name":"computer.peacedata.company"`, `"password":"secret"`, `"up_mbps":100`, `"down_mbps":100`} {
+	for _, want := range []string{`"type":"hysteria2"`, `"server":"203.0.113.20"`, `"server_port":443`, `"server_name":"example-private-node.invalid"`, `"password":"secret"`, `"up_mbps":100`, `"down_mbps":100`} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("outbound missing %s in %s", want, s)
 		}

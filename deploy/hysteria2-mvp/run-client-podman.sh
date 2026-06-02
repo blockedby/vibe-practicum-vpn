@@ -34,7 +34,7 @@ Accepted env keys:
   Server:   HY2_SERVER or HY2_SERVER_ADDR, otherwise HY2_HOST/HY2_PUBLIC_HOST/
             HY2_DOMAIN/HY2_SERVER_HOST/VPS_HOST/VPS_IP plus HY2_PORT
   Optional: HY2_PORT or HY2_PUBLIC_PORT (default 18443), HY2_SNI
-            (default HY2_PUBLIC_HOST or positions.peacedata.company), HY2_INSECURE (default true)
+            (default HY2_PUBLIC_HOST or example-private-node.invalid), HY2_INSECURE (default true)
 EOF
 }
 
@@ -165,7 +165,7 @@ if [[ -z "$pin_sha256" ]]; then
 fi
 pin_sha256=$(require_value "$pin_sha256" "HY2_PIN_SHA256/HY2_CERT_PIN_SHA256/HY2_CERT_SHA256 or readable server.crt")
 
-sni=${HY2_SNI:-${HY2_PUBLIC_HOST:-positions.peacedata.company}}
+sni=${HY2_SNI:-${HY2_PUBLIC_HOST:-example-private-node.invalid}}
 insecure=${HY2_INSECURE:-true}
 case "${insecure,,}" in
   1|true|yes|on) insecure=true ;;

@@ -5,7 +5,7 @@ CLIENT_NAME="${CLIENT_NAME:?Set CLIENT_NAME, e.g. kcnc-pc or kcnc-pc-1}"
 TPROXY_PORT="${TPROXY_PORT:-2082}"
 MARK="${MARK:-0x1}"
 TABLE="${TABLE:-100}"
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
 : "${VIBE_PRACTICUM_SUDO_PASSWORD:?Set VIBE_PRACTICUM_SUDO_PASSWORD}"
 
 COMMENT="vibe-router-${CLIENT_NAME}-tproxy-entry"

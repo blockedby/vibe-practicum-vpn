@@ -20,7 +20,7 @@ Options:
 Required env is the same as run-client-podman.sh:
   HY2_AUTH_PASSWORD, HY2_OBFS_PASSWORD, HY2_PIN_SHA256/HY2_CERT_PIN_SHA256/
   HY2_CERT_SHA256, and HY2_SERVER or host+port keys. HY2_INSECURE defaults to true for the self-signed
-  MVP cert and HY2_SNI defaults to HY2_PUBLIC_HOST or positions.peacedata.company.
+  MVP cert and HY2_SNI defaults to HY2_PUBLIC_HOST or example-private-node.invalid.
 EOF
 }
 
@@ -137,7 +137,7 @@ if [[ -z "$pin_sha256" ]]; then
 fi
 pin_sha256=$(require_value "$pin_sha256" "HY2_PIN_SHA256/HY2_CERT_PIN_SHA256/HY2_CERT_SHA256 or readable server.crt")
 
-sni=${HY2_SNI:-${HY2_PUBLIC_HOST:-positions.peacedata.company}}
+sni=${HY2_SNI:-${HY2_PUBLIC_HOST:-example-private-node.invalid}}
 insecure=${HY2_INSECURE:-true}
 case "${insecure,,}" in
   1|true|yes|on) insecure=1 ;;

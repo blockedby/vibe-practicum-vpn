@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
 CLIENT_NAME="${CLIENT_NAME:-kcnc-pc}"
 
 ssh "$SSH_HOST" "CLIENT_NAME='$CLIENT_NAME' bash -s" <<'REMOTE'

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
 CONFIG="${CONFIG:-/etc/sing-box-vibe/tproxy-canary.json}"
 BACKUP_DIR="${BACKUP_DIR:-/etc/sing-box-vibe/backups}"
 BACKUP_PATH="${BACKUP_PATH:-}"

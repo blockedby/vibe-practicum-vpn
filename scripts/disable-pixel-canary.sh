@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PHONE_TS_IP="${PHONE_TS_IP:-100.109.247.47}"
+PHONE_TS_IP="${PHONE_TS_IP:?Set PHONE_TS_IP, for example from config/private-endpoints.local.env}"
 REDIRECT_PORT="${REDIRECT_PORT:-2081}"
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
 : "${VIBE_PRACTICUM_SUDO_PASSWORD:?Set VIBE_PRACTICUM_SUDO_PASSWORD}"
 
 ssh "$SSH_HOST" "PHONE_TS_IP='$PHONE_TS_IP' REDIRECT_PORT='$REDIRECT_PORT' VIBE_PRACTICUM_SUDO_PASSWORD='$VIBE_PRACTICUM_SUDO_PASSWORD' bash -s" <<'REMOTE'

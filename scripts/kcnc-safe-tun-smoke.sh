@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VPS_TS_IP="100.121.107.112"
 SERVICE="sing-box-vibe-kcnc-safe-tun.service"
+LOCAL_ENDPOINTS_FILE="${LOCAL_ENDPOINTS_FILE:-config/private-endpoints.local.env}"
+if [[ -r "$LOCAL_ENDPOINTS_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$LOCAL_ENDPOINTS_FILE"
+  set +a
+fi
+VPS_TS_IP="${VPNKIT_VPS_TAILNET_IP:-${VPS_TS_IP:-}}"
+if [[ -z "$VPS_TS_IP" ]]; then
+  echo "Set VPNKIT_VPS_TAILNET_IP in config/private-endpoints.local.env or export VPS_TS_IP." >&2
+  exit 2
+fi
+
 
 echo "=== service ==="
 systemctl is-active "$SERVICE" || true

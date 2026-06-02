@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
-PHONE_TS_IP="${PHONE_TS_IP:-100.109.247.47}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
+PHONE_TS_IP="${PHONE_TS_IP:?Set PHONE_TS_IP, for example from config/private-endpoints.local.env}"
 MARK="${MARK:-0x1}"
 TABLE="${TABLE:-100}"
 

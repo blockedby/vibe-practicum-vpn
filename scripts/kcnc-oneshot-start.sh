@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
 set -u -o pipefail
 
-REPO_DIR="/home/kcnc/code/tools/vibe-practicum-vpn"
+REPO_DIR="/home/kcnc/code/tools/${VPNKIT_VPS_SSH_HOST:-example-vps-host}-vpn"
 CONFIG_SRC="$REPO_DIR/configs/sing-box/local/kcnc-pc-safe-tun.json"
 CONFIG_DST="/etc/sing-box-vibe/kcnc-pc-safe-tun.json"
 SERVICE="sing-box-vibe-kcnc-oneshot.service"
 SNAP_DIR="$REPO_DIR/snapshots/kcnc-oneshot"
 TS="$(date +%Y%m%d-%H%M%S)"
 LOG="$SNAP_DIR/start-$TS.log"
-VPS_TS_IP="100.121.107.112"
 VPS_SOCKS_PORT="2080"
+LOCAL_ENDPOINTS_FILE="${LOCAL_ENDPOINTS_FILE:-config/private-endpoints.local.env}"
+if [[ -r "$LOCAL_ENDPOINTS_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$LOCAL_ENDPOINTS_FILE"
+  set +a
+fi
+VPS_TS_IP="${VPNKIT_VPS_TAILNET_IP:-${VPS_TS_IP:-}}"
+if [[ -z "$VPS_TS_IP" ]]; then
+  echo "Set VPNKIT_VPS_TAILNET_IP in config/private-endpoints.local.env or export VPS_TS_IP." >&2
+  exit 2
+fi
+
 STOP_V2RAYA="${KCNC_STOP_V2RAYA:-0}"
 
 mkdir -p "$SNAP_DIR"
@@ -73,7 +85,7 @@ on_exit() {
   echo "### final snapshot"
   snapshot "final"
   echo "log saved: $LOG"
-  echo "rollback: sudo /home/kcnc/code/tools/vibe-practicum-vpn/scripts/kcnc-oneshot-stop.sh"
+  echo "rollback: sudo /home/kcnc/code/tools/${VPNKIT_VPS_SSH_HOST:-example-vps-host}-vpn/scripts/kcnc-oneshot-stop.sh"
   if [[ "$STEP_FAILED" != 0 || "$rc" != 0 ]]; then
     echo "RESULT: FAIL rc=$rc STEP_FAILED=$STEP_FAILED"
   else

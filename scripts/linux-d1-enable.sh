@@ -4,7 +4,18 @@ set -euo pipefail
 CONFIG_SRC="${CONFIG_SRC:-configs/sing-box/local/kcnc-pc-tun.json}"
 CONFIG_DST="${CONFIG_DST:-/etc/sing-box-vibe/kcnc-pc-tun.json}"
 SERVICE="${SERVICE:-sing-box-vibe-local.service}"
-VPS_TS_IP="${VPS_TS_IP:-100.121.107.112}"
+LOCAL_ENDPOINTS_FILE="${LOCAL_ENDPOINTS_FILE:-config/private-endpoints.local.env}"
+if [[ -r "$LOCAL_ENDPOINTS_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$LOCAL_ENDPOINTS_FILE"
+  set +a
+fi
+VPS_TS_IP="${VPNKIT_VPS_TAILNET_IP:-${VPS_TS_IP:-}}"
+if [[ -z "$VPS_TS_IP" ]]; then
+  echo "Set VPNKIT_VPS_TAILNET_IP in config/private-endpoints.local.env or export VPS_TS_IP." >&2
+  exit 2
+fi
 
 if ! command -v sing-box >/dev/null 2>&1; then
   echo "sing-box is not installed locally. Install it first, then rerun." >&2
@@ -20,7 +31,7 @@ fi
 # Keep the operator-approved Tailscale mode: global exit-node stays enabled.
 # Local Steam/Dota direct is handled by sing-box local-direct bound to the LAN
 # interface in configs/sing-box/local/kcnc-pc-tun.json.
-sudo tailscale up --exit-node="100.121.107.112" --exit-node-allow-lan-access=true --accept-routes
+sudo tailscale up --exit-node="$VPS_TS_IP" --exit-node-allow-lan-access=true --accept-routes
 
 echo "Checking VPS SOCKS reachability on $VPS_TS_IP:2080..."
 timeout 5 bash -lc "</dev/tcp/$VPS_TS_IP/2080" || {

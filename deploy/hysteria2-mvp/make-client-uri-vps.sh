@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-SSH_HOST=${SSH_HOST:-vibe-practicum}
+SSH_HOST=${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}
 REMOTE_ENV=${HY2_REMOTE_ENV:-/opt/vibe-hy2-mvp/server.env}
 LOCAL_ENV=${HY2_LOCAL_ENV:-}
 PRINT_QR=1
@@ -16,7 +16,7 @@ onboarding hysteria2:// URI. If qrencode is installed locally, an ANSI QR is
 printed too.
 
 Options:
-  --ssh-host HOST       SSH host alias (default: vibe-practicum)
+  --ssh-host HOST       SSH host alias (default: ${VPNKIT_VPS_SSH_HOST:-example-vps-host})
   --remote-env PATH     Remote env path (default: /opt/vibe-hy2-mvp/server.env)
   --local-env PATH      Use an existing local env file instead of SSH fetch
   --no-qr               Print URI only

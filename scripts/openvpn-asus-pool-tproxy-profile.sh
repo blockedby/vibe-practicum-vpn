@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
-PUBLIC_ENDPOINT="${PUBLIC_ENDPOINT:-45.12.74.211}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
+PUBLIC_ENDPOINT="${PUBLIC_ENDPOINT:-${VPNKIT_VPS_PUBLIC_ENDPOINT:-203.0.113.10}}"
 OPENVPN_PORT="${OPENVPN_PORT:-1194}"
 REMOTE_STATE_DIR="${REMOTE_STATE_DIR:-/etc/vibe-vpn/openvpn-asus}"
 CCD_DIR="${CCD_DIR:-/etc/openvpn/ccd-vibe-asus}"
 OUT_DIR="${OUT_DIR:-./out/openvpn-pool-tproxy-profiles}"
-PROFILE_SUFFIX="${PROFILE_SUFFIX:-vibe-practicum-pool-tproxy.ovpn}"
+PROFILE_SUFFIX="${PROFILE_SUFFIX:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}-pool-tproxy.ovpn}"
 DNS1="${DNS1:-8.8.8.8}"
 DNS2="${DNS2:-8.8.4.4}"
 EXPORT=0
@@ -16,14 +16,14 @@ CN=""
 
 usage() {
   cat <<'USAGE'
-Generate an OpenVPN dynamic-pool TPROXY profile for vibe-practicum.
+Generate an OpenVPN dynamic-pool TPROXY profile for ${VPNKIT_VPS_SSH_HOST:-example-vps-host}.
 
 Usage:
   scripts/openvpn-asus-pool-tproxy-profile.sh --export <client-cn>
   scripts/openvpn-asus-pool-tproxy-profile.sh --dry-run <client-cn>
 
 What it does in --export mode:
-  - SSHes to SSH_HOST (default: vibe-practicum) and uses sudo -n.
+  - SSHes to SSH_HOST (default: ${VPNKIT_VPS_SSH_HOST:-example-vps-host}) and uses sudo -n.
   - Creates/reuses an EasyRSA client cert for <client-cn>.
   - Writes CCD with DNS + redirect-gateway, but NO ifconfig-push.
   - Lets OpenVPN assign 10.89.0.20-10.89.0.254 from the dynamic pool.
@@ -34,7 +34,7 @@ Required live prerequisite:
   10.89.0.20-10.89.0.254 into VIBE_OVPN_ASUS_TP and accept mark 0x1 INPUT.
 
 Examples:
-  PUBLIC_ENDPOINT=45.12.74.211 OUT_DIR=/home/kcnc/vibe-openvpn-asus-profile \
+  PUBLIC_ENDPOINT=${VPNKIT_VPS_PUBLIC_ENDPOINT:-203.0.113.10} OUT_DIR=/home/kcnc/vibe-openvpn-asus-profile \
     scripts/openvpn-asus-pool-tproxy-profile.sh --export vasya-phone
 
 Options:

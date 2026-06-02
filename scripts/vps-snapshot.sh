@@ -33,7 +33,7 @@ except Exception as e:
  print(e)
 PY
 REMOTE
-scp "$remote_script" vibe-practicum:/tmp/vps-snapshot.sh >/dev/null
-ssh vibe-practicum "printf '%s\\n' \"$VIBE_PRACTICUM_SUDO_PASSWORD\" | sudo -S bash /tmp/vps-snapshot.sh" >"$out_dir/vps-snapshot.txt"
-ssh vibe-practicum "rm -f /tmp/vps-snapshot.sh" >/dev/null 2>&1 || true
+scp "$remote_script" ${VPNKIT_VPS_SSH_HOST:-example-vps-host}:/tmp/vps-snapshot.sh >/dev/null
+ssh ${VPNKIT_VPS_SSH_HOST:-example-vps-host} "printf '%s\\n' \"$VIBE_PRACTICUM_SUDO_PASSWORD\" | sudo -S bash /tmp/vps-snapshot.sh" >"$out_dir/vps-snapshot.txt"
+ssh ${VPNKIT_VPS_SSH_HOST:-example-vps-host} "rm -f /tmp/vps-snapshot.sh" >/dev/null 2>&1 || true
 echo "$out_dir"

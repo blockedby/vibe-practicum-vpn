@@ -3,7 +3,7 @@ set -euo pipefail
 
 CLIENT_TS_IP="${CLIENT_TS_IP:?Set CLIENT_TS_IP, e.g. 100.64.19.94}"
 CLIENT_NAME="${CLIENT_NAME:-client}"
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
 : "${VIBE_PRACTICUM_SUDO_PASSWORD:?Set VIBE_PRACTICUM_SUDO_PASSWORD}"
 
 COMMENT="vibe-router-${CLIENT_NAME}-tproxy-entry"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
 APPLY_LIVE=0
 if [[ "${1:-}" == "--apply-live" ]]; then
   APPLY_LIVE=1
@@ -54,23 +54,23 @@ fi
 
 iptables -t mangle -N "$CHAIN" 2>/dev/null || true
 
-# Proofix work VPN is itself OpenVPN over UDP/1194. If it is captured into
-# sing-box/xray TPROXY, the nested VPN handshake can fail. Keep this scoped
-# bypass before the generic UDP TPROXY rule so it is routed/NATed directly.
-PROOFIX_OPENVPN_DST="${PROOFIX_OPENVPN_DST:-185.241.192.190}"
-PROOFIX_OPENVPN_PORT="${PROOFIX_OPENVPN_PORT:-1194}"
-PROOFIX_OPENVPN_COMMENT="${COMMENT_PREFIX}tproxy:bypass:proofix-openvpn-udp1194:${CHAIN}"
-if ! iptables -t mangle -C "$CHAIN" -p udp -d "$PROOFIX_OPENVPN_DST/32" --dport "$PROOFIX_OPENVPN_PORT" -m comment --comment "$PROOFIX_OPENVPN_COMMENT" -j RETURN 2>/dev/null; then
-  iptables -t mangle -I "$CHAIN" 1 -p udp -d "$PROOFIX_OPENVPN_DST/32" --dport "$PROOFIX_OPENVPN_PORT" -m comment --comment "$PROOFIX_OPENVPN_COMMENT" -j RETURN
+# A nested work VPN/OpenVPN endpoint can be bypassed before generic UDP TPROXY
+# so its handshake is routed/NATed directly. Real endpoints must be supplied
+# from gitignored private config, not committed defaults.
+: "${COMPAT_OPENVPN_DST:?Set COMPAT_OPENVPN_DST, for example from config/private-endpoints.local.env}"
+COMPAT_OPENVPN_PORT="${COMPAT_OPENVPN_PORT:-1194}"
+COMPAT_OPENVPN_COMMENT="${COMMENT_PREFIX}tproxy:bypass:compat-openvpn-udp1194:${CHAIN}"
+if ! iptables -t mangle -C "$CHAIN" -p udp -d "$COMPAT_OPENVPN_DST/32" --dport "$COMPAT_OPENVPN_PORT" -m comment --comment "$COMPAT_OPENVPN_COMMENT" -j RETURN 2>/dev/null; then
+  iptables -t mangle -I "$CHAIN" 1 -p udp -d "$COMPAT_OPENVPN_DST/32" --dport "$COMPAT_OPENVPN_PORT" -m comment --comment "$COMPAT_OPENVPN_COMMENT" -j RETURN
 fi
 # The dynamic-pool packet returns from VIBE_OVPN_ASUS_TP and then continues
 # through PREROUTING, where the broad OpenVPN-ASUS chain can catch it again.
-# If that chain exists, bypass Proofix there too.
+# If that chain exists, bypass the compatibility endpoint there too.
 BROAD_CHAIN="VIBE_ROUTER_OPENVPN_ASUS"
-BROAD_COMMENT="${COMMENT_PREFIX}tproxy:bypass:proofix-openvpn-udp1194:${BROAD_CHAIN}"
+BROAD_COMMENT="${COMMENT_PREFIX}tproxy:bypass:compat-openvpn-udp1194:${BROAD_CHAIN}"
 if iptables -t mangle -L "$BROAD_CHAIN" >/dev/null 2>&1; then
-  if ! iptables -t mangle -C "$BROAD_CHAIN" -p udp -d "$PROOFIX_OPENVPN_DST/32" --dport "$PROOFIX_OPENVPN_PORT" -m comment --comment "$BROAD_COMMENT" -j RETURN 2>/dev/null; then
-    iptables -t mangle -I "$BROAD_CHAIN" 1 -p udp -d "$PROOFIX_OPENVPN_DST/32" --dport "$PROOFIX_OPENVPN_PORT" -m comment --comment "$BROAD_COMMENT" -j RETURN
+  if ! iptables -t mangle -C "$BROAD_CHAIN" -p udp -d "$COMPAT_OPENVPN_DST/32" --dport "$COMPAT_OPENVPN_PORT" -m comment --comment "$BROAD_COMMENT" -j RETURN 2>/dev/null; then
+    iptables -t mangle -I "$BROAD_CHAIN" 1 -p udp -d "$COMPAT_OPENVPN_DST/32" --dport "$COMPAT_OPENVPN_PORT" -m comment --comment "$BROAD_COMMENT" -j RETURN
   fi
 fi
 

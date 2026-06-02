@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SSH_HOST="${SSH_HOST:-vibe-practicum}"
+SSH_HOST="${SSH_HOST:-${VPNKIT_VPS_SSH_HOST:-example-vps-host}}"
 : "${VIBE_PRACTICUM_SUDO_PASSWORD:?Set VIBE_PRACTICUM_SUDO_PASSWORD}"
 
 ssh "$SSH_HOST" "VIBE_PRACTICUM_SUDO_PASSWORD='$VIBE_PRACTICUM_SUDO_PASSWORD' bash -s" <<'REMOTE'
@@ -45,7 +45,8 @@ else
 fi
 
 # Canary rule present?
-if sudo_cmd iptables -t mangle -C PREROUTING -i tailscale0 -s 100.109.247.47 -m comment --comment vibe-router-pixel-tproxy-entry -j VIBE_ROUTER_PIXEL 2>/dev/null; then
+: "${PHONE_TS_IP:?Set PHONE_TS_IP, for example from config/private-endpoints.local.env}"
+if sudo_cmd iptables -t mangle -C PREROUTING -i tailscale0 -s "$PHONE_TS_IP" -m comment --comment vibe-router-pixel-tproxy-entry -j VIBE_ROUTER_PIXEL 2>/dev/null; then
   pass 'pixel-tproxy-canary' enabled
 else
   fail 'pixel-tproxy-canary' missing
