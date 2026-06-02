@@ -60,10 +60,10 @@ Executor:
 - 2026-06-02: aad-implementer completed Task 1 implementation: added RU direct remote rule-set routes in `config/sing-box/config.json.template` and regression coverage in `internal/singbox/singbox_test.go`.
 - 2026-06-02: Verification evidence recorded in `verification/local.md`: targeted regression passed, `go test ./...` passed, temp `sing-box check` passed with documented compatibility env for pre-existing deprecation gates; Docker lab waived because `secrets/` is absent and secrets are out of scope.
 - 2026-06-02: Implementer completed Task 1 in commits `3d4534d`, `6f6a3e2`, `ccef739`; targeted tests, full Go tests, diff check, and sing-box check passed per report.
-- 2026-06-02: Owner reran targeted/full Go verification and render. Docker lab was attempted locally only: build/start succeeded on retry, OpenVPN client connected, but full client DNS/HTTPS regression did not pass (`dig @8.8.8.8` timed out). No VPS touched; secrets/logs removed from worktree.
+- 2026-06-02: Owner reran targeted/full Go verification and render. Docker lab debug continuation found and fixed a repo runtime startup race: OpenVPN could accept clients before sing-box redirect/DNS inbounds were ready when compat bypass/RU rule-set startup was slow. Added sing-box inbound readiness wait before starting OpenVPN; fresh AGENTS-equivalent Docker lab passed on alternate host UDP port 1196. No VPS touched; secrets/logs removed from worktree.
 
 ## Final done-state
 - Spec compliance: template and regression coverage implement explicit RU IP/geosite direct routing while preserving DNS hijack ordering and default proxy final.
-- Acceptance verification: automated config invariants and Go tests pass; sing-box check passed under existing deprecation compatibility env vars; local Docker lab is partial because client DNS regression timed out after successful build/start/OpenVPN connection.
-- System readiness: branch is ready for code review with a runtime caveat; do not deploy until Docker lab DNS/HTTPS regression is green or the pre-existing lab/runtime issue is resolved.
-- Open issues: U-01 Docker lab client DNS/HTTPS acceptance did not pass in this environment.
+- Acceptance verification: automated config invariants and Go tests pass; sing-box check passed under existing deprecation compatibility env vars; fresh local Docker lab passed on alternate host UDP port 1196 with OpenVPN `10.89.0.2/24`, DNS NOERROR, HTTPS 200, and literal-IP HTTPS 200.
+- System readiness: branch is ready for root integration/review. Docker lab DNS/HTTPS regression is green locally; no VPS deploy was attempted.
+- Open issues: none for this slice.

@@ -34,6 +34,23 @@ start_singbox() {
   echo "started sing-box pid=$SINGBOX_PID config=$SINGBOX_CONFIG"
 }
 
+wait_for_singbox_inbounds() {
+  local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
+  until ss -ltn sport = :2082 | grep -q ':2082' \
+    && ss -lun sport = :5353 | grep -q ':5353'; do
+    if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
+      echo "sing-box exited before inbounds became ready" >&2
+      wait "$SINGBOX_PID"
+    fi
+    if (( SECONDS >= deadline )); then
+      echo "timed out waiting for sing-box inbounds on tcp/2082 and udp/5353" >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+  echo "sing-box inbounds ready"
+}
+
 restart_singbox() {
   echo "restart requested for sing-box"
   sing-box check -c "$SINGBOX_CONFIG"
@@ -50,6 +67,7 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 start_singbox
+wait_for_singbox_inbounds
 
 openvpn --config "$OPENVPN_CONFIG" &
 OVPN_PID=$!
