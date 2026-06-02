@@ -6,8 +6,84 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+func TestDockerTemplateRoutingInvariants(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "config", "sing-box", "config.json.template"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedOutbound := `{"type":"vless","tag":"selected-native-out","server":"203.0.113.10","server_port":443}`
+	text := strings.ReplaceAll(string(b), "{{SELECTED_NATIVE_OUT_JSON}}", selectedOutbound)
+	if strings.Contains(text, "{{SELECTED_NATIVE_OUT_JSON}}") {
+		t.Fatal("template placeholder was not replaced")
+	}
+
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(text), &cfg); err != nil {
+		t.Fatalf("template is not valid JSON after placeholder substitution: %v", err)
+	}
+
+	route := cfg["route"].(map[string]any)
+	if route["final"] != "selected-native-out" {
+		t.Fatalf("route.final = %#v, want selected-native-out", route["final"])
+	}
+
+	rules := route["rules"].([]any)
+	if len(rules) < 4 {
+		t.Fatalf("route.rules length = %d, want DNS hijack rules plus RU direct rules", len(rules))
+	}
+	assertDNSHijackRule(t, rules[0].(map[string]any), "inbound", "vpnkit-dns-in")
+	assertDNSHijackRule(t, rules[1].(map[string]any), "protocol", "dns")
+
+	if idx := findDirectRuleSetRule(rules, "geoip-ru"); idx < 2 {
+		t.Fatalf("geoip-ru direct rule index = %d, want after DNS hijack rules", idx)
+	}
+	if idx := findDirectRuleSetRule(rules, "geosite-category-ru"); idx < 2 {
+		t.Fatalf("geosite-category-ru direct rule index = %d, want after DNS hijack rules", idx)
+	}
+
+	ruleSets := route["rule_set"].([]any)
+	assertRemoteRuleSet(t, ruleSets, "geoip-ru", "rule-set-geoip/geoip-ru.srs")
+	assertRemoteRuleSet(t, ruleSets, "geosite-category-ru", "rule-set-geosite/geosite-category-ru.srs")
+}
+
+func assertDNSHijackRule(t *testing.T, rule map[string]any, matchKey, matchValue string) {
+	t.Helper()
+	if rule[matchKey] != matchValue || rule["action"] != "hijack-dns" {
+		t.Fatalf("DNS hijack rule = %#v, want %s=%q action=hijack-dns", rule, matchKey, matchValue)
+	}
+}
+
+func findDirectRuleSetRule(rules []any, tag string) int {
+	for i, raw := range rules {
+		rule := raw.(map[string]any)
+		if rule["rule_set"] == tag && rule["outbound"] == "direct-out" {
+			return i
+		}
+	}
+	return -1
+}
+
+func assertRemoteRuleSet(t *testing.T, ruleSets []any, tag, urlPart string) {
+	t.Helper()
+	for _, raw := range ruleSets {
+		ruleSet := raw.(map[string]any)
+		if ruleSet["tag"] != tag {
+			continue
+		}
+		if ruleSet["type"] != "remote" || ruleSet["format"] != "binary" || ruleSet["download_detour"] != "direct-out" {
+			t.Fatalf("rule set %s = %#v, want remote binary downloaded via direct-out", tag, ruleSet)
+		}
+		if !strings.Contains(ruleSet["url"].(string), urlPart) {
+			t.Fatalf("rule set %s url = %q, want to contain %q", tag, ruleSet["url"], urlPart)
+		}
+		return
+	}
+	t.Fatalf("missing route.rule_set entry for %s", tag)
+}
 
 func TestApplyUsesSingBoxServiceAndPreservesOutboundTag(t *testing.T) {
 	dir := t.TempDir()

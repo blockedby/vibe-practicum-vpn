@@ -37,7 +37,25 @@
   "route": {
     "rules": [
       { "inbound": "vpnkit-dns-in", "action": "hijack-dns" },
-      { "protocol": "dns", "action": "hijack-dns" }
+      { "protocol": "dns", "action": "hijack-dns" },
+      { "rule_set": "geoip-ru", "outbound": "direct-out" },
+      { "rule_set": "geosite-category-ru", "outbound": "direct-out" }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-category-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs",
+        "download_detour": "direct-out"
+      }
     ],
     "final": "selected-native-out"
   }
