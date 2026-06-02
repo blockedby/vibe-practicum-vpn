@@ -52,6 +52,23 @@ Rollback symmetry: rollback requires the live/current DNS value to equal `VPN_DN
 
 Use the stable failover domain when available, or the currently selected endpoint for a temporary profile. Generated profiles must be written to a temp or gitignored output directory; tracked `*.ovpn` files are ignored by policy.
 
+### Current prepared `rabotau-na` endpoint
+
+`rabotau-na.peacedata.company` is prepared as a Vercel DNS multi-`A` OpenVPN endpoint for the RU failover pair:
+
+- `178.20.45.245` — primary / `moscow-tiger`
+- `45.12.74.211` — secondary / `vibe-practicum`
+
+Vercel DNS `A` records do not provide priority. Treat the DNS name as the stable operator-facing endpoint and use OpenVPN `remote` ordering for deterministic fallback. User-importable generated profiles for this endpoint should include all three remote lines, in this order:
+
+```conf
+remote rabotau-na.peacedata.company 1194 udp
+remote 178.20.45.245 1194 udp
+remote 45.12.74.211 1194 udp
+```
+
+Do not add `remote-random` for these profiles unless the operator explicitly wants random distribution instead of ordered fallback. Keep the compatibility profile style for UI import (`auth SHA256`, `auth-nocache`, `cipher AES-256-CBC`, `redirect-gateway def1`, inline cert/key/CA/tls-auth, `0644` permissions). Generated `.ovpn` files remain local/gitignored and must not be committed.
+
 ```bash
 # Print a remote line.
 LOCAL_ENV=config/private-endpoints.local.env scripts/vercel-dns-failover.sh ovpn-endpoint --endpoint "$VPN_FAILOVER_DOMAIN"
