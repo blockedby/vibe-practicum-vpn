@@ -56,6 +56,10 @@ scripts/vpnkit-render-local-configs.sh
 
 Rendered config and client profile outputs remain under gitignored `secrets/vps/rendered/` and `secrets/vps/openvpn/client/`.
 
+The tracked OpenVPN server template intentionally includes `tun-mtu 1400` and `mssfix 1360`. This persists the `moscow-tiger` runtime fix for a path-MTU/MSS issue where clients received a tunnel address and DNS `NOERROR`, but HTTPS by hostname timed out until TCP segment size was clamped. Keep the rendered `server.conf` gitignored; verify directives with a sanitized grep instead of committing rendered config contents.
+
+`vibe-vpn` subscription input stays gitignored as `secrets/vps/vibe-vpn/sub_url` (or the documented fallback names). If no operator-managed extra nodes are needed or a previous extra-nodes file is invalid, use an empty JSON list in gitignored `secrets/vps/vibe-vpn/extra-nodes.json`; the render path also writes `[]` when that file is absent.
+
 ## Local Docker lab
 
 Use the Docker lab before changing any live runtime:

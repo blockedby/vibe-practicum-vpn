@@ -87,3 +87,32 @@ Status:
 - AC4: not applicable yet; no confirmed root cause or safe fix identified.
 - AC5: not achieved; fresh host Docker client smoke blocked by placeholder endpoint/profile access.
 - AC6: passed for current work; only public-safe task-package markdown was written.
+
+### 2026-06-02 — MTU/MSS source-finalization pass
+
+User-provided live evidence supersedes the earlier diagnostic hypothesis: the live blocker was path MTU/MSS. Manual hotfixing the running OpenVPN server with `tun-mtu 1400` and `mssfix 1360` made the baseline smoke pass: tunnel `10.89.0.2/24`, DNS `NOERROR`, HTTPS hostname `200`, and literal-IP HTTPS `200`. The source-finalization slice stayed whole; no sub-slices were created.
+
+Plan gate update:
+- Task intake: persist the live MTU/MSS fix in tracked render source, document the root-cause rationale publicly, guard render output, then deploy/source-confirm and smoke if private endpoint access is usable.
+- Repo orientation/reuse: `scripts/vpnkit-render-local-configs.sh` copies `config/openvpn/server.tpl` to gitignored `secrets/vps/rendered/openvpn/server.conf`; `docs/DOCKER_SETUP.md` is the public Docker/runtime setup doc; Go tests are the repo's cheapest automated guard convention.
+- Reuse discovery: existing render path already writes gitignored `extra-nodes.json` as `[]` when no `secrets/vps/vibe-vpn/extra-nodes.json` is present, and accepts gitignored `sub_url` fallback locations.
+- Missing pieces now added: OpenVPN template MTU/MSS directives, Go guard for the template, public-safe docs/evidence updates.
+- Dependency graph: source/docs/guard completed first; live source-based deploy and fresh baseline/2ip smokes depend on populated operator-local endpoint/secrets and remain blocked here.
+
+Task status:
+- Task A — Source durability and guard: done.
+  - Files: `config/openvpn/server.tpl`, `internal/config/openvpn_template_test.go`.
+  - Evidence: `go test ./internal/config`, template grep, and throwaway render grep passed; see `verification/runtime-smoke.md`.
+- Task B — Public-safe docs/evidence: done for local/source state.
+  - Files: `docs/DOCKER_SETUP.md`, task-package markdown.
+  - Evidence: docs explain MTU/MSS HTTPS-timeout rationale and gitignored `sub_url`/`extra-nodes.json` handling without values.
+- Task C — Source-based live deploy and smoke: blocked.
+  - Evidence: `config/private-endpoints.local.env` in this worktree and primary checkout still contains the example `VPNKIT_VPS_SSH_HOST` placeholder; SSH fails before live access. No live mutation was attempted.
+
+Current done-state after source-finalization pass:
+- AC1: done by user-provided live evidence for MTU/MSS root cause; locally recorded but not independently reproduced here due endpoint boundary.
+- AC2/AC3: partially superseded by live root-cause finding; local owner could not inspect runtime due placeholder endpoint.
+- AC4/source durability: done locally; tracked OpenVPN template includes `tun-mtu 1400` and `mssfix 1360`; render output from this branch contains both.
+- AC5 baseline smoke: user-reported pass after live hotfix; source-based fresh rerun from this branch is blocked here.
+- AC6 2ip smoke: blocked here; no source-based 2ip rerun possible without usable endpoint/profile access.
+- AC7 public safety/checks: local checks passed; final public-safety review still required before any commit.

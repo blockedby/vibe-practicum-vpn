@@ -3,6 +3,10 @@ proto udp
 dev tun0
 topology subnet
 server 10.89.0.0 255.255.255.0
+# Keep tunnel packets below the path MTU observed on moscow-tiger.
+# Without this, clients can connect and resolve DNS while HTTPS stalls.
+tun-mtu 1400
+mssfix 1360
 push "redirect-gateway def1 bypass-dhcp"
 push "dhcp-option DNS 10.89.0.1"
 keepalive 10 120
