@@ -10,6 +10,7 @@ Source context: this plan builds on `docs/plans/hosting-research-moscow-vps.md` 
 - Make the node easy to bootstrap, deploy, verify, fail over to, and roll back with a small script suite.
 - Keep all tracked repository artifacts public-safe: no real endpoints, credentials, rendered configs, OpenVPN profiles, subscription URLs, logs, snapshots, or image exports.
 - Preserve the existing local-first validation posture: prove container/runtime changes in the local Docker lab before mutating any live VPS.
+- Treat DNS/domain failover automation as a follow-on task after the base `moscow-tiger` bootstrap/deploy path is implemented and verified; it is not in scope for the first bootstrap implementation.
 
 ## Constraints and safety boundaries
 
@@ -19,6 +20,7 @@ Source context: this plan builds on `docs/plans/hosting-research-moscow-vps.md` 
 - Recommended VPS baseline follows the hosting research checklist: Linux KVM/cloud VM, root access, at least 1 vCPU, 1 GB RAM, 10-20 GB disk, public IPv4, Docker-capable kernel, UDP/OpenVPN allowed or not prohibited by the provider AUP.
 - Public-safe placeholder names should be used in docs, for example `<MOSCOW_TIGER_SSH_HOST>`, `<MOSCOW_TIGER_PUBLIC_ENDPOINT>`, and `<VPN_PUBLIC_DOMAIN>`.
 - Existing runtime validation guidance in `docs/DOCKER_SETUP.md` remains the default pre-live gate for vpnkit/OpenVPN/sing-box/vibe-vpn changes.
+- The VPN/failover domain is currently managed on Vercel, and Vercel CLI is available for a later DNS automation task. The initial bootstrap/deploy implementation must not mutate Vercel DNS or any other DNS provider.
 
 ## Approved firewall policy
 
@@ -75,6 +77,7 @@ Prefer one top-level dispatcher with subcommands plus small helpers where reuse 
   - Inputs: DNS record names from local env, new endpoint, old endpoint, current TTL.
   - Safety/idempotency: no DNS API mutation by default; if a future `failover` mutating subcommand exists, it must require explicit `--yes` and current/expected record checks.
   - Order: after post-deploy verification passes.
+  - Scope note: keep this as non-mutating guidance in the first bootstrap/deploy implementation. Vercel-backed DNS failover automation belongs to the later domain/DNS task.
 
 - `scripts/moscow-tiger.sh rollback [--to <release>] [--dry-run] [--yes]`
   - Purpose: restore previous `current` symlink, restart services, and re-run health checks.
@@ -137,7 +140,7 @@ Remote values:
 - Firewall application is declarative: desired policy is compared to actual policy before changes, and final policy is verified after changes.
 - Rollback is explicit and does not delete failed releases until the operator decides retention cleanup.
 
-## Verification gates and stop conditions
+## Verification gates, testing matrix, and stop conditions
 
 Local/document gates before any live mutation:
 
@@ -146,6 +149,26 @@ Local/document gates before any live mutation:
 - Public-safety grep/check passes for obvious private keys, generated profiles, URLs with credentials, private endpoint names/values, and rendered config paths.
 - `bash -n scripts/*.sh` for future shell changes.
 - For runtime-affecting changes, run the Docker lab checks described in `docs/DOCKER_SETUP.md` before touching `moscow-tiger`.
+
+Testing matrix for the first bootstrap/deploy implementation:
+
+| Test area | Scope | Expected evidence | Mutation boundary |
+| --- | --- | --- | --- |
+| Local script tests | Shell syntax, argument parsing, missing-env handling, public-safety checks, redaction behavior, and helper function/unit-style coverage where practical. | `bash -n scripts/*.sh` plus scripted local test output showing pass/fail cases for `preflight`, `status`, `verify`, `bootstrap --dry-run`, `deploy --dry-run`, and `rollback --dry-run`. | Local only; no remote or DNS mutation. |
+| Dry-run tests | Every mutating command prints planned changes and exits before applying them. | Captured dry-run output for bootstrap, deploy, firewall changes, release symlink changes, rollback, and failover-plan guidance. | Local/remote read-only depending on command; no package installs, service restarts, firewall writes, release swaps, or DNS writes. |
+| Remote idempotency tests | Re-run safe commands against an already prepared or partially prepared host. | Repeated preflight/bootstrap/deploy/status/verify results show convergence, no duplicate service definitions, no secret overwrite, and stable release layout. | Requires operator-approved live host only after local gates pass; no DNS mutation. |
+| Firewall connectivity tests | Confirm desired inbound policy and avoid SSH lockout. | Evidence that `22/tcp`, `80/tcp`, `443/tcp`, `1194/udp`, and ICMP are allowed as intended, unapproved inbound ports are denied or flagged, and SSH remains usable after firewall application. | Remote firewall mutation only in the bootstrap/deploy implementation after dry-run and confirmation; no broad emergency defaults. |
+| Docker runtime tests | Validate container runtime and Compose/service wiring. | Docker/Compose installed/active, expected containers start, service status is healthy, and Docker lab checks from `docs/DOCKER_SETUP.md` pass before live deploy. | Local Docker lab first; remote runtime mutation only after approved bootstrap/deploy. |
+| OpenVPN smoke | Confirm OpenVPN readiness without exposing generated profiles. | UDP listener on `1194`, service health, sanitized client smoke result, and no tracked logs/profiles. | Remote read-only smoke after deploy; generated client artifacts remain gitignored/operator-local. |
+| RU-direct / 2ip smoke | Verify intended routing behavior with public-safe probe domains. | Sanitized output showing RU-direct/2ip-style connectivity result and expected route classification; no private endpoint values committed. | Remote/client smoke only after OpenVPN health; public-safe probe evidence only. |
+| Rollback test | Prove previous release can be restored. | `rollback --dry-run`, explicit rollback execution in a controlled test, post-rollback `verify --post-deploy`, and confirmation failed release is retained for diagnosis. | Remote release symlink/service mutation only in controlled test after deploy path works; no DNS mutation. |
+
+Later DNS/Vercel failover automation testing matrix:
+
+| Test area | Scope | Expected evidence | Mutation boundary |
+| --- | --- | --- | --- |
+| Vercel DNS dry-run | Use Vercel CLI against operator-local domain/record values to read intended state and print planned changes. | Dry-run output shows current record, expected old value, proposed `moscow-tiger` value, TTL/record metadata where available, and rollback target with values redacted in tracked evidence. | Read-only Vercel CLI/DNS operations; no DNS mutation. |
+| Vercel DNS apply | Mutating failover/rollback command for the Vercel-managed VPN/failover domain. | Apply evidence shows expected-old-value check, explicit `--yes`, successful DNS change, propagation monitoring, client/OpenVPN smoke after TTL window, and rollback dry-run/apply evidence. | Later task only, after base bootstrap/deploy is verified; requires operator approval and private env loaded from gitignored local config. |
 
 Remote preflight gates before live mutation:
 
@@ -176,7 +199,9 @@ Stop conditions:
 
 ## DNS failover steps
 
-Default recommendation: keep `moscow-tiger` passive until post-deploy verification passes, then manually update DNS/client routing as a controlled operation.
+Default recommendation for the first bootstrap/deploy implementation: keep `moscow-tiger` passive until post-deploy verification passes, then manually update DNS/client routing as a controlled operation.
+
+Current domain ownership assumption: the VPN/failover domain is managed on Vercel, and Vercel CLI is available. Provider-specific DNS automation should be planned as the next task after the base `moscow-tiger` bootstrap/deploy path is working, with dry-run/read-only checks first and mutating apply guarded by expected-current-record checks plus explicit operator confirmation.
 
 1. Before an incident, keep relevant DNS TTL modest but not reckless, for example 300-600 seconds where the DNS provider and operational needs allow.
 2. Record the current active target and rollback target in operator-local notes, not tracked docs.
@@ -221,7 +246,7 @@ Firewall rollback:
 
 - Provider and final tariff for `moscow-tiger` after manual purchase/TOS verification.
 - Whether `80/tcp` and `443/tcp` are only reserved/health ports or should host a concrete health/redirect service.
-- Whether future DNS failover remains manual-by-default or gains a provider-specific API subcommand.
+- Exact Vercel CLI command contract for later DNS failover automation, including dry-run output, expected-old-value checks, apply confirmation, propagation evidence, and rollback handling.
 - Whether to add sanitized `MOSCOW_TIGER_*` placeholders to `config/private-endpoints.example.env` during script implementation.
 - Whether to use Docker Compose directly, systemd wrapping Compose, or another container lifecycle convention on the remote host.
 - Release retention policy, for example keep last 3-5 releases or keep releases for 14-30 days.
@@ -231,3 +256,5 @@ Firewall rollback:
 ## Future implementation brief
 
 Implement the script suite as docs-driven, public-safe automation. Start with `preflight`, `status`, and `verify` read-only commands, then add `bootstrap`, `render-local`, `deploy`, and `rollback`. Reuse existing script style and validation patterns from `scripts/vpnkit-render-local-configs.sh`, `scripts/vpnkit-copy-vps-secrets.sh`, `scripts/healthcheck.sh`, and `docs/DOCKER_SETUP.md`. Keep all live mutation behind explicit env loading, dry-run support, confirmation flags, and the stop conditions above.
+
+Next task after the base bootstrap/deploy path works: add Vercel-backed DNS/domain failover automation for the currently Vercel-managed VPN/failover domain. That task should begin with Vercel CLI read-only/dry-run support, then guarded apply/rollback flows only after expected-current-record checks and explicit operator approval.
