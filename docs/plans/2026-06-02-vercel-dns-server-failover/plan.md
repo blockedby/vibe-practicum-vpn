@@ -324,3 +324,9 @@ Rollback contract:
 - 2026-06-02: Created task package for the next implementation task only.
 - 2026-06-02: Wrote plan with predecessor linkage, boundaries, reusable surfaces, task sequence, test matrix, acceptance criteria, stop conditions, and rollback contract.
 - 2026-06-02: No DNS, Vercel, remote host, local secret, rendered config, generated profile, or artifact mutation performed.
+
+## Implementation-slice ledger update
+
+- 2026-06-02: Implemented public-safe failover automation in `scripts/vercel-dns-failover.sh`, sanitized env contract updates in `config/private-endpoints.example.env`, shell regression tests in `tests/vercel-dns-failover-test.sh`, and runbook docs in `docs/VERCEL_DNS_FAILOVER.md` with README link.
+- 2026-06-02: Verification recorded at `verification/implementation-local.md`: targeted shell tests, `bash -n scripts/*.sh`, `git diff --check`, `go test ./...`, and public-safety grep all passed.
+- 2026-06-02: No live DNS/Vercel/remote-host/production-`vpnkit` mutation was run; apply/rollback evidence used dry-run/mock paths only.
