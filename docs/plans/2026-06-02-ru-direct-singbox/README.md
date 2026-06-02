@@ -1,6 +1,6 @@
 # RU direct sing-box routing
 
-- Status: success; local Docker lab DNS/HTTPS regression green
+- Status: success; deployed live to `vibe-practicum` Docker vpnkit and verified
 - Owner: aad-slice-owner
 - Branch: ru-direct-singbox
 - Worktree: .worktrees/ru-direct-singbox
@@ -10,3 +10,6 @@
 - `plan.md`
 - `reports/aad-implementer-ru-direct.md`
 - `verification/local.md`
+- `reports/aad-slice-owner-vps-deploy.md`
+- `verification/vps-deploy.md`
+- `final-report.md`

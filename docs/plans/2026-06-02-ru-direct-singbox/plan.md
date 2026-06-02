@@ -62,9 +62,12 @@ Executor:
 - 2026-06-02: Implementer completed Task 1 in commits `3d4534d`, `6f6a3e2`, `ccef739`; targeted tests, full Go tests, diff check, and sing-box check passed per report.
 - 2026-06-02: Owner reran targeted/full Go verification and render. Docker lab debug continuation found and fixed a repo runtime startup race: OpenVPN could accept clients before sing-box redirect/DNS inbounds were ready when compat bypass/RU rule-set startup was slow. Added sing-box inbound readiness wait before starting OpenVPN; fresh AGENTS-equivalent Docker lab passed on alternate host UDP port 1196. No VPS touched; secrets/logs removed from worktree.
 - 2026-06-02: Root owner integrated slice results and reran final verification: `go test ./...`, `git diff --check`, render, Docker build/start, process check (`sing-box`, `openvpn`, `vibe-vpn daemon`), and OpenVPN client DNS/HTTPS/literal-IP acceptance all passed with `VPNKIT_OPENVPN_PORT=1196`.
+- 2026-06-02: VPS deploy slice completed: branch state clean, `go test ./...` passed, `/opt/vpnkit/src` synced to `d342683`, `vpnkit:vps` rebuilt, persisted live sing-box config under `/opt/vpnkit/state/sing-box/config.json` intentionally replaced and verified to include `geoip-ru` / `geosite-category-ru` direct rules, `vpnkit` recreated on `vibe-practicum` with existing Docker bind-mount runtime, and live OpenVPN client test against `45.12.74.211:1194` passed (`10.89.0.2/24`, DNS NOERROR, HTTPS 200, literal-IP HTTPS 200). Evidence: `verification/vps-deploy.md`, `reports/aad-slice-owner-vps-deploy.md`.
+
+- 2026-06-02: Root owner rechecked live runtime and client path after slice integration: Docker container/process/config check passed; client-test re-run against `45.12.74.211:1194` passed with `10.89.0.2/24`, DNS NOERROR, HTTPS 200, literal-IP HTTPS 200; `secrets/` and generated log artifacts removed from worktree. Evidence summarized in `final-report.md`.
 
 ## Final done-state
-- Spec compliance: template and regression coverage implement explicit RU IP/geosite direct routing while preserving DNS hijack ordering and default proxy final.
-- Acceptance verification: automated config invariants and Go tests pass; sing-box check passed under existing deprecation compatibility env vars; fresh local Docker lab passed on alternate host UDP port 1196 with OpenVPN `10.89.0.2/24`, DNS NOERROR, HTTPS 200, and literal-IP HTTPS 200.
-- System readiness: branch is ready for root integration/review. Docker lab DNS/HTTPS regression is green locally; no VPS deploy was attempted.
-- Open issues: none for this slice.
+- Spec compliance: template and regression coverage implement explicit RU IP/geosite direct routing while preserving DNS hijack ordering and default proxy final; the change is deployed live to the VPS Docker `vpnkit` runtime.
+- Acceptance verification: automated config invariants and Go tests passed; fresh local Docker lab passed; VPS deploy evidence passed; root live recheck passed with OpenVPN `10.89.0.2/24`, DNS NOERROR, HTTPS 200, and literal-IP HTTPS 200.
+- System readiness: live `vibe-practicum` Docker `vpnkit` is ready; persisted live sing-box config includes `geoip-ru` and `geosite-category-ru` direct rules; OpenVPN, sing-box, and vibe-vpn daemon are running.
+- Open issues: none for this root task.
