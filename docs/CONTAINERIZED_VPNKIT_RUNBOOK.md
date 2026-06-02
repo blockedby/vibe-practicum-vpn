@@ -11,6 +11,29 @@ ovpn-client-test -> vpnkit:1194/udp -> vpnkit tun0
 
 TPROXY remains available as a diagnostic mode in `docker/vpnkit/setup-routing.sh`, but the default Docker lab uses REDIRECT because this local Docker/kernel path matched TPROXY counters while neither sing-box nor a minimal `IP_TRANSPARENT` listener received accepted transparent sockets. REDIRECT is not a broad NAT bypass: TCP and UDP/53 are locally redirected to sing-box only, and there is intentionally no `POSTROUTING -s 10.89.0.0/24 -j MASQUERADE` rule.
 
+## IPv4-only / IPv6 block policy
+
+Current containerized vpnkit is intentionally IPv4-only. The default compose/runtime environment sets `VPNKIT_IPV6_POLICY=block`, and the rendered sing-box DNS template uses `"strategy": "ipv4_only"` so clients do not receive AAAA/IPv6 paths that can blackhole in Codex/Node and similar runtimes.
+
+With the default policy, `setup-routing.sh` installs managed `ip6tables` filter rules that drop IPv6 packets entering or leaving the OpenVPN `tun0` interface. `VPNKIT_IPV6_POLICY=allow` removes those managed rules for diagnostics only; do not use it as a production IPv6 enablement path because Phase 1 does not add routed IPv6 support.
+
+Safe local verification before deploy/recreate:
+
+```bash
+bash -n docker/vpnkit/entrypoint.sh docker/vpnkit/setup-routing.sh scripts/vpnkit-render-local-configs.sh scripts/vpnkit-routing-compat-bypass-test.sh
+scripts/vpnkit-routing-compat-bypass-test.sh
+docker compose config | grep -E 'VPNKIT_IPV6_POLICY|VPNKIT_ROUTING_MODE'
+```
+
+After intentionally recreating the container, verify the live policy without printing secrets:
+
+```bash
+docker compose exec vpnkit ip6tables -t filter -L OVPN_IPV6_BLOCK -v -n -x
+docker compose exec vpnkit grep -n '"strategy": "ipv4_only"' /var/lib/vpnkit/sing-box/config.json
+```
+
+For VPS Docker, render/copy configs first, then use the existing `docker compose build` and `docker compose up -d vpnkit` flow only when intentionally operating on that host. For Steam Deck, keep using the Podman deployment helper from `AGENTS.md`; do not switch Deck deployment to Docker.
+
 ## Scoped compatibility bypass
 
 For nested OpenVPN/router compatibility, redirect mode can install direct rules for exact configured endpoint IPs while leaving ordinary TCP and DNS on the sing-box redirect path. Enable it only when clients behind vpnkit must reach a nested VPN endpoint directly:

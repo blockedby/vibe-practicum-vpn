@@ -6,6 +6,8 @@ Repository: <https://github.com/blockedby/vibe-practicum-vpn>
 
 ## Local checks and build
 
+Containerized vpnkit currently defaults to an IPv4-only client policy: compose exposes `VPNKIT_IPV6_POLICY=block`, sing-box DNS defaults to `ipv4_only`, and OpenVPN-client IPv6 traffic is dropped by managed `ip6tables` rules. See [`docs/CONTAINERIZED_VPNKIT_RUNBOOK.md`](./docs/CONTAINERIZED_VPNKIT_RUNBOOK.md) for safe verification and deploy/recreate steps.
+
 ```bash
 go test ./...
 go vet ./...

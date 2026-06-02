@@ -38,6 +38,10 @@ assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -d 198.51.100.10 -p udp -
 assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -d 203.0.113.20 -p tcp --dport 443 -j RETURN"
 assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -p tcp -j REDIRECT --to-ports 2082"
 assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -p udp --dport 53 -j REDIRECT --to-ports 5353"
+assert_contains "$render" "ip6tables -t filter -A INPUT -i tun0 -j OVPN_IPV6_BLOCK"
+assert_contains "$render" "ip6tables -t filter -A FORWARD -i tun0 -j OVPN_IPV6_BLOCK"
+assert_contains "$render" "ip6tables -t filter -A OUTPUT -o tun0 -j OVPN_IPV6_BLOCK"
+assert_contains "$render" "ip6tables -t filter -A OVPN_IPV6_BLOCK -j DROP"
 assert_contains "$render" "-A OVPN_COMPAT_POST -d 198.51.100.10 -p udp --dport 1194 -j MASQUERADE"
 assert_contains "$render" "-A OVPN_COMPAT_POST -d 203.0.113.20 -p tcp --dport 443 -j MASQUERADE"
 assert_contains "$render" "-A OVPN_REDIRECT_TO_SINGBOX -d 198.51.100.10 -p icmp -j RETURN"
@@ -63,5 +67,14 @@ if VPNKIT_ROUTING_DRY_RUN=true \
 fi
 assert_contains "$(cat /tmp/vpnkit-conflicting-proto.out)" "conflicting compatibility bypass proto"
 rm -f /tmp/vpnkit-conflicting-proto.out
+
+if VPNKIT_ROUTING_DRY_RUN=true \
+  VPNKIT_ROUTING_MODE=redirect \
+  VPNKIT_IPV6_POLICY=bogus \
+  bash "$setup_routing" >/tmp/vpnkit-invalid-ipv6-policy.out 2>&1; then
+  fail "invalid IPv6 policy unexpectedly succeeded"
+fi
+assert_contains "$(cat /tmp/vpnkit-invalid-ipv6-policy.out)" "unsupported VPNKIT_IPV6_POLICY=bogus"
+rm -f /tmp/vpnkit-invalid-ipv6-policy.out
 
 echo "vpnkit routing compatibility bypass render tests passed"

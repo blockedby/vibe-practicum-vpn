@@ -13,6 +13,8 @@ TUN_TABLE=${SINGBOX_TUN_TABLE:-101}
 VPNKIT_COMPAT_BYPASS_ENABLED=${VPNKIT_COMPAT_BYPASS_ENABLED:-false}
 VPNKIT_COMPAT_BYPASS_ENDPOINTS=${VPNKIT_COMPAT_BYPASS_ENDPOINTS:-vpn.proofix.tv:1194}
 VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=${VPNKIT_COMPAT_BYPASS_ALLOW_ICMP:-false}
+VPNKIT_IPV6_POLICY=${VPNKIT_IPV6_POLICY:-block}
+VPNKIT_IPV6_POLICY=${VPNKIT_IPV6_POLICY,,}
 VPNKIT_ROUTING_DRY_RUN=${VPNKIT_ROUTING_DRY_RUN:-false}
 
 is_truthy() {
@@ -48,6 +50,102 @@ ensure_iptables_rule() {
 
   iptables -t "$table" -C "$chain" "$@" 2>/dev/null \
     || iptables -t "$table" -A "$chain" "$@"
+}
+
+ensure_ip6tables_rule() {
+  local table=$1
+  local chain=$2
+  shift 2
+
+  if is_dry_run; then
+    run ip6tables -t "$table" -A "$chain" "$@"
+    return 0
+  fi
+
+  ip6tables -t "$table" -C "$chain" "$@" 2>/dev/null \
+    || ip6tables -t "$table" -A "$chain" "$@"
+}
+
+remove_ip6tables_rule() {
+  local table=$1
+  local chain=$2
+  shift 2
+
+  if is_dry_run; then
+    run ip6tables -t "$table" -D "$chain" "$@"
+    return 0
+  fi
+
+  while ip6tables -t "$table" -C "$chain" "$@" 2>/dev/null; do
+    ip6tables -t "$table" -D "$chain" "$@" || break
+  done
+}
+
+validate_ipv6_policy() {
+  case "$VPNKIT_IPV6_POLICY" in
+    block|allow) return 0 ;;
+    *)
+      echo "unsupported VPNKIT_IPV6_POLICY=$VPNKIT_IPV6_POLICY (expected block or allow)" >&2
+      return 1
+      ;;
+  esac
+}
+
+ensure_ipv6_block_tooling() {
+  if is_dry_run; then
+    return 0
+  fi
+  if command -v ip6tables >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ ! -d /proc/sys/net/ipv6 ]]; then
+    echo "IPv6 kernel support is absent; skipping VPNKIT_IPV6_POLICY=block rules" >&2
+    return 1
+  fi
+  echo "VPNKIT_IPV6_POLICY=block requires ip6tables, but ip6tables is unavailable" >&2
+  return 2
+}
+
+clear_ipv6_block_rules() {
+  if ! is_dry_run && ! command -v ip6tables >/dev/null 2>&1; then
+    echo "ip6tables is unavailable; no managed IPv6 block rules to clear" >&2
+    return 0
+  fi
+
+  remove_ip6tables_rule filter INPUT -i tun0 -j OVPN_IPV6_BLOCK
+  remove_ip6tables_rule filter FORWARD -i tun0 -j OVPN_IPV6_BLOCK
+  remove_ip6tables_rule filter OUTPUT -o tun0 -j OVPN_IPV6_BLOCK
+  remove_ip6tables_rule filter FORWARD -o tun0 -j OVPN_IPV6_BLOCK
+  run ip6tables -t filter -F OVPN_IPV6_BLOCK 2>/dev/null || true
+  run ip6tables -t filter -X OVPN_IPV6_BLOCK 2>/dev/null || true
+}
+
+install_ipv6_block_rules() {
+  ensure_ipv6_block_tooling
+  local status=$?
+  if [[ $status -ne 0 ]]; then
+    if [[ $status -eq 1 ]]; then
+      return 0
+    fi
+    return "$status"
+  fi
+
+  run ip6tables -t filter -N OVPN_IPV6_BLOCK 2>/dev/null || true
+  run ip6tables -t filter -F OVPN_IPV6_BLOCK
+  ensure_ip6tables_rule filter INPUT -i tun0 -j OVPN_IPV6_BLOCK
+  ensure_ip6tables_rule filter FORWARD -i tun0 -j OVPN_IPV6_BLOCK
+  ensure_ip6tables_rule filter OUTPUT -o tun0 -j OVPN_IPV6_BLOCK
+  ensure_ip6tables_rule filter FORWARD -o tun0 -j OVPN_IPV6_BLOCK
+  run ip6tables -t filter -A OVPN_IPV6_BLOCK -j DROP
+  run ip6tables -t filter -L OVPN_IPV6_BLOCK -v -n -x
+}
+
+install_ipv6_policy() {
+  validate_ipv6_policy
+  case "$VPNKIT_IPV6_POLICY" in
+    block) install_ipv6_block_rules ;;
+    allow) clear_ipv6_block_rules ;;
+  esac
 }
 
 valid_ipv4_literal() {
@@ -202,6 +300,8 @@ run sysctl -w net.ipv4.conf.all.rp_filter=0 >/dev/null || true
 run sysctl -w net.ipv4.conf.default.rp_filter=0 >/dev/null || true
 run sysctl -w net.ipv4.conf.tun0.src_valid_mark=1 >/dev/null || true
 run sysctl -w net.ipv4.conf.tun0.rp_filter=0 >/dev/null || true
+
+install_ipv6_policy
 
 case "$VPNKIT_ROUTING_MODE" in
   tproxy)
