@@ -38,6 +38,7 @@
     "rules": [
       { "inbound": "vpnkit-dns-in", "action": "hijack-dns" },
       { "protocol": "dns", "action": "hijack-dns" },
+      { "inbound": ["vpnkit-redirect-in", "vpnkit-socks-in"], "action": "sniff", "timeout": "1s" },
       { "rule_set": "geoip-ru", "outbound": "direct-out" },
       { "rule_set": "geosite-category-ru", "outbound": "direct-out" }
     ],

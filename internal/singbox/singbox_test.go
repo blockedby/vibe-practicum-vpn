@@ -32,17 +32,23 @@ func TestDockerTemplateRoutingInvariants(t *testing.T) {
 	}
 
 	rules := route["rules"].([]any)
-	if len(rules) < 4 {
-		t.Fatalf("route.rules length = %d, want DNS hijack rules plus RU direct rules", len(rules))
+	if len(rules) < 5 {
+		t.Fatalf("route.rules length = %d, want DNS hijack rules, sniff rule, plus RU direct rules", len(rules))
 	}
 	assertDNSHijackRule(t, rules[0].(map[string]any), "inbound", "vpnkit-dns-in")
 	assertDNSHijackRule(t, rules[1].(map[string]any), "protocol", "dns")
-
-	if idx := findDirectRuleSetRule(rules, "geoip-ru"); idx < 2 {
-		t.Fatalf("geoip-ru direct rule index = %d, want after DNS hijack rules", idx)
+	sniffIdx := assertRouteSniffRule(t, rules, []string{"vpnkit-redirect-in", "vpnkit-socks-in"})
+	if sniffIdx != 2 {
+		t.Fatalf("sniff rule index = %d, want immediately after DNS hijack rules", sniffIdx)
 	}
-	if idx := findDirectRuleSetRule(rules, "geosite-category-ru"); idx < 2 {
-		t.Fatalf("geosite-category-ru direct rule index = %d, want after DNS hijack rules", idx)
+
+	geoIPIdx := findDirectRuleSetRule(rules, "geoip-ru")
+	if geoIPIdx <= sniffIdx {
+		t.Fatalf("geoip-ru direct rule index = %d, want after sniff rule index %d", geoIPIdx, sniffIdx)
+	}
+	geositeIdx := findDirectRuleSetRule(rules, "geosite-category-ru")
+	if geositeIdx <= sniffIdx {
+		t.Fatalf("geosite-category-ru direct rule index = %d, want after sniff rule index %d", geositeIdx, sniffIdx)
 	}
 
 	ruleSets := route["rule_set"].([]any)
@@ -55,6 +61,36 @@ func assertDNSHijackRule(t *testing.T, rule map[string]any, matchKey, matchValue
 	if rule[matchKey] != matchValue || rule["action"] != "hijack-dns" {
 		t.Fatalf("DNS hijack rule = %#v, want %s=%q action=hijack-dns", rule, matchKey, matchValue)
 	}
+}
+
+func assertRouteSniffRule(t *testing.T, rules []any, wantInbounds []string) int {
+	t.Helper()
+	for i, raw := range rules {
+		rule := raw.(map[string]any)
+		if rule["action"] != "sniff" {
+			if _, ok := rule["sniff"]; ok {
+				t.Fatalf("rule %d uses deprecated sniff field instead of route action syntax: %#v", i, rule)
+			}
+			continue
+		}
+		if rule["timeout"] != "1s" {
+			t.Fatalf("sniff rule timeout = %#v, want 1s", rule["timeout"])
+		}
+		gotRaw, ok := rule["inbound"].([]any)
+		if !ok {
+			t.Fatalf("sniff rule inbound = %#v, want array", rule["inbound"])
+		}
+		got := make([]string, 0, len(gotRaw))
+		for _, v := range gotRaw {
+			got = append(got, v.(string))
+		}
+		if !reflect.DeepEqual(got, wantInbounds) {
+			t.Fatalf("sniff rule inbounds = %#v, want %#v", got, wantInbounds)
+		}
+		return i
+	}
+	t.Fatal("missing route action sniff rule")
+	return -1
 }
 
 func findDirectRuleSetRule(rules []any, tag string) int {
