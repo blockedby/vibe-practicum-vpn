@@ -12,6 +12,7 @@ def load(rel):
 
 redirect = load('config/sing-box/config.json.template')
 tproxy = load('config/sing-box/config.tproxy.json.template')
+tun = load('config/sing-box/config.tun.json.template')
 
 def inbound_by_tag(cfg):
     return {inbound['tag']: inbound for inbound in cfg['inbounds']}
@@ -20,6 +21,7 @@ redirect_in = inbound_by_tag(redirect)
 assert redirect_in['vpnkit-redirect-in']['type'] == 'redirect'
 assert redirect_in['vpnkit-redirect-in']['listen_port'] == 2082
 assert 'vpnkit-tproxy-in' not in redirect_in
+assert 'vpnkit-tun-in' not in redirect_in
 assert redirect_in['vpnkit-dns-in']['type'] == 'direct'
 assert redirect_in['vpnkit-dns-in']['listen_port'] == 5353
 
@@ -46,5 +48,29 @@ sniff = [rule for rule in rules if rule.get('action') == 'sniff'][0]
 assert 'vpnkit-tproxy-in' in sniff['inbound']
 assert 'vpnkit-redirect-in' in sniff['inbound']
 assert 'vpnkit-socks-in' in sniff['inbound']
+
+tun_in = inbound_by_tag(tun)
+assert tun_in['vpnkit-tun-in']['type'] == 'tun'
+assert tun_in['vpnkit-tun-in']['interface_name'] == 'sb-tun0'
+assert tun_in['vpnkit-tun-in']['address'] == ['172.19.0.1/30']
+assert tun_in['vpnkit-tun-in']['mtu'] == 1400
+assert tun_in['vpnkit-tun-in']['stack'] == 'mixed'
+assert tun_in['vpnkit-tun-in'].get('auto_route') is False
+assert 'vpnkit-redirect-in' not in tun_in
+assert 'vpnkit-tproxy-in' not in tun_in
+assert tun_in['vpnkit-dns-in']['listen_port'] == 5353
+rules = tun['route']['rules']
+dns_rule = [rule for rule in rules if rule.get('inbound') == 'vpnkit-dns-in'][0]
+assert dns_rule['action'] == 'hijack-dns'
+sniff = [rule for rule in rules if rule.get('action') == 'sniff'][0]
+assert sniff['inbound'] == ['vpnkit-tun-in', 'vpnkit-socks-in']
+assert any(rule.get('ip_cidr') == ['172.19.0.0/30'] and rule.get('outbound') == 'direct-out' for rule in rules)
+
+entrypoint = (root / 'docker/vpnkit/entrypoint.sh').read_text()
+assert 'config.tun.json' in entrypoint
+assert 'sb-tun0' in entrypoint
+render_script = (root / 'scripts/vpnkit-render-local-configs.sh').read_text()
+assert 'config.tun.json.template' in render_script
+assert 'config.tun.json' in render_script
 print('vpnkit sing-box templates ok')
 PY

@@ -12,7 +12,10 @@ case "$VPNKIT_ROUTING_MODE" in
   tproxy)
     SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.tproxy.json}
     ;;
-  redirect|tun)
+  tun)
+    SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.tun.json}
+    ;;
+  redirect)
     SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.json}
     ;;
   *)
@@ -45,26 +48,56 @@ start_singbox() {
   echo "started sing-box pid=$SINGBOX_PID config=$SINGBOX_CONFIG"
 }
 
+singbox_is_running() {
+  if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
+    echo "sing-box exited before readiness signal became ready" >&2
+    wait "$SINGBOX_PID"
+  fi
+}
+
 wait_for_singbox_inbounds() {
   local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
   until ss -ltn sport = :2082 | grep -q ':2082' \
-    && ss -lun sport = :5353 | grep -q ':5353' \
-    && { [[ "$VPNKIT_ROUTING_MODE" != tproxy ]] || { ss -lun sport = :2082 | grep -q ':2082' && ss -ltn sport = :2083 | grep -q ':2083'; }; }; do
-    if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
-      echo "sing-box exited before inbounds became ready" >&2
-      wait "$SINGBOX_PID"
-    fi
+    && ss -lun sport = :5353 | grep -q ':5353'; do
+    singbox_is_running
     if (( SECONDS >= deadline )); then
-      if [[ "$VPNKIT_ROUTING_MODE" == tproxy ]]; then
-        echo "timed out waiting for sing-box tproxy inbounds on tcp/2082, udp/2082, tcp/2083, and udp/5353" >&2
-      else
-        echo "timed out waiting for sing-box inbounds on tcp/2082 and udp/5353" >&2
-      fi
+      echo "timed out waiting for sing-box redirect inbounds on tcp/2082 and udp/5353" >&2
       return 1
     fi
     sleep 0.2
   done
-  echo "sing-box inbounds ready for $VPNKIT_ROUTING_MODE mode"
+  echo "sing-box inbounds ready for redirect mode"
+}
+
+wait_for_singbox_tproxy_inbounds() {
+  local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
+  until ss -ltn sport = :2082 | grep -q ':2082' \
+    && ss -lun sport = :2082 | grep -q ':2082' \
+    && ss -ltn sport = :2083 | grep -q ':2083' \
+    && ss -lun sport = :5353 | grep -q ':5353'; do
+    singbox_is_running
+    if (( SECONDS >= deadline )); then
+      echo "timed out waiting for sing-box tproxy inbounds on tcp/2082, udp/2082, tcp/2083, and udp/5353" >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+  echo "sing-box inbounds ready for tproxy mode"
+}
+
+wait_for_singbox_tun() {
+  local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
+  until ip link show sb-tun0 >/dev/null 2>&1 \
+    && ip -4 addr show dev sb-tun0 2>/dev/null | grep -q '172[.]19[.]0[.]1/30' \
+    && ss -lun sport = :5353 | grep -q ':5353'; do
+    singbox_is_running
+    if (( SECONDS >= deadline )); then
+      echo "timed out waiting for sing-box tun interface sb-tun0 with 172.19.0.1/30 and udp/5353" >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+  echo "sing-box tun interface ready for tun mode"
 }
 
 restart_singbox() {
@@ -83,7 +116,11 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 start_singbox
-wait_for_singbox_inbounds
+case "$VPNKIT_ROUTING_MODE" in
+  tproxy) wait_for_singbox_tproxy_inbounds ;;
+  tun) wait_for_singbox_tun ;;
+  redirect) wait_for_singbox_inbounds ;;
+esac
 
 openvpn --config "$OPENVPN_CONFIG" &
 OVPN_PID=$!

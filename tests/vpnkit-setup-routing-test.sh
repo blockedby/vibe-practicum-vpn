@@ -9,6 +9,7 @@ cat > "$TMP/ip" <<'SH'
 case "$1 $2" in
   "rule show") exit 0 ;;
   "route show") exit 0 ;;
+  "link show") exit 0 ;;
 esac
 exit 0
 SH
@@ -56,4 +57,17 @@ if printf '%s\n' "$REDIRECT_OUTPUT" | grep -q 'OVPN_TPROXY_UDP_POST'; then
   exit 1
 fi
 
-printf 'vpnkit setup-routing tproxy private UDP bypass ok\n'
+TUN_OUTPUT=$(PATH="$TMP:$PATH" \
+  VPNKIT_ROUTING_DRY_RUN=true \
+  VPNKIT_ROUTING_MODE=tun \
+  VPNKIT_IPV6_POLICY=allow \
+  OVPN_CIDR=10.89.0.0/24 \
+  bash "$ROOT/docker/vpnkit/setup-routing.sh")
+printf '%s\n' "$TUN_OUTPUT" | grep -q -- 'ip route replace default via 172.19.0.2 dev sb-tun0 table 101'
+printf '%s\n' "$TUN_OUTPUT" | grep -q -- 'ip rule add from 10.89.0.0/24 table 101 priority 1000'
+if printf '%s\n' "$TUN_OUTPUT" | grep -Eq 'OVPN_TO_SINGBOX|TPROXY|REDIRECT --to-ports|OVPN_REDIRECT_TO_SINGBOX'; then
+  echo "tun mode should not install redirect/tproxy capture rules" >&2
+  exit 1
+fi
+
+printf 'vpnkit setup-routing mode behavior ok\n'

@@ -1,0 +1,70 @@
+{
+  "log": { "level": "debug", "timestamp": true },
+  "dns": {
+    "servers": [
+      { "tag": "remote-dns", "address": "tls://8.8.8.8", "detour": "selected-native-out" },
+      { "tag": "remote-dns-fallback", "address": "tls://8.8.4.4", "detour": "selected-native-out" }
+    ],
+    "final": "remote-dns",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "vpnkit-tun-in",
+      "interface_name": "sb-tun0",
+      "address": ["172.19.0.1/30"],
+      "mtu": 1400,
+      "auto_route": false,
+      "strict_route": false,
+      "stack": "mixed"
+    },
+    {
+      "type": "direct",
+      "tag": "vpnkit-dns-in",
+      "listen": "0.0.0.0",
+      "listen_port": 5353,
+      "network": "udp"
+    },
+    {
+      "type": "socks",
+      "tag": "vpnkit-socks-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
+    }
+  ],
+  "outbounds": [
+    {{SELECTED_NATIVE_OUT_JSON}},
+    { "type": "direct", "tag": "direct-out" },
+    { "type": "block", "tag": "block-out" }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "rules": [
+      { "inbound": "vpnkit-dns-in", "action": "hijack-dns" },
+      { "protocol": "dns", "action": "hijack-dns" },
+      { "inbound": ["vpnkit-tun-in", "vpnkit-socks-in"], "action": "sniff", "timeout": "1s" },
+      { "ip_cidr": ["172.19.0.0/30"], "outbound": "direct-out" },
+      { "ip_cidr": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"], "outbound": "direct-out" },
+      { "rule_set": "geoip-ru", "outbound": "direct-out" },
+      { "rule_set": "geosite-category-ru", "outbound": "direct-out" }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
+        "download_detour": "direct-out"
+      },
+      {
+        "type": "remote",
+        "tag": "geosite-category-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs",
+        "download_detour": "direct-out"
+      }
+    ],
+    "final": "selected-native-out"
+  }
+}

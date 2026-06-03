@@ -6,9 +6,9 @@ mkdir -p "$RENDERED/openvpn/pki" "$RENDERED/openvpn/ccd" "$RENDERED/sing-box" "$
 cp config/openvpn/server.tpl "$RENDERED/openvpn/server.conf"
 cp "$BASE/openvpn/pki/ca.crt" "$BASE/openvpn/pki/ta.key" "$BASE/openvpn/pki/vibe-asus.crt" "$BASE/openvpn/pki/vibe-asus.key" "$RENDERED/openvpn/pki/"
 cp "$BASE/openvpn/server/ccd-ignat" "$RENDERED/openvpn/ccd/ignat" 2>/dev/null || true
-python3 - "$BASE/sing-box/tproxy-canary.json" "$RENDERED/sing-box" config/sing-box/config.json.template config/sing-box/config.tproxy.json.template <<'PY'
+python3 - "$BASE/sing-box/tproxy-canary.json" "$RENDERED/sing-box" config/sing-box/config.json.template config/sing-box/config.tproxy.json.template config/sing-box/config.tun.json.template <<'PY'
 import ipaddress, json, pathlib, socket, sys
-src, out_dir, redirect_tmpl, tproxy_tmpl = sys.argv[1:]
+src, out_dir, redirect_tmpl, tproxy_tmpl, tun_tmpl = sys.argv[1:]
 data=json.load(open(src))
 vless=[o for o in data.get('outbounds',[]) if o.get('tag')=='selected-native-out' and o.get('type')=='vless']
 if not vless:
@@ -28,6 +28,7 @@ rendered = json.dumps(selected, indent=4)
 outputs = [
     (redirect_tmpl, pathlib.Path(out_dir) / 'config.json'),
     (tproxy_tmpl, pathlib.Path(out_dir) / 'config.tproxy.json'),
+    (tun_tmpl, pathlib.Path(out_dir) / 'config.tun.json'),
 ]
 for tmpl, out in outputs:
     text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', rendered)
@@ -73,10 +74,10 @@ fi
 if [[ -r "$BASE/vibe-vpn/example-extra-node-hy2-auth" ]]; then
   cp "$BASE/vibe-vpn/example-extra-node-hy2-auth" "$RENDERED/vibe-vpn/example-extra-node-hy2-auth"
 fi
-chmod 600 "$RENDERED/sing-box/config.json" "$RENDERED/sing-box/config.tproxy.json" "$BASE/openvpn/client/test-client.ovpn" "$RENDERED/vibe-vpn/config.yaml" "$RENDERED/vibe-vpn/extra-nodes.json"
+chmod 600 "$RENDERED/sing-box/config.json" "$RENDERED/sing-box/config.tproxy.json" "$RENDERED/sing-box/config.tun.json" "$BASE/openvpn/client/test-client.ovpn" "$RENDERED/vibe-vpn/config.yaml" "$RENDERED/vibe-vpn/extra-nodes.json"
 if [[ -f "$RENDERED/vibe-vpn/sub_url" ]]; then chmod 600 "$RENDERED/vibe-vpn/sub_url"; fi
 if [[ -f "$RENDERED/vibe-vpn/example-extra-node-hy2-auth" ]]; then chmod 600 "$RENDERED/vibe-vpn/example-extra-node-hy2-auth"; fi
-echo "Rendered $RENDERED/openvpn/server.conf, $RENDERED/sing-box/config.json, $RENDERED/sing-box/config.tproxy.json, $RENDERED/vibe-vpn/config.yaml, and $BASE/openvpn/client/test-client.ovpn"
+echo "Rendered $RENDERED/openvpn/server.conf, $RENDERED/sing-box/config.json, $RENDERED/sing-box/config.tproxy.json, $RENDERED/sing-box/config.tun.json, $RENDERED/vibe-vpn/config.yaml, and $BASE/openvpn/client/test-client.ovpn"
 if [[ ! -f "$RENDERED/vibe-vpn/sub_url" ]]; then
   echo "WARNING: missing vibe-vpn subscription input; see $RENDERED/vibe-vpn/README.missing-subscription" >&2
 fi

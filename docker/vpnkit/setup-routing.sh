@@ -394,7 +394,12 @@ case "$VPNKIT_ROUTING_MODE" in
     fi
     ;;
   tun)
+    tun_deadline=$((SECONDS + ${SINGBOX_TUN_READY_TIMEOUT_SECONDS:-30}))
     until ip link show "$TUN_IFACE" >/dev/null 2>&1; do
+      if (( SECONDS >= tun_deadline )); then
+        echo "timed out waiting for sing-box tun interface $TUN_IFACE" >&2
+        exit 1
+      fi
       sleep 0.2
     done
     run ip route replace default via "$TUN_PEER" dev "$TUN_IFACE" table "$TUN_TABLE"

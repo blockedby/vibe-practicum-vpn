@@ -86,6 +86,18 @@ docker compose --profile test run --rm ovpn-client-test
 
 Expected client-test result: OpenVPN connects, client receives a VPN address, DNS returns `NOERROR`, HTTPS returns `200`, and literal-IP HTTPS returns `200`.
 
+## vpnkit routing modes
+
+`VPNKIT_ROUTING_MODE` defaults to `redirect`; this remains the production/default Docker lab path. `tproxy` remains available for the existing transparent-proxy canary path.
+
+A new opt-in TUN canary is available with:
+
+```bash
+VPNKIT_ROUTING_MODE=tun docker compose up -d --build vpnkit
+```
+
+TUN mode renders and selects `config.tun.json`, starts a sing-box `tun` inbound named `vpnkit-tun-in` on interface `sb-tun0` (`172.19.0.1/30`, MTU 1400), and policy-routes only OpenVPN client CIDR traffic through that interface. It intentionally does not install redirect or tproxy capture rules. Keep using isolated Docker project names, fresh ports, and gitignored rendered configs/profiles for canary validation.
+
 ## Live operations boundary
 
 Do not run SSH/SCP/deploy/recreate commands from public docs by copy-paste without first loading `config/private-endpoints.local.env` and confirming the target. Live runtime mutation is intentionally not documented with real hostnames or IP addresses in tracked files.
