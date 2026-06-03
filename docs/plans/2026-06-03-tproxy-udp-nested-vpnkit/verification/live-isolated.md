@@ -136,3 +136,7 @@ No production container was restarted, recreated, adopted, or mutated.
 - Removed temporary vibe-practicum path `/tmp/vpnkit_tproxy_live_21195`.
 - Removed/cleaned moscow-tiger isolated client project `vpnkit_tproxy_live_21195_moscow_client` and temp path `/tmp/vpnkit_tproxy_live_21195_client`.
 - Nothing retained intentionally.
+
+## Continuation note: full inner nested attempt
+
+A later focused nested attempt is recorded in `verification/inner-nested.md`. It supersedes the earlier one-profile-only limitation as the concrete AC2 status: an isolated inner OpenVPN attempt was routed through the established outer tunnel and incremented the outer non-DNS UDP TPROXY counter, but the inner OpenVPN tunnel did not establish.
