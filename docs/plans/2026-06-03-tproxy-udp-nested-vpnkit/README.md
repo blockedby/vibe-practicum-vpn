@@ -1,6 +1,6 @@
 # TPROXY/UDP nested-tunnel vpnkit support
 
-- Status: running
+- Status: partial / blocked (AC2 full inner VPN-over-VPN not accepted)
 - Owner: aad-root-owner
 - Branch: vpnkit-tproxy-udp-nested
 - Worktree: /home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/vpnkit-tproxy-udp-nested
