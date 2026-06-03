@@ -192,6 +192,11 @@ func outboundForApply(out map[string]any, old any, restart RestartConfig) (map[s
 	if restart.Mode != RestartModeRequestFile {
 		return next, nil
 	}
+	if typ, _ := next["type"].(string); typ == "vless" {
+		if _, ok := next["packet_encoding"]; !ok {
+			next["packet_encoding"] = "xudp"
+		}
+	}
 	return preResolveOutboundServer(next)
 }
 

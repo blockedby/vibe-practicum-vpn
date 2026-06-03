@@ -254,6 +254,9 @@ func TestApplyRequestFilePreResolvesDomainServerAndPreservesTLSName(t *testing.T
 	if out["server"] != "203.0.113.10" {
 		t.Fatalf("server was not pre-resolved: %#v", out)
 	}
+	if out["packet_encoding"] != "xudp" {
+		t.Fatalf("request-file VLESS apply did not enable xudp: %#v", out)
+	}
 	tls := out["tls"].(map[string]any)
 	if tls["server_name"] != "node.example" {
 		t.Fatalf("tls server_name changed: %#v", tls)

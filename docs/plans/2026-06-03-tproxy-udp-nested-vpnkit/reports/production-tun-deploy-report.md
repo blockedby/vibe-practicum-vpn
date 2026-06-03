@@ -69,7 +69,7 @@ published port: 0.0.0.0:1194->1194/udp
 OpenVPN server: 10.231.89.0/24
 DNS push: 10.231.89.1
 sb-tun0: 172.19.0.1/30
-policy route: from 10.231.89.0/24 lookup 101, default via 172.19.0.2 dev sb-tun0
+policy route: from 10.231.89.0/24 lookup 101, default dev sb-tun0
 processes: openvpn, sing-box, vibe-vpn daemon all running
 ```
 
@@ -83,7 +83,7 @@ published port: 0.0.0.0:1194->1194/udp
 OpenVPN server: 10.231.89.0/24
 DNS push: 10.231.89.1
 sb-tun0: 172.19.0.1/30
-policy route: from 10.231.89.0/24 lookup 101, default via 172.19.0.2 dev sb-tun0
+policy route: from 10.231.89.0/24 lookup 101, default dev sb-tun0
 processes: openvpn, sing-box, vibe-vpn daemon all running
 ```
 
@@ -123,10 +123,11 @@ result: PASS
 ```text
 remote: 45.12.74.211:1194
 assigned tunnel IP: 10.231.89.2/24
-DNS @8.8.8.8: NOERROR
+pushed DNS 10.231.89.1: NOERROR
 HTTPS hostname: 200
-public UDP/NTP: OK, 48-byte response
-observed egress IP: 45.12.74.211
+ifconfig.me/ip: 84.22.149.216
+api.ipify.org: 84.22.149.216
+2ip.ru: 45.12.74.211
 result: PASS
 ```
 
@@ -148,9 +149,31 @@ The real `rabotau-na` profile matched moscow CA/ta material, while `vibe-practic
 
 Moscow DNS/HTTPS worked, but public UDP/NTP initially timed out through the selected VLESS outbound. Adding `packet_encoding: xudp` to the TUN-rendered VLESS selected outbound fixed UDP/NTP without routing UDP directly/leaking it outside the selected outbound.
 
+### D-05: pushed DNS was not listening on port 53 in TUN mode
+
+OpenVPN pushed `dhcp-option DNS 10.231.89.1`, but the TUN sing-box DNS inbound still listened on `5353`, which only matched redirect/tproxy modes. Router clients that used the pushed DNS could connect to OpenVPN but fail name resolution. Production runtime and the TUN template were updated so `vpnkit-dns-in` listens on UDP `0.0.0.0:53` in TUN mode.
+
+### D-06: TUN policy route used a peer gateway and leaked forwarded packets to Docker eth0
+
+Production tcpdump showed forwarded client TCP entering OpenVPN `tun0` and leaving Docker `eth0` directly with source `10.231.89.2`, instead of entering sing-box `sb-tun0`:
+
+```text
+tun0 In  10.231.89.2 -> 104.20.23.154:443 SYN
+eth0 Out 10.231.89.2 -> 104.20.23.154:443 SYN
+```
+
+The policy table route was changed from `default via 172.19.0.2 dev sb-tun0` to `default dev sb-tun0`. After that, `ip route get 104.20.23.154 from 10.231.89.2 iif tun0` selected `dev sb-tun0 table 101`, and client HTTPS split-routing worked:
+
+```text
+moscow-tiger: ifconfig.me/ip=194.180.188.136, 2ip.ru=178.20.45.245
+vibe-practicum: ifconfig.me/ip=84.22.149.216, 2ip.ru=45.12.74.211
+```
+
 ## Source follow-up
 
-`scripts/vpnkit-render-local-configs.sh` now adds `packet_encoding: xudp` to VLESS selected outbound only for rendered TUN configs. Redirect/TProxy rendered configs keep the selected outbound unchanged.
+- `scripts/vpnkit-render-local-configs.sh` now adds `packet_encoding: xudp` to VLESS selected outbound only for rendered TUN configs. Redirect/TProxy rendered configs keep the selected outbound unchanged.
+- `config/sing-box/config.tun.json.template` now listens on UDP `53` for pushed OpenVPN DNS.
+- `docker/vpnkit/setup-routing.sh` now installs `default dev sb-tun0` in the TUN policy table so forwarded OpenVPN client packets enter sing-box instead of Docker `eth0`.
 
 ## Verification commands
 

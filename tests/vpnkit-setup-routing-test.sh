@@ -60,7 +60,7 @@ TUN_OUTPUT=$(PATH="$TMP:$PATH" \
   VPNKIT_ROUTING_MODE=tun \
   VPNKIT_IPV6_POLICY=allow \
   bash "$ROOT/docker/vpnkit/setup-routing.sh")
-printf '%s\n' "$TUN_OUTPUT" | grep -q -- 'ip route replace default via 172.19.0.2 dev sb-tun0 table 101'
+printf '%s\n' "$TUN_OUTPUT" | grep -q -- 'ip route replace default dev sb-tun0 table 101'
 printf '%s\n' "$TUN_OUTPUT" | grep -q -- 'ip rule add from 10.231.89.0/24 table 101 priority 1000'
 if printf '%s\n' "$TUN_OUTPUT" | grep -Eq 'OVPN_TO_SINGBOX|TPROXY|REDIRECT --to-ports|OVPN_REDIRECT_TO_SINGBOX'; then
   echo "tun mode should not install redirect/tproxy capture rules" >&2

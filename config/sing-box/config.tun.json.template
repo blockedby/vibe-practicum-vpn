@@ -23,7 +23,7 @@
       "type": "direct",
       "tag": "vpnkit-dns-in",
       "listen": "0.0.0.0",
-      "listen_port": 5353,
+      "listen_port": 53,
       "network": "udp"
     },
     {

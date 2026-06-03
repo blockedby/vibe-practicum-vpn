@@ -58,7 +58,7 @@ assert tun_in['vpnkit-tun-in']['stack'] == 'mixed'
 assert tun_in['vpnkit-tun-in'].get('auto_route') is False
 assert 'vpnkit-redirect-in' not in tun_in
 assert 'vpnkit-tproxy-in' not in tun_in
-assert tun_in['vpnkit-dns-in']['listen_port'] == 5353
+assert tun_in['vpnkit-dns-in']['listen_port'] == 53
 rules = tun['route']['rules']
 dns_rule = [rule for rule in rules if rule.get('inbound') == 'vpnkit-dns-in'][0]
 assert dns_rule['action'] == 'hijack-dns'
@@ -69,10 +69,13 @@ assert any(rule.get('ip_cidr') == ['172.19.0.0/30'] and rule.get('outbound') == 
 entrypoint = (root / 'docker/vpnkit/entrypoint.sh').read_text()
 assert 'config.tun.json' in entrypoint
 assert 'sb-tun0' in entrypoint
+assert 'udp/53' in entrypoint
 render_script = (root / 'scripts/vpnkit-render-local-configs.sh').read_text()
 assert 'config.tun.json.template' in render_script
 assert 'config.tun.json' in render_script
 assert 'packet_encoding' in render_script
 assert 'xudp' in render_script
+setup_routing = (root / 'docker/vpnkit/setup-routing.sh').read_text()
+assert 'ip route replace default dev "$TUN_IFACE" table "$TUN_TABLE"' in setup_routing
 print('vpnkit sing-box templates ok')
 PY

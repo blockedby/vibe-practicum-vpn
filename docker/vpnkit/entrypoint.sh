@@ -89,10 +89,10 @@ wait_for_singbox_tun() {
   local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
   until ip link show sb-tun0 >/dev/null 2>&1 \
     && ip -4 addr show dev sb-tun0 2>/dev/null | grep -q '172[.]19[.]0[.]1/30' \
-    && ss -lun sport = :5353 | grep -q ':5353'; do
+    && ss -lun sport = :53 | grep -q ':53'; do
     singbox_is_running
     if (( SECONDS >= deadline )); then
-      echo "timed out waiting for sing-box tun interface sb-tun0 with 172.19.0.1/30 and udp/5353" >&2
+      echo "timed out waiting for sing-box tun interface sb-tun0 with 172.19.0.1/30 and udp/53" >&2
       return 1
     fi
     sleep 0.2

@@ -402,7 +402,11 @@ case "$VPNKIT_ROUTING_MODE" in
       fi
       sleep 0.2
     done
-    run ip route replace default via "$TUN_PEER" dev "$TUN_IFACE" table "$TUN_TABLE"
+    # Route OpenVPN client packets into sing-box's userspace TUN.  Use a
+    # link-scope route instead of an explicit peer gateway; forwarded packets
+    # arriving from OpenVPN tun0 were observed to ignore the policy table and
+    # leak out Docker eth0 when the route was `via $TUN_PEER dev $TUN_IFACE`.
+    run ip route replace default dev "$TUN_IFACE" table "$TUN_TABLE"
     if ! ip rule show | grep -q "from $OVPN_CIDR lookup $TUN_TABLE"; then
       run ip rule add from "$OVPN_CIDR" table "$TUN_TABLE" priority 1000
     fi
