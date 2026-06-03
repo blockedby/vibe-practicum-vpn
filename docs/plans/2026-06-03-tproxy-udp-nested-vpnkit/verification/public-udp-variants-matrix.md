@@ -1,55 +1,47 @@
 # Public non-DNS UDP vpnkit TPROXY variants matrix
 
 Date: 2026-06-03
-Owner: aad-slice-owner
+Executor: aad-implementer
 Worktree: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/vpnkit-tproxy-udp-nested`
 Branch: `vpnkit-tproxy-udp-nested`
 
-## Safety and scope
+## Safety and topology
 
-- `config/private-endpoints.local.env` is readable, but no values are printed here.
-- Nested `aad-implementer` delegation was blocked by Pi max subagent depth, so this owner could not hand the command-heavy live variant matrix to an implementer.
-- No new live resources were started by this continuation. Therefore there were no new isolated containers/networks/volumes/temp paths to clean up.
-- Steam Deck, production `vpnkit`, and `current-vpnkit-1` were not touched by this continuation.
-- This artifact reuses prior committed baseline public echo evidence only where explicitly marked; it does not claim a fresh seven-variant live run.
+- Loaded `config/private-endpoints.local.env` without printing values.
+- Isolated vpnkit test servers ran on `vibe-practicum`; the OpenVPN client ran on the local host in disposable Docker client containers.
+- A separate isolated UDP echo container ran on the secondary host as an echo server only, not as a client. This was required because a same-host echo target routes over the OpenVPN transport interface rather than through outer `tun0`.
+- Steam Deck was not touched.
+- Production containers were not restarted, recreated, adopted, or mutated.
+- Generated profiles, rendered configs, raw logs, tcpdump logs, tarballs, and temp contexts were kept under `/tmp` and removed; only this sanitized matrix/report is retained.
 
-## Prior baseline evidence reused for Variant 1
+## Production untouched metadata
 
-Source artifact: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/live-validation-after-private-bypass.md`.
+| Host | Container | Before | After | Result |
+|---|---|---|---|---|
+| vibe-practicum | `vpnkit` | `status=running restart=0 started=2026-06-02T13:47:35.235471647Z` | `status=running restart=0 started=2026-06-02T13:47:35.235471647Z` | unchanged |
+| secondary echo host | `current-vpnkit-1` | `status=running restart=0 started=2026-06-02T12:07:48.941107386Z` | `status=running restart=0 started=2026-06-02T12:07:48.941107386Z` | unchanged |
 
-- Reduced public echo resource names/ports from prior run: outer project `vpnkit_public_echo_outer_21473`, outer OpenVPN port `21473/udp`, same-host client `vpnkit-public-echo-client-21473_21475`, echo process on moscow-tiger `21475/udp`; all were cleaned up in that prior run.
-- Result: route to echo endpoint was via outer `tun0`; public UDP echo timed out.
-- Counters: generic non-private UDP TPROXY incremented `1 packet / 44 bytes`; private UDP bypass counters stayed zero.
-- Interpretation: generic public UDP entered the TPROXY path and failed to produce a response; this is distinct from the passing private UDP bypass path.
+## Valid separate-host run matrix
 
-## Variant matrix
+All ports below are high UDP ports from fresh isolated runs. `generic` and `private_*` counters are packet/byte summaries only. No endpoint values or raw packet logs are retained.
 
-| # | Variant | Config delta / implementation mode | Live echo result | Route proof | Counters / packet evidence | Sing-box / tcpdump summary | Cleanup | Status |
-|---:|---|---|---|---|---|---|---|---|
-| 1 | Current tproxy public UDP baseline | Existing source behavior; prior live reduced public echo evidence reused, not a fresh run in this continuation. | Timeout. | Prior run recorded route to public echo endpoint via client `tun0`. | Generic public UDP TPROXY incremented `1 packet / 44 bytes`; private bypass zero. | Prior artifact summarized no successful echo response; raw logs not committed. | Prior resources removed. | FAIL / evidenced by prior committed run. |
-| 2 | Explicit tproxy inbound `network: [tcp, udp]` + `udp_timeout` | Temp-only config syntax probe against sing-box 1.13.12; not deployed live. | Not run live. | Not captured. | Not captured. | Local `sing-box check` accepts the added fields when repo's existing deprecation env allowances are set, so this variant remains feasible but untested live. | Temp local rendered config removed. | NOT COMPLETED. |
-| 3 | Route-options `udp_connect` / `udp_timeout` before route | Prior local private-echo investigation tried route-options and it did not fix private TPROXY; no fresh public live run. | Not run live. | Not captured for public target. | Not captured for public target. | Prior artifact says route-options did not make reduced private echo pass. | No new resources. | NOT COMPLETED for public UDP. |
-| 4 | Force UDP route to `direct-out` vs `selected-native-out` | Not run in this continuation. | Not run. | Not captured. | Not captured. | Not captured. | No new resources. | NOT COMPLETED. |
-| 5 | nftables TPROXY variant | Not run in this continuation. | Not run. | Not captured. | Not captured. | Not captured. | No new resources. | NOT COMPLETED. |
-| 6 | Sing-box TUN-mode canary for UDP | Not run in this continuation. | Not run. | Not captured. | Not captured. | Not captured. | No new resources. | NOT COMPLETED. |
-| 7 | Pragmatic port-based UDP bypass for common tunnel ports | Not run in this continuation. | Not run. | Not captured. | Not captured. | Not captured. | No new resources. | NOT COMPLETED. |
+| # | Variant | Config delta / mode | Isolated resources | Route proof | Echo result | TPROXY / bypass counters | sing-box/debug summary | tcpdump / echo summary | Cleanup | Status |
+|---:|---|---|---|---|---|---|---|---|---|---|
+| 1 | Current tproxy public UDP baseline | Existing source behavior; temp-only live run. | vibe project `vpnkit_pubudp_v1_23442`, OpenVPN `23442/udp`; echo container `vpnkit-pubudp-echo-v1-23443`, echo `23443/udp`; local client image/container temp-only. | Client `ip route get` to echo target selected `dev tun0`. | Timeout. | Generic public UDP TPROXY `1/51`; private mangle `0/0`; private NAT post `0/0`; private forward `0/0`. | sing-box listeners present `udp/2082`, `udp/5353`, `tcp/2083`; logs had 111 total lines, 10 UDP-related, 10 tproxy-related; no raw logs retained. | tcpdump summaries captured `tun0=0`, `eth0=0` packet lines for echo port; echo server received `0` datagrams. | Server project/temp path removed; echo container removed after follow-up cleanup; local temp logs/profiles/tarballs removed. | FAIL: public UDP entered generic TPROXY and no response arrived. |
+| 2 | Explicit tproxy inbound `network: [tcp, udp]` + `udp_timeout` | Temp rendered sing-box config changed only for this variant. | vibe project `vpnkit_pubudp_v2_23444`, OpenVPN `23444/udp`; echo container `vpnkit-pubudp-echo-v2-23445`, echo `23445/udp`; local client temp-only. | Client route selected `dev tun0`. | Timeout. | Generic public UDP TPROXY `1/51`; private mangle `0/0`; private NAT post `0/0`; private forward `0/0`. | listeners present `1/1/1`; logs total 111, UDP 10, tproxy 10. | tcpdump `tun0=0`, `eth0=0`; echo receive count `0`. | Removed; echo cleanup required follow-up due temp harness quoting bug. | FAIL: explicit inbound UDP fields did not restore echo. |
+| 3 | Route-options `udp_connect` / `udp_timeout` before route | Temp rendered sing-box config inserted a non-final `route-options` rule before UDP route. | vibe project `vpnkit_pubudp_v3_23446`, OpenVPN `23446/udp`; echo container `vpnkit-pubudp-echo-v3-23447`, echo `23447/udp`; local client temp-only. | Client route selected `dev tun0`. | Timeout. | Generic public UDP TPROXY `1/51`; private mangle `0/0`; private NAT post `0/0`; private forward `0/0`. | listeners present `1/1/1`; logs total 111, UDP 10, tproxy 10. | tcpdump `tun0=0`, `eth0=0`; echo receive count `0`. | Removed; echo cleanup required follow-up due temp harness quoting bug. | FAIL: route-options did not restore echo. |
+| 4 | Force UDP route to `direct-out` | Temp rendered sing-box config changed the `vpnkit-tproxy-in` UDP route and final outbound to `direct-out`. | vibe project `vpnkit_pubudp_v4_23448`, OpenVPN `23448/udp`; echo container `vpnkit-pubudp-echo-v4-23449`, echo `23449/udp`; local client temp-only. | Client route selected `dev tun0`. | Timeout. | Generic public UDP TPROXY `1/51`; private mangle `0/0`; private NAT post `0/0`; private forward `0/0`. | listeners present `1/1/1`; logs total 111, UDP 10, tproxy 10. | tcpdump `tun0=0`, `eth0=0`; echo receive count `0`. | Removed; echo cleanup required follow-up due temp harness quoting bug. | FAIL: forcing direct outbound did not restore echo, so failure is not only selected-native outbound choice. |
+| 5 | nftables TPROXY runtime canary | Temp-only runtime replacement attempt: after startup, flush iptables mangle TPROXY chain and install nftables prerouting TPROXY chain. | First attempt `vpnkit_pubudp_v5_23450`/`23450` + echo `23451`; retry `vpnkit_pubudp_v5_23550`/`23550` + echo `23551`. | Not run; nft setup failed before client probe. | Not run. | Not collected. | Not collected. | Not collected. | Both isolated attempts cleaned; retry echo container removed after follow-up cleanup. | SETUP-FAIL/INFEASIBLE in this temp harness: nft rule syntax was rejected (`return` in a base chain, then `tcp accept` form); a safe nft variant needs a validated nft TPROXY ruleset before live probing. |
+| 6 | sing-box TUN-mode canary | Marked infeasible before live mutation. | No live resources. | Not run. | Not run. | Not collected. | Current entrypoint `tun` mode uses `config.json` unless a new source template is introduced, and `setup-routing.sh` waits for `sb-tun0`; current tracked config has no tun inbound. | Not run. | No resources created. | INFEASIBLE in scope: requires source/runtime template changes beyond a temp canary to avoid startup deadlock. |
+| 7 | Pragmatic port-based public UDP bypass fallback comparison | Temp-only runtime iptables insertion before generic TPROXY for the echo endpoint/port, with MASQUERADE/FORWARD rules; no source change. | vibe project `vpnkit_pubudp_v7_23454`, OpenVPN `23454/udp`; echo container `vpnkit-pubudp-echo-v7-23455`, echo `23455/udp`; local client temp-only. | Client route selected `dev tun0`. | Timeout. | Generic public UDP TPROXY `0/0`; private mangle `0/0`; private NAT post `0/0`; private forward `0/0`. | listeners present `1/1/1`; logs total 111, UDP 10, tproxy 10. | tcpdump `tun0=0`, `eth0=0`; echo receive count `0`. | Removed; echo cleanup required follow-up due temp harness quoting bug. | FAIL as a response path; useful distinction: the temp bypass kept the packet off generic TPROXY, but still did not produce an echo response in this topology. |
 
-## Fresh source checks run by owner
+## Invalid same-host topology pre-run
 
-All checks below passed after docs/progress changes only:
+A pre-run used the echo endpoint on the same public host as the outer OpenVPN server. It was discarded as acceptance evidence because the local client route to that target selected the OpenVPN transport interface (`eth0`) rather than outer `tun0`. Resources from that pre-run were cleaned with follow-up `sudo` for root-owned temp log directories.
 
-```text
-bash tests/vpnkit-setup-routing-test.sh: pass
-bash tests/vpnkit-singbox-template-test.sh: pass
-bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh: pass
-go test ./...: pass
-git diff --check: pass
-```
+## Interpretation and recommendation
 
-## Open blocker
-
-### U-PUBLIC-UDP-01: Fresh full public UDP variants matrix not executed
-
-- Description: The requested seven-variant live investigation was not completed. Only the prior baseline timeout evidence is available, plus a local syntax check that Variant 2's tproxy inbound field delta is accepted by sing-box 1.13.12.
-- Why unresolved: Pi subagent max-depth blocked delegation to `aad-implementer`, and the owner did not safely reproduce the full live harness directly within this continuation.
-- Needed next: run the seven variants from a top-level owner/implementer context or a shallower AAD invocation that can execute the command-heavy isolated live harness, then replace this partial matrix with fresh per-variant evidence.
+- Variants 1-4 consistently show the required distinction: the public echo target routes through the outer tunnel (`tun0`), generic public UDP TPROXY increments exactly one packet, private UDP bypass counters remain zero, and no response reaches the echo server.
+- Variant 4 indicates the failure is not simply the configured `selected-native-out` versus `direct-out` outbound choice.
+- Variant 7 shows that a narrow runtime bypass can avoid the generic TPROXY rule (`0/0` generic counter), but the quick temp bypass did not prove a working public UDP fallback.
+- No robust source/config fix emerged from this matrix. Recommendation: keep the existing private UDP bypass for nested private targets; do not claim generic public UDP TPROXY support. A follow-up should prototype a validated nftables TPROXY ruleset or an explicit operator-configured public UDP endpoint bypass in a dedicated source/test slice.
