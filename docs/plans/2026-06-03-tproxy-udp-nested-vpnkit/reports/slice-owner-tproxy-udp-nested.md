@@ -88,3 +88,71 @@
 - Settled already: automated checks pass; local Docker tproxy smoke passes; production must remain untouched.
 - Boundaries: no production containers, no Steam Deck, isolated names/ports/resources only, no secrets/log/profile contents in tracked artifacts.
 - Verification target: outer `tun0` active, route to inner endpoint via `tun0`, inner `tun1` active, UDP DNS/HTTPS through inner where feasible, counters/listeners captured, cleanup complete.
+
+---
+
+# Slice owner continuation: matching-bundle nested validation
+
+## Task
+- Mission: continue TPROXY/UDP nested VPN-over-VPN validation using only the matching gitignored local bundle already present in the worktree.
+- Target: isolated vibe-practicum outer+inner vpnkit servers and isolated moscow-tiger nested client.
+- Boundaries: no production container mutation; no Steam Deck; no broad secret probing; no profile/PKI/rendered config/private endpoint contents printed or committed; rewrite only `remote` lines in temp copied profiles.
+
+## Context
+- Task package: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit`.
+- Worktree/branch: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/vpnkit-tproxy-udp-nested` / `vpnkit-tproxy-udp-nested`.
+- Delegated execution: `aad-implementer` report `reports/aad-implementer-matching-bundle-nested.md`.
+- Verification artifact: `verification/inner-nested-matching-bundle.md`.
+
+## Spec compliance
+- Matching-material constraint: done. The rerun used only the specified gitignored bundle and rewrote only temporary profile `remote` lines.
+- Isolated live validation: done with fresh isolated names/ports/resources: `vpnkit_match_outer_21342` on `21342/udp`, `vpnkit_match_inner_21343` on `21343/udp`, shared network `vpnkit_match_net_21342_21343`, and moscow-tiger client `nested-match-21342`.
+- Full inner OpenVPN-over-OpenVPN: failed/not achieved. Outer tunnel established and inner route used `tun0`, but inner `tun1` did not appear.
+- Production safety and cleanup: done. Production `vpnkit` safe metadata stayed unchanged before/after, and all isolated resources/temp paths were removed.
+
+## Acceptance verification
+- AC2 / nested UDP OpenVPN-over-OpenVPN:
+  - Covered by: matching-bundle isolated live nested harness.
+  - Result: failed with decisive blocker evidence.
+  - Evidence: `OUTER_UP`; `ip route get <inner-container-ip>` showed `dev tun0`; inner OpenVPN logged TLS handshake timeout; outer non-DNS UDP TPROXY counter reached `15 packets / 1230 bytes`; outer-to-inner and inner `udp/1194` tcpdump captures had no packet lines; no inner server accepted client.
+- AC5/AC6 / isolated live-host validation without production mutation:
+  - Covered by: before/after Docker metadata and cleanup checks.
+  - Result: passed for safety/isolation, failed for inner tunnel behavior.
+  - Evidence: production `vpnkit` remained `status=running restart=0 started=2026-06-02T13:47:35.235471647Z`; isolated projects/containers/network/image/temp paths removed.
+- AC8 / secret safety:
+  - Covered by: report/artifact review and scoped execution report.
+  - Result: passed.
+  - Evidence: no secret/profile/PKI/private endpoint values recorded; only sanitized directives/counters/log status included.
+
+## System readiness
+- Runtime / deployment wiring: not ready for a claim of full nested OpenVPN-over-OpenVPN support.
+- Config / env / secrets: sufficient matching test material existed for this rerun; no remaining material-mismatch blocker.
+- Production readiness: production untouched, but AC2 failure is a current-goal runtime blocker.
+
+## Verification run
+- Matching-bundle isolated live nested harness: FAIL at inner tunnel establishment.
+- Production untouched check: PASS.
+- Cleanup check: PASS.
+- Source checks: not rerun in this continuation because no production source/config files changed; only task-package evidence files were updated.
+
+## Issues
+### U-1: Non-DNS UDP TPROXY packets do not egress toward the inner OpenVPN server
+- Description: With matching server/client material, the inner OpenVPN UDP attempt enters the outer tunnel and hits the outer TPROXY rule, but no packet lines are observed leaving the outer container toward the inner container or arriving at the inner OpenVPN server.
+- Evidence: `verification/inner-nested-matching-bundle.md`: outer `OUTER_UP`; route to inner via `dev tun0`; outer non-DNS UDP TPROXY counter `15 packets / 1230 bytes`; outer-to-inner and inner `udp/1194` tcpdump captured no packet lines; inner client TLS handshake timed out and `tun1` never appeared.
+- Why unresolved: current runtime behavior still fails after the earlier route-policy correction; further debugging/fix is needed in sing-box TPROXY UDP association/egress or vpnkit routing policy.
+- Needed next: investigate why sing-box/tproxy consumes or fails to forward non-DNS UDP associations; a reduced UDP echo harness on the shared network may isolate sing-box egress before another full OpenVPN nested run.
+
+## Side findings
+- Non-blocking follow-up candidates from implementer: reduced UDP echo harness and sing-box TPROXY UDP association/egress investigation. These are not separate follow-ups yet because they are directly part of resolving U-1.
+
+## Verdict
+- Status: blocked/failed for AC2, with decisive evidence.
+- Goal state: not achieved for full inner OpenVPN-over-OpenVPN.
+- Final readiness: not ready for merge as proven nested UDP support; safe to continue from the recorded blocker.
+
+## Next-agent brief
+- Objective: fix or decisively classify the non-DNS UDP TPROXY egress failure.
+- Target: outer vpnkit TPROXY UDP path after packets match `OVPN_TO_SINGBOX` and enter sing-box `vpnkit-tproxy-in`.
+- Settled already: matching profile material is no longer the blocker; outer tunnel works; route to inner goes via `tun0`; packets increment outer TPROXY counter; no egress/ingress to inner is observed.
+- Boundaries: keep using isolated resources only; do not touch production containers; do not print/commit secrets/logs/generated profiles.
+- Verification target: either inner `tun1` establishes through outer `tun0`, or packet-level evidence proves the precise failing component/protocol behavior.
