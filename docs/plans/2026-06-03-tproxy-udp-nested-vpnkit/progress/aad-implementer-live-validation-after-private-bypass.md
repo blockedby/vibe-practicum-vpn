@@ -12,3 +12,4 @@
 - 2026-06-03: Focused same-host true nested retry on `21478/udp` + `21479/udp` passed baseline, route-to-inner via `tun0`, inner `tun1`, private UDP bypass counters, and cleanup.
 - 2026-06-03: Wrote sanitized verification artifact and implementation report. Running `git diff --check` before commit.
 - 2026-06-03: `git diff --check` passed. Preparing scoped commit for new report/progress/verification artifacts only; leaving the pre-existing owner `plan.md` dirty section unstaged.
+- 2026-06-03: Committed live validation artifacts as `262eb8a docs: record live tproxy udp validation`. Updating report commit metadata.
