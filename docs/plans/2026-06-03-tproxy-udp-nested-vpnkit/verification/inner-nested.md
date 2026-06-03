@@ -87,3 +87,32 @@ Live nested rerun status:
 Current AC2 status:
 - The previous nested failure remains the latest live nested evidence.
 - The code fix is ready for a fresh isolated live nested rerun once valid private endpoint values are available.
+
+## 2026-06-03 rerun attempt after routing correction
+
+Requested correction applied:
+- Used the user-approved SSH aliases `vibe-practicum` and `moscow-tiger` directly; no separate remote-client env variable was required.
+- Private endpoint values were sourced/used only locally and redacted from command output and this artifact.
+
+Isolated resources attempted:
+- vibe-practicum outer project/container: `vpnkit_tproxy_nested_outer_21224` / `vpnkit_tproxy_nested_outer_21224-vpnkit-1`, port `21224/udp`.
+- vibe-practicum inner project/container: `vpnkit_tproxy_nested_inner_21225` / `vpnkit_tproxy_nested_inner_21225-vpnkit-1`, port `21225/udp`.
+- moscow-tiger client harness container/image: `nested-debug-21224` / `vpnkit_tproxy_nested_moscow_client_21224_21225-image`.
+- A second setup attempt reserved but did not start servers on `21226/udp` and `21227/udp` after the first profile issue.
+
+Result: BLOCKED before AC2 could be re-proven.
+- The isolated outer/inner vpnkit servers on `21224/udp` and `21225/udp` started with tproxy listeners present (`1194/udp`, `2082/tcp+udp`, `2083/tcp`, `5353/udp`) and production `vpnkit` metadata was unchanged.
+- The moscow-tiger outer OpenVPN client did not bring up `tun0` within the wait window, so the rerun could not progress to route proof or inner `tun1` establishment.
+- The most likely setup blocker is test-profile material mismatch/availability: this worktree only had a generated local `test-client.ovpn`, while the isolated live servers were bootstrapped from copied live rendered server config. A follow-up attempt to reconstruct a matching generated test-client profile from live private PKI stopped before mutation because the first discovered live rendered PKI path lacked `ignat.crt`/`ignat.key`, and continuing broad secret-path probing was not appropriate for a tracked report. No profile contents, private paths, or endpoint values were printed or committed.
+- Because `tun0` never established, there is no fresh post-fix AC2 pass/fail evidence for non-DNS UDP OpenVPN-over-OpenVPN transport. The previous live nested failure remains the latest complete nested transport evidence.
+
+Sanitized evidence captured:
+- Production before attempt: `name=/vpnkit status=running restart=0 started=2026-06-02T13:47:35.235471647Z`.
+- Isolated server listener/counter snapshot showed both isolated servers running and tproxy listeners present; counters were still zero because the outer client did not establish.
+- Production after cleanup: `name=/vpnkit status=running restart=0 started=2026-06-02T13:47:35.235471647Z`.
+
+Cleanup status:
+- Removed moscow-tiger `nested-debug-21224`, the temporary client harness path, and the temporary client image when present.
+- Removed vibe-practicum isolated Compose projects/containers/volumes/networks for `vpnkit_tproxy_nested_outer_21224`, `vpnkit_tproxy_nested_inner_21225`, `vpnkit_tproxy_nested_outer_21226`, and `vpnkit_tproxy_nested_inner_21227` when present.
+- Removed temporary vibe-practicum paths `/tmp/vpnkit_tproxy_nested_21224_21225` and `/tmp/vpnkit_tproxy_nested_21226_21227` using sudo where container-created log directories required it.
+- Nothing intentionally retained. Production containers were not restarted, recreated, adopted, or mutated.
