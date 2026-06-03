@@ -4,7 +4,7 @@ TASK_PACKAGE: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit
 REPORT_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-matching-bundle-nested.md
 PROGRESS_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-matching-bundle-nested.md
 COMMITS:
-- pending: report/progress/verification artifacts written; commit planned after final local status check
+- 88130ea: docs: record matching-bundle nested tproxy validation
 FILES_CHANGED:
 - docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/inner-nested-matching-bundle.md: sanitized runtime validation evidence
 - docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-matching-bundle-nested.md: implementation/validation report
