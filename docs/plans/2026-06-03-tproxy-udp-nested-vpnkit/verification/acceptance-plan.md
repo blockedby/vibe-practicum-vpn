@@ -25,3 +25,8 @@ Audit whether the root task is ready for acceptance based on existing task-packa
 - Confirm `config/private-endpoints.local.env` is present/absent before considering live-host readiness.
 - Read the latest task-package verification/report artifacts.
 - Record verdict, gaps, and whether the private-endpoint absence is a valid blocker under repo safety rules.
+
+## Audit run note
+- Freshly reviewed the latest verification artifacts: `verification/tproxy-udp-debug.md`, `verification/live-isolated.md`, `verification/inner-nested.md`, `verification/tproxy-udp-debug-2026-06-03-nondns.md`, and `verification/slice.md`.
+- Fresh safety gate check: `config/private-endpoints.local.env` was present in this worktree at audit time.
+- Current focus: decide whether AC2 is fully closed or still blocked after the post-fix live rerun attempt.
