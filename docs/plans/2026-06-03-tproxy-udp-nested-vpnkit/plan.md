@@ -266,3 +266,75 @@ Status: ready for dispatch.
 Execution ledger update for Task 4:
 - 2026-06-03: Attempted to dispatch public UDP variant matrix to `aad-implementer`, but Pi nested subagent call was blocked by max depth. Owner completed only planning/report scaffolding, reused prior Variant 1 baseline public echo evidence, performed a local sing-box syntax feasibility check for Variant 2, and ran fresh source checks (`bash tests/vpnkit-setup-routing-test.sh`, `bash tests/vpnkit-singbox-template-test.sh`, `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh`, `go test ./...`, `git diff --check`). No live resources were created or cleaned by this continuation, and no production/Steam Deck commands were run. Task 4 remained blocked/partial at that point; see `reports/slice-owner-public-udp-variants.md`.
 - 2026-06-03 top-level implementer continuation: Executed Task 4 from the provided worktree without further delegation. Fresh separate-host live variant matrix used isolated vpnkit server projects on vibe-practicum, local Docker OpenVPN clients, and isolated UDP echo containers on the secondary host as server-only resources. Variants 1-4 routed to echo via client `tun0`, timed out, incremented generic public UDP TPROXY `1/51`, and left private bypass counters zero. Variant 5 nftables TPROXY canary failed setup in two temp attempts due nft syntax/ruleset issues; Variant 6 was marked infeasible because current tun mode lacks a tun inbound template and would wait for `sb-tun0`; Variant 7 port-based public UDP bypass comparison routed via `tun0`, timed out, and kept generic TPROXY at `0/0`. Production `vpnkit` and `current-vpnkit-1` metadata stayed running/restart=0/same start time. Isolated resources were cleaned after follow-up removal of echo containers/root-owned temp paths. No robust source fix emerged; matrix replaced at `verification/public-udp-variants-matrix.md` and implementer report at `reports/aad-implementer-public-udp-variants.md`.
+
+## Continuation task: sing-box TUN-mode canary for vpnkit
+
+User-requested goal:
+- Implement an opt-in `VPNKIT_ROUTING_MODE=tun` runtime path that captures OpenVPN client traffic through sing-box TUN/L3 instead of the failed public UDP TPROXY path, while default production redirect behavior remains unchanged.
+- Validate staged canary behavior with isolated containers: local Docker lab public UDP echo through outer OpenVPN, baseline DNS/HTTPS/literal-IP smoke, isolated vibe-practicum server with local-host client and different-host public UDP echo where needed, isolated vibe-practicum server with isolated moscow-tiger client, and nested OpenVPN/WireGuard-like UDP if feasible.
+
+Additional boundaries:
+- Work only in `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/vpnkit-tproxy-udp-nested` on branch `vpnkit-tproxy-udp-nested`.
+- Do not restart/recreate/adopt/mutate production containers: `vpnkit` on vibe-practicum, `current-vpnkit-1` on moscow-tiger, or Steam Deck.
+- Use unique Docker project/container/network/volume/temp names and fresh high UDP ports for every isolated validation resource.
+- Keep generated profiles/logs/rendered configs/secrets/subscription URLs/private endpoints/tcpdump raw logs/temp artifacts out of git and out of reports; record only sanitized summaries.
+- Source `config/private-endpoints.local.env` only if readable and without printing values; stop before live mutation if needed values are absent.
+- Default production redirect mode remains unchanged; TUN mode is opt-in only.
+
+Pre-dispatch gate:
+- Task intake: clear single-slice implementation plus staged validation; TUN canary replaces public UDP TPROXY exploration, not production deployment.
+- Repo orientation/reuse: use existing `VPNKIT_ROUTING_MODE` branching in `docker/vpnkit/entrypoint.sh` and `docker/vpnkit/setup-routing.sh`, sing-box templates in `config/sing-box/`, render flow in `scripts/vpnkit-render-local-configs.sh`, template/routing tests in `tests/`, Docker lab docs in `docs/DOCKER_SETUP.md`, and prior task-package evidence for safe live isolation.
+- Missing pieces: TUN-specific sing-box template, mode-aware readiness for TUN interface/listeners, setup-routing TUN-mode route/NAT policy that captures OpenVPN client traffic without loops, render/test/doc updates, fresh sanitized local/live/nested result matrix and recommendation.
+- Reuse constraints: pin outbounds/DNS/rules so sing-box egress does not loop through the TUN; use direct/detour/bind-interface/routing rules consistent with sing-box support and existing selected native outbound template.
+- Dependency graph: Task 5 implementation first; Task 6 validation after implementation/local source checks pass. Keep slice whole; delegate clear implementation/validation execution to `aad-implementer` and owner integrates evidence.
+
+### Task 5: Opt-in vpnkit sing-box TUN-mode runtime path
+
+Goal:
+- Add mode-aware TUN canary runtime support so `VPNKIT_ROUTING_MODE=tun` starts sing-box with a TUN inbound and routes OpenVPN client traffic through sing-box at L3, while `redirect` remains default and `tproxy` behavior remains available.
+
+Acceptance criteria:
+- Redirect/default mode selects existing redirect template/readiness and remains unchanged in tests.
+- Tproxy mode remains unchanged except for any explicitly necessary compatibility update with tests.
+- Tun mode selects a TUN sing-box config/template with clear inbound tag/interface/address/MTU/stack settings and outbounds/rules designed to avoid self-routing loops.
+- `setup-routing.sh` has a tun-mode branch that installs only the needed route/NAT/forwarding policy for OpenVPN client CIDR and does not install redirect/tproxy capture rules in tun mode.
+- Entry point/readiness waits for the correct tun-mode readiness signal(s) and does not hang on redirect/tproxy ports that tun mode does not provide.
+- Render and template tests cover tun template selection/syntax and route/readiness expectations.
+
+Test plan:
+- `bash tests/vpnkit-singbox-template-test.sh`
+- `bash tests/vpnkit-setup-routing-test.sh`
+- `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh`
+- `go test ./...`
+- `sing-box check` on rendered dummy redirect/tproxy/tun configs if available.
+
+Executor: `aad-implementer`.
+Report path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-tun-canary-runtime.md`.
+Verification path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/tun-canary-runtime.md`.
+Progress path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-tun-canary-runtime.md`.
+Status: ready for dispatch.
+
+### Task 6: TUN canary staged validation and recommendation
+
+Goal:
+- Validate the TUN canary in isolated local and live containers and write a sanitized result matrix/recommendation under this task package (or subfile), including concrete blocker evidence if TUN mode fails.
+
+Acceptance criteria:
+- Local Docker lab: public UDP echo through outer OpenVPN in TUN mode is attempted and passes or has concrete blocker evidence; baseline DNS/HTTPS/literal-IP smoke is recorded.
+- Live same-host: isolated server on vibe-practicum using fresh high port plus local-host/client container validates baseline and public UDP echo on different host where feasible.
+- Live different-host: isolated server on vibe-practicum plus isolated client on moscow-tiger validates baseline and public UDP echo where feasible.
+- Nested: nested OpenVPN/WireGuard-like UDP is attempted if feasible; if not feasible or failing, concrete counters/routes/log summaries are recorded.
+- Production untouched: safe before/after metadata confirms hard-boundary containers were not restarted/recreated/mutated.
+- Cleanup: all isolated resources are removed, or any retained debug resource is explicitly listed with reason.
+- Sanitized matrix and recommendation are committed; no generated profiles/logs/rendered configs/secrets/private endpoint values are committed or printed.
+
+Test plan:
+- Staged manual/live checks only after Task 5 checks pass.
+- Use fresh unique names/ports for every attempt.
+- Record route-via-tun/TUN interface evidence, echo result, DNS/HTTPS/literal-IP result, counters/routes/sing-box summary, cleanup status, and production untouched metadata.
+
+Executor: `aad-implementer` after Task 5 or same implementer if it can continue safely.
+Report path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-tun-canary-validation.md`.
+Verification path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/tun-canary-result-matrix.md`.
+Progress path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-tun-canary-validation.md`.
+Status: pending Task 5.
