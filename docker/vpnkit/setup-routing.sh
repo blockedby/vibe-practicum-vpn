@@ -14,6 +14,8 @@ TUN_TABLE=${SINGBOX_TUN_TABLE:-101}
 VPNKIT_COMPAT_BYPASS_ENABLED=${VPNKIT_COMPAT_BYPASS_ENABLED:-false}
 VPNKIT_COMPAT_BYPASS_ENDPOINTS=${VPNKIT_COMPAT_BYPASS_ENDPOINTS:-}
 VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=${VPNKIT_COMPAT_BYPASS_ALLOW_ICMP:-false}
+VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED=${VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED:-true}
+VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_CIDRS=${VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_CIDRS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
 VPNKIT_IPV6_POLICY=${VPNKIT_IPV6_POLICY:-block}
 VPNKIT_IPV6_POLICY=${VPNKIT_IPV6_POLICY,,}
 VPNKIT_ROUTING_DRY_RUN=${VPNKIT_ROUTING_DRY_RUN:-false}
@@ -248,6 +250,44 @@ reset_compat_bypass_chains() {
   run iptables -F OVPN_COMPAT_FWD
 }
 
+reset_tproxy_private_udp_bypass_chains() {
+  run iptables -t nat -N OVPN_TPROXY_UDP_POST 2>/dev/null || true
+  run iptables -t nat -F OVPN_TPROXY_UDP_POST
+  run iptables -N OVPN_TPROXY_UDP_FWD 2>/dev/null || true
+  run iptables -F OVPN_TPROXY_UDP_FWD
+}
+
+install_tproxy_private_udp_bypass_rules() {
+  reset_tproxy_private_udp_bypass_chains
+
+  if ! is_truthy "$VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED"; then
+    return 0
+  fi
+
+  local normalized_cidrs cidr
+  local -a cidrs
+
+  normalized_cidrs=${VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_CIDRS//,/ }
+  normalized_cidrs=${normalized_cidrs//;/ }
+  read -r -a cidrs <<<"$normalized_cidrs"
+  if [[ ${#cidrs[@]} -eq 0 ]]; then
+    echo "VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED=true but VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_CIDRS is empty" >&2
+    return 1
+  fi
+
+  ensure_iptables_rule nat POSTROUTING -s "$OVPN_CIDR" -p udp -j OVPN_TPROXY_UDP_POST
+  ensure_iptables_rule filter FORWARD -s "$OVPN_CIDR" -p udp -j OVPN_TPROXY_UDP_FWD
+  ensure_iptables_rule filter FORWARD -d "$OVPN_CIDR" -p udp -j OVPN_TPROXY_UDP_FWD
+
+  for cidr in "${cidrs[@]}"; do
+    [[ -n $cidr ]] || continue
+    run iptables -t mangle -A OVPN_TO_SINGBOX -p udp -d "$cidr" -m comment --comment "vpnkit:tproxy-private-udp-bypass" -j RETURN
+    run iptables -t nat -A OVPN_TPROXY_UDP_POST -d "$cidr" -p udp -j MASQUERADE
+    run iptables -A OVPN_TPROXY_UDP_FWD -s "$OVPN_CIDR" -d "$cidr" -p udp -j ACCEPT
+    run iptables -A OVPN_TPROXY_UDP_FWD -d "$OVPN_CIDR" -s "$cidr" -p udp -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  done
+}
+
 install_compat_bypass_rules() {
   if ! is_truthy "$VPNKIT_COMPAT_BYPASS_ENABLED"; then
     return 0
@@ -328,11 +368,15 @@ case "$VPNKIT_ROUTING_MODE" in
     run iptables -t nat -A OVPN_TPROXY_TCP -p tcp -j REDIRECT --to-ports "$TCP_REDIRECT_PORT"
 
     # DNS and TCP are protocol-level special cases that sing-box handles
-    # reliably through local REDIRECT in the Docker/OpenVPN lab. Keep UDP
-    # non-DNS traffic on the transparent path so nested UDP tunnels can use
-    # the tproxy inbound without breaking DNS/HTTPS smoke coverage.
+    # reliably through local REDIRECT in the Docker/OpenVPN lab. Private
+    # non-DNS UDP targets (for example an inner OpenVPN server on a shared
+    # Docker network) must remain directly reachable from the vpnkit
+    # container; transparent UDP delivery to sing-box is terminal in this
+    # iptables backend and was observed not to egress to those private
+    # targets. Public/non-private UDP remains on the transparent path.
     run iptables -t mangle -A OVPN_TO_SINGBOX -p udp --dport 53 -j RETURN
     run iptables -t mangle -A OVPN_TO_SINGBOX -p tcp -j RETURN
+    install_tproxy_private_udp_bypass_rules
     run iptables -t mangle -A OVPN_TO_SINGBOX -p udp -j TPROXY --on-port "$TPROXY_PORT" --tproxy-mark "$MARK"/"$MARK"
     # Scoped local-delivery accept for marked TPROXY packets. This is not broad NAT;
     # it only prevents restrictive filter policies from dropping packets already
@@ -344,6 +388,10 @@ case "$VPNKIT_ROUTING_MODE" in
     ip route show table "$TABLE"
     iptables -t mangle -L OVPN_TO_SINGBOX -v -n -x
     iptables -L INPUT -v -n -x | sed -n '1,12p'
+    if is_truthy "$VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED"; then
+      iptables -t nat -L OVPN_TPROXY_UDP_POST -v -n -x
+      iptables -L OVPN_TPROXY_UDP_FWD -v -n -x
+    fi
     ;;
   tun)
     until ip link show "$TUN_IFACE" >/dev/null 2>&1; do
