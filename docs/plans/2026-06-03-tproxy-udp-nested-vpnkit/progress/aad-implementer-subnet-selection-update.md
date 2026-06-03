@@ -8,4 +8,5 @@
 - 2026-06-03: GREEN focused checks passed: `bash tests/openvpn-server-template-test.sh`, `bash tests/vpnkit-setup-routing-test.sh`, `bash scripts/vpnkit-routing-compat-bypass-test.sh`.
 - 2026-06-03: Search review: active source/scripts/tests now use `10.231.89.0/24`; remaining tracked `10.89.*`/`10.90.0.0` references are historical task-package evidence or unrelated `internal/ikev2/registry_test.go` negative input.
 - 2026-06-03: Owner-specified verification passed: `bash tests/openvpn-server-template-test.sh`, `bash tests/vpnkit-singbox-template-test.sh`, `bash tests/vpnkit-setup-routing-test.sh`, `bash scripts/vpnkit-routing-compat-bypass-test.sh`, `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh`, `go test ./...`, `git diff --check`.
-- 2026-06-03: Preparing implementation commit; no live hosts, generated artifacts, secrets, logs, rendered configs, or private endpoint values touched.
+- 2026-06-03: Implementation commit created: `a428a0c Set vpnkit OpenVPN subnet defaults`; `git push` succeeded to `vpnkit-tproxy-udp-nested` (`4d87dd9..a428a0c`).
+- 2026-06-03: Final report written at `reports/aad-implementer-subnet-selection-update.md`; preparing optional report-artifact commit/push.
