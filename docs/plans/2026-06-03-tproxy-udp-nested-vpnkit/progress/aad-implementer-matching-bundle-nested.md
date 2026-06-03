@@ -1,0 +1,12 @@
+# aad-implementer progress: matching-bundle nested TPROXY/UDP validation
+
+- 2026-06-03: Started validation-only task. Read AGENTS.md, task package plan/verification/report context, Docker setup/runtime files, and required AAD report skills. CLAUDE.md not present.
+- 2026-06-03: `git status --short` showed only the provided verification path as untracked; treating it as in-scope task-package artifact.
+- 2026-06-03: Plan: use only the matching gitignored local bundle named in the prompt, copy it into isolated temp server bundles, use fresh project/container/network/port names, avoid printing secret contents/private endpoints, and clean up all isolated resources before returning.
+- 2026-06-03: Preflight passed: required matching-bundle paths are readable; sanitized OpenVPN directives only were grepped; SSH and Docker Compose availability checks passed on `vibe-practicum` and `moscow-tiger`.
+- 2026-06-03: Entering isolated live validation setup with fresh names/ports; no production mutation planned. Long remote Docker build/start checks may run next.
+- 2026-06-03: First isolated server start exposed a harness setup gap: matching `server.conf` requires `/etc/openvpn/ccd`; the copied allowed bundle did not include ccd contents. Proceeding by creating only empty ccd directories in the temp bundles (no secret inspection/content) and restarting the isolated projects.
+- 2026-06-03: Outer/inner isolated servers are up on ports `21342/udp` and `21343/udp` with tproxy listeners. First moscow client attempt failed before `tun0` because the copied profile's original remote host was the local-lab name `vpnkit`; will rewrite the temp outer profile to the safe `vibe-practicum` SSH target hostname without printing it and retry.
+- 2026-06-03: Nested rerun produced decisive negative evidence: outer tunnel up; route to inner endpoint via `tun0`; inner `tun1` timed out; outer non-DNS UDP TPROXY counter reached `15 packets / 1230 bytes`; tcpdump saw no outer-to-inner or inner `1194/udp` packets.
+- 2026-06-03: Cleanup completed on `moscow-tiger` and `vibe-practicum`; isolated containers/images/volumes/network/temp paths removed; production `vpnkit` metadata stayed running/restart=0/same start time. Report and verification artifacts written. Preparing local commit.
+- 2026-06-03: Local commit created: `88130ea docs: record matching-bundle nested tproxy validation`. Updating report metadata for final return.

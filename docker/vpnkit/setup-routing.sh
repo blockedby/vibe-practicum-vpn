@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OVPN_CIDR=${OVPN_CIDR:-10.89.0.0/24}
+OVPN_CIDR=${OVPN_CIDR:-10.231.89.0/24}
 VPNKIT_ROUTING_MODE=${VPNKIT_ROUTING_MODE:-redirect}
 TPROXY_PORT=${TPROXY_PORT:-2082}
 DNS_REDIRECT_PORT=${DNS_REDIRECT_PORT:-5353}
+TCP_REDIRECT_PORT=${TCP_REDIRECT_PORT:-2083}
 MARK=${TPROXY_MARK:-0x1}
 TABLE=${TPROXY_TABLE:-100}
 TUN_IFACE=${SINGBOX_TUN_IFACE:-sb-tun0}
@@ -13,6 +14,8 @@ TUN_TABLE=${SINGBOX_TUN_TABLE:-101}
 VPNKIT_COMPAT_BYPASS_ENABLED=${VPNKIT_COMPAT_BYPASS_ENABLED:-false}
 VPNKIT_COMPAT_BYPASS_ENDPOINTS=${VPNKIT_COMPAT_BYPASS_ENDPOINTS:-}
 VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=${VPNKIT_COMPAT_BYPASS_ALLOW_ICMP:-false}
+VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED=${VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED:-true}
+VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_CIDRS=${VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_CIDRS:-10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
 VPNKIT_IPV6_POLICY=${VPNKIT_IPV6_POLICY:-block}
 VPNKIT_IPV6_POLICY=${VPNKIT_IPV6_POLICY,,}
 VPNKIT_ROUTING_DRY_RUN=${VPNKIT_ROUTING_DRY_RUN:-false}
@@ -247,6 +250,44 @@ reset_compat_bypass_chains() {
   run iptables -F OVPN_COMPAT_FWD
 }
 
+reset_tproxy_private_udp_bypass_chains() {
+  run iptables -t nat -N OVPN_TPROXY_UDP_POST 2>/dev/null || true
+  run iptables -t nat -F OVPN_TPROXY_UDP_POST
+  run iptables -N OVPN_TPROXY_UDP_FWD 2>/dev/null || true
+  run iptables -F OVPN_TPROXY_UDP_FWD
+}
+
+install_tproxy_private_udp_bypass_rules() {
+  reset_tproxy_private_udp_bypass_chains
+
+  if ! is_truthy "$VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED"; then
+    return 0
+  fi
+
+  local normalized_cidrs cidr
+  local -a cidrs
+
+  normalized_cidrs=${VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_CIDRS//,/ }
+  normalized_cidrs=${normalized_cidrs//;/ }
+  read -r -a cidrs <<<"$normalized_cidrs"
+  if [[ ${#cidrs[@]} -eq 0 ]]; then
+    echo "VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED=true but VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_CIDRS is empty" >&2
+    return 1
+  fi
+
+  ensure_iptables_rule nat POSTROUTING -s "$OVPN_CIDR" -p udp -j OVPN_TPROXY_UDP_POST
+  ensure_iptables_rule filter FORWARD -s "$OVPN_CIDR" -p udp -j OVPN_TPROXY_UDP_FWD
+  ensure_iptables_rule filter FORWARD -d "$OVPN_CIDR" -p udp -j OVPN_TPROXY_UDP_FWD
+
+  for cidr in "${cidrs[@]}"; do
+    [[ -n $cidr ]] || continue
+    run iptables -t mangle -A OVPN_TO_SINGBOX -p udp -d "$cidr" -m comment --comment "vpnkit:tproxy-private-udp-bypass" -j RETURN
+    run iptables -t nat -A OVPN_TPROXY_UDP_POST -d "$cidr" -p udp -j MASQUERADE
+    run iptables -A OVPN_TPROXY_UDP_FWD -s "$OVPN_CIDR" -d "$cidr" -p udp -j ACCEPT
+    run iptables -A OVPN_TPROXY_UDP_FWD -d "$OVPN_CIDR" -s "$cidr" -p udp -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  done
+}
+
 install_compat_bypass_rules() {
   if ! is_truthy "$VPNKIT_COMPAT_BYPASS_ENABLED"; then
     return 0
@@ -306,15 +347,36 @@ install_ipv6_policy
 case "$VPNKIT_ROUTING_MODE" in
   tproxy)
     if ! ip rule show | grep -q "fwmark $MARK lookup $TABLE"; then
-      run ip rule add fwmark "$MARK" table "$TABLE"
+      run ip rule add fwmark "$MARK" table "$TABLE" priority 100
     fi
     run ip route replace local default dev lo table "$TABLE"
+
+    run iptables -t nat -N OVPN_TPROXY_DNS 2>/dev/null || true
+    run iptables -t nat -F OVPN_TPROXY_DNS
+    iptables -t nat -C PREROUTING -i tun0 -s "$OVPN_CIDR" -p udp --dport 53 -j OVPN_TPROXY_DNS 2>/dev/null \
+      || run iptables -t nat -A PREROUTING -i tun0 -s "$OVPN_CIDR" -p udp --dport 53 -j OVPN_TPROXY_DNS
+    run iptables -t nat -A OVPN_TPROXY_DNS -p udp -j REDIRECT --to-ports "$DNS_REDIRECT_PORT"
 
     run iptables -t mangle -N OVPN_TO_SINGBOX 2>/dev/null || true
     run iptables -t mangle -F OVPN_TO_SINGBOX
     iptables -t mangle -C PREROUTING -i tun0 -s "$OVPN_CIDR" -j OVPN_TO_SINGBOX 2>/dev/null \
       || run iptables -t mangle -A PREROUTING -i tun0 -s "$OVPN_CIDR" -j OVPN_TO_SINGBOX
-    run iptables -t mangle -A OVPN_TO_SINGBOX -p tcp -j TPROXY --on-port "$TPROXY_PORT" --tproxy-mark "$MARK"/"$MARK"
+    run iptables -t nat -N OVPN_TPROXY_TCP 2>/dev/null || true
+    run iptables -t nat -F OVPN_TPROXY_TCP
+    iptables -t nat -C PREROUTING -i tun0 -s "$OVPN_CIDR" -p tcp -j OVPN_TPROXY_TCP 2>/dev/null \
+      || run iptables -t nat -A PREROUTING -i tun0 -s "$OVPN_CIDR" -p tcp -j OVPN_TPROXY_TCP
+    run iptables -t nat -A OVPN_TPROXY_TCP -p tcp -j REDIRECT --to-ports "$TCP_REDIRECT_PORT"
+
+    # DNS and TCP are protocol-level special cases that sing-box handles
+    # reliably through local REDIRECT in the Docker/OpenVPN lab. Private
+    # non-DNS UDP targets (for example an inner OpenVPN server on a shared
+    # Docker network) must remain directly reachable from the vpnkit
+    # container; transparent UDP delivery to sing-box is terminal in this
+    # iptables backend and was observed not to egress to those private
+    # targets. Public/non-private UDP remains on the transparent path.
+    run iptables -t mangle -A OVPN_TO_SINGBOX -p udp --dport 53 -j RETURN
+    run iptables -t mangle -A OVPN_TO_SINGBOX -p tcp -j RETURN
+    install_tproxy_private_udp_bypass_rules
     run iptables -t mangle -A OVPN_TO_SINGBOX -p udp -j TPROXY --on-port "$TPROXY_PORT" --tproxy-mark "$MARK"/"$MARK"
     # Scoped local-delivery accept for marked TPROXY packets. This is not broad NAT;
     # it only prevents restrictive filter policies from dropping packets already
@@ -326,12 +388,25 @@ case "$VPNKIT_ROUTING_MODE" in
     ip route show table "$TABLE"
     iptables -t mangle -L OVPN_TO_SINGBOX -v -n -x
     iptables -L INPUT -v -n -x | sed -n '1,12p'
+    if is_truthy "$VPNKIT_TPROXY_PRIVATE_UDP_BYPASS_ENABLED"; then
+      iptables -t nat -L OVPN_TPROXY_UDP_POST -v -n -x
+      iptables -L OVPN_TPROXY_UDP_FWD -v -n -x
+    fi
     ;;
   tun)
+    tun_deadline=$((SECONDS + ${SINGBOX_TUN_READY_TIMEOUT_SECONDS:-30}))
     until ip link show "$TUN_IFACE" >/dev/null 2>&1; do
+      if (( SECONDS >= tun_deadline )); then
+        echo "timed out waiting for sing-box tun interface $TUN_IFACE" >&2
+        exit 1
+      fi
       sleep 0.2
     done
-    run ip route replace default via "$TUN_PEER" dev "$TUN_IFACE" table "$TUN_TABLE"
+    # Route OpenVPN client packets into sing-box's userspace TUN.  Use a
+    # link-scope route instead of an explicit peer gateway; forwarded packets
+    # arriving from OpenVPN tun0 were observed to ignore the policy table and
+    # leak out Docker eth0 when the route was `via $TUN_PEER dev $TUN_IFACE`.
+    run ip route replace default dev "$TUN_IFACE" table "$TUN_TABLE"
     if ! ip rule show | grep -q "from $OVPN_CIDR lookup $TUN_TABLE"; then
       run ip rule add from "$OVPN_CIDR" table "$TUN_TABLE" priority 1000
     fi

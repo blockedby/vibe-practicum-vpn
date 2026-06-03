@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.json}
+VPNKIT_ROUTING_MODE=${VPNKIT_ROUTING_MODE:-redirect}
 SINGBOX_CONFIG=${SINGBOX_CONFIG:-/var/lib/vpnkit/sing-box/config.json}
 SINGBOX_RESTART_FILE=${SINGBOX_RESTART_FILE:-/run/vpnkit/restart-sing-box}
 OPENVPN_CONFIG=${OPENVPN_CONFIG:-/etc/openvpn/server.conf}
 VIBE_VPN_CONFIG=${VIBE_VPN_CONFIG:-/etc/vibe-vpn/config.yaml}
 VPNKIT_ENABLE_VIBE_VPN_DAEMON=${VPNKIT_ENABLE_VIBE_VPN_DAEMON:-false}
+
+case "$VPNKIT_ROUTING_MODE" in
+  tproxy)
+    SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.tproxy.json}
+    ;;
+  tun)
+    SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.tun.json}
+    ;;
+  redirect)
+    SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.json}
+    ;;
+  *)
+    echo "unsupported VPNKIT_ROUTING_MODE=$VPNKIT_ROUTING_MODE (expected redirect, tun, or tproxy)" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! -r "$SINGBOX_SOURCE_CONFIG" ]]; then
   echo "missing sing-box source config: $SINGBOX_SOURCE_CONFIG" >&2
@@ -18,9 +34,7 @@ if [[ ! -r "$OPENVPN_CONFIG" ]]; then
 fi
 
 mkdir -p "$(dirname "$SINGBOX_CONFIG")" "$(dirname "$SINGBOX_RESTART_FILE")"
-if [[ ! -f "$SINGBOX_CONFIG" ]]; then
-  cp "$SINGBOX_SOURCE_CONFIG" "$SINGBOX_CONFIG"
-fi
+cp "$SINGBOX_SOURCE_CONFIG" "$SINGBOX_CONFIG"
 
 sing-box check -c "$SINGBOX_CONFIG"
 SINGBOX_PID=""
@@ -34,21 +48,56 @@ start_singbox() {
   echo "started sing-box pid=$SINGBOX_PID config=$SINGBOX_CONFIG"
 }
 
+singbox_is_running() {
+  if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
+    echo "sing-box exited before readiness signal became ready" >&2
+    wait "$SINGBOX_PID"
+  fi
+}
+
 wait_for_singbox_inbounds() {
   local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
   until ss -ltn sport = :2082 | grep -q ':2082' \
     && ss -lun sport = :5353 | grep -q ':5353'; do
-    if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
-      echo "sing-box exited before inbounds became ready" >&2
-      wait "$SINGBOX_PID"
-    fi
+    singbox_is_running
     if (( SECONDS >= deadline )); then
-      echo "timed out waiting for sing-box inbounds on tcp/2082 and udp/5353" >&2
+      echo "timed out waiting for sing-box redirect inbounds on tcp/2082 and udp/5353" >&2
       return 1
     fi
     sleep 0.2
   done
-  echo "sing-box inbounds ready"
+  echo "sing-box inbounds ready for redirect mode"
+}
+
+wait_for_singbox_tproxy_inbounds() {
+  local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
+  until ss -ltn sport = :2082 | grep -q ':2082' \
+    && ss -lun sport = :2082 | grep -q ':2082' \
+    && ss -ltn sport = :2083 | grep -q ':2083' \
+    && ss -lun sport = :5353 | grep -q ':5353'; do
+    singbox_is_running
+    if (( SECONDS >= deadline )); then
+      echo "timed out waiting for sing-box tproxy inbounds on tcp/2082, udp/2082, tcp/2083, and udp/5353" >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+  echo "sing-box inbounds ready for tproxy mode"
+}
+
+wait_for_singbox_tun() {
+  local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
+  until ip link show sb-tun0 >/dev/null 2>&1 \
+    && ip -4 addr show dev sb-tun0 2>/dev/null | grep -q '172[.]19[.]0[.]1/30' \
+    && ss -lun sport = :53 | grep -q ':53'; do
+    singbox_is_running
+    if (( SECONDS >= deadline )); then
+      echo "timed out waiting for sing-box tun interface sb-tun0 with 172.19.0.1/30 and udp/53" >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+  echo "sing-box tun interface ready for tun mode"
 }
 
 restart_singbox() {
@@ -67,7 +116,11 @@ cleanup() {
 trap cleanup INT TERM EXIT
 
 start_singbox
-wait_for_singbox_inbounds
+case "$VPNKIT_ROUTING_MODE" in
+  tproxy) wait_for_singbox_tproxy_inbounds ;;
+  tun) wait_for_singbox_tun ;;
+  redirect) wait_for_singbox_inbounds ;;
+esac
 
 openvpn --config "$OPENVPN_CONFIG" &
 OVPN_PID=$!
