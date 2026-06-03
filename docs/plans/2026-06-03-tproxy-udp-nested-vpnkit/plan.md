@@ -69,3 +69,5 @@ Executor:
 
 - 2026-06-03: Root worktree created at `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/vpnkit-tproxy-udp-nested` on branch `vpnkit-tproxy-udp-nested` from `main`.
 - 2026-06-03: Root task package initialized.
+
+- 2026-06-03: Draft PR opened: https://github.com/blockedby/vibe-practicum-vpn/pull/18.
