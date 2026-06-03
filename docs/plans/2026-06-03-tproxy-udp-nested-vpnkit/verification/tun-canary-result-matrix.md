@@ -37,3 +37,27 @@ Only the isolated local Docker lab stage was run in this implementer continuatio
 
 - This matrix is partial Task 6 evidence, not a full staged-validation acceptance claim.
 - No generated profile, rendered config content, private endpoint value, raw log, or secret was committed or printed here.
+
+## 2026-06-03 operator continuation: public UDP echo reprobe
+
+After interrupting the stalled live-validation wrapper, the isolated TUN server resources on `vibe-practicum` were still running on `21631/udp` and the moscow echo endpoint was re-tested with a Python UDP client from a local disposable OpenVPN client container.
+
+Sanitized evidence:
+
+```text
+outer client tunnel: inet 10.89.0.2/24 on tun0
+route to public echo endpoint: via 10.89.0.1 dev tun0 src 10.89.0.2
+UDP_ECHO_OK: echo response received from public echo endpoint
+public echo container observed datagram from 45.12.74.211:<ephemeral-port>
+```
+
+Interpretation:
+- sing-box TUN mode did forward public non-DNS UDP out of the isolated `vibe-practicum` vpnkit container and returned the UDP echo response to the OpenVPN client.
+- The earlier `PUBLIC_UDP_ECHO_TIMEOUT` in the interrupted wrapper was a harness/client limitation, not a confirmed TUN-mode UDP failure.
+- This updates the public non-DNS UDP status for TUN mode from unknown/timeout to pass for local-host client -> isolated `vibe-practicum` TUN server -> public echo endpoint.
+
+## Cleanup continuation status
+
+After the operator continuation:
+- `vibe-practicum` isolated TUN compose projects/containers/networks for `21631/udp` and `21632/udp` were removed; a post-cleanup check showed no matching isolated TUN containers/networks and production `vpnkit` still running.
+- `moscow-tiger` cleanup command removed the known isolated echo container/temp path (`vpnkit-tun-echo-tun21631` and `/tmp/vpnkit_tun21631_moscow`). A final post-cleanup listing attempt later hit an SSH port 22 timeout, so one additional moscow recheck is pending when SSH is reachable again.

@@ -1,5 +1,5 @@
-PI_RESULT: PASS
-TASK: Task 6 - TUN canary staged validation and recommendation (partial local-only continuation)
+PI_RESULT: PASS_WITH_FOLLOWUP
+TASK: Task 6 - TUN canary staged validation and recommendation (local + operator live continuation)
 TASK_PACKAGE: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit
 REPORT_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-tun-canary-validation.md
 PROGRESS_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-tun-canary-validation.md
@@ -11,8 +11,8 @@ FILES_CHANGED:
 AC_VERIFICATION:
 - Local Docker lab baseline in TUN mode: isolated Compose project `vpnkit_tun_canary_lab_21510` on `21510/udp`; OpenVPN client connected, UDP DNS returned `NOERROR`, HTTPS hostname returned `200`, literal-IP HTTPS returned `200` — passed.
 - Local TUN runtime evidence: `sb-tun0` had `172.19.0.1/30`, policy rule `from 10.89.0.0/24 lookup 101`, table 101 default via `172.19.0.2 dev sb-tun0`, RX/TX packet counters incremented, and redirect/tproxy capture chains were absent — passed.
-- Local public non-DNS UDP echo: not run in this continuation; only UDP DNS baseline was proven — not run.
-- Live same-host/different-host/nested validation: not run; no live-host mutation attempted — not run.
+- Local public non-DNS UDP echo: operator continuation reprobed against the isolated vibe-practicum TUN server and public moscow echo endpoint using a Python UDP client; route used `tun0` and echo response was received — passed for local-client/vibe-server/public-echo topology.
+- Live same-host/different-host/nested validation: live wrapper started isolated resources; outer baseline HTTPS/literal passed, but inner nested timed out before wrapper stopped on a shell quoting bug. Full moscow-client TUN validation was not completed before interrupt. Isolated vibe resources were cleaned; known moscow echo cleanup command was issued, with final moscow recheck pending due SSH timeout.
 - Cleanup: `docker compose -p vpnkit_tun_canary_lab_21510 down -v --remove-orphans`; final checks found no matching containers/networks — passed.
 - Production untouched: no production containers, live hosts, or Steam Deck were mutated — passed.
 TESTS_RUN:
@@ -38,4 +38,4 @@ QUALITY_NOTES:
 SIDE_FINDINGS:
 - Blocking: full render from source is blocked locally by missing gitignored PKI source files, though existing rendered OpenVPN/client configs were enough for local lab.
 - Non-blocking follow-up candidates: complete Task 6 live same-host/different-host/nested validation and public non-DNS UDP echo with owner-approved isolated resources.
-NOTES: Partial Task 6 local canary evidence is positive. This is not a full staged-validation acceptance claim because public non-DNS UDP echo, live, and nested stages were not run.
+NOTES: TUN-mode evidence is now stronger than the original partial report: local lab baseline passed, and operator continuation proved public non-DNS UDP echo through an isolated vibe-practicum TUN server. Full moscow-client/nested TUN validation remains follow-up; final moscow cleanup recheck is pending due transient SSH timeout.
