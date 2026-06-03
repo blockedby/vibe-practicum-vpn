@@ -1,76 +1,90 @@
-# Slice owner report: AC2 inner/nested TPROXY/UDP validation
+# Slice owner report: non-DNS UDP TPROXY forwarding continuation
 
 ## Task
-- Mission: close or concretely block AC2 full inner VPN-over-VPN validation.
-- Target: isolated vpnkit outer/inner servers on vibe-practicum plus isolated nested client on moscow-tiger.
+- Mission: fix non-DNS UDP TPROXY forwarding for nested OpenVPN handshakes.
+- Target: sing-box tproxy routing/template and vpnkit isolated validation.
 - Boundaries: no production container mutation, no Steam Deck, no generated profiles/logs/secrets/private endpoint values committed or reported.
-- Done when: full inner OpenVPN-over-OpenVPN passes, or a concrete blocker is proven after a real isolated attempt.
+- Done when: inner OpenVPN-over-OpenVPN passes, or safe continuation stops on a concrete external/safety blocker.
 
 ## Context
-- Slice: AC2 full inner VPN-over-VPN validation.
+- Slice: Fix non-DNS UDP TPROXY forwarding so inner OpenVPN-over-OpenVPN succeeds.
 - Task package: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit`.
 - Worktree/branch: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/vpnkit-tproxy-udp-nested` / `vpnkit-tproxy-udp-nested`.
 - PR: https://github.com/blockedby/vibe-practicum-vpn/pull/18.
-- Verification artifacts: `verification/live-isolated.md`, `verification/inner-nested.md`.
+- Verification artifacts: `verification/inner-nested.md`, `verification/tproxy-udp-debug-2026-06-03-nondns.md`.
 
 ## Spec compliance
-- Focused inner validation attempt: done; ran an actual nested harness rather than relying on the prior one-profile limitation alone.
-- Isolated resources only: done; outer `vpnkit_tproxy_nested_outer_21202` on `21202/udp`, inner `vpnkit_tproxy_nested_inner_21203` on `21203/udp`, client `vpnkit_tproxy_nested_moscow_client_21202_21203`.
-- Inner routed through outer: done; client route to the inner endpoint after outer tunnel establishment showed `dev tun0`.
-- Full inner VPN-over-VPN: blocked; inner `tun1` did not establish.
-- UDP path evidence: partial/blocking; outer non-DNS UDP TPROXY rule incremented `9` packets / `738` bytes during the inner OpenVPN attempt, but the inner server accepted no OpenVPN client.
-- Production untouched: done; production `vpnkit` stayed running with restart count `0` and unchanged start time before/after.
-- Cleanup: done; isolated containers/projects/volumes/networks/temp paths removed.
-- Secrets safety: done; endpoints/profile contents/logs remain untracked and sanitized.
+- Non-DNS UDP route defect: resolved in code for the identified sing-box route policy risk. TPROXY UDP traffic now bypasses sniffing and routes directly to `selected-native-out`, avoiding protocol sniff delay/consumption on opaque UDP such as OpenVPN handshakes.
+- Default redirect mode unchanged: done; only `config/sing-box/config.tproxy.json.template` and its template test changed.
+- Local tproxy DNS/TCP smoke preserved: done; isolated Docker lab project `vpnkit_tproxy_udp_nested_lab2` on `21196/udp` passed OpenVPN connect, UDP DNS, HTTPS hostname, and literal-IP HTTPS.
+- Full live nested validation: not rerun; local private endpoint file currently contains placeholder SSH host data for the VPS alias, so live-host mutation/validation is unsafe and blocked before any remote changes.
+- Production untouched: done for this continuation; no production containers were touched locally or remotely.
+- Secrets safety: done; no private values/profile/log contents recorded.
 
 ## Acceptance verification
-- AC2 full inner VPN-over-VPN:
-  - Covered by: isolated nested harness with outer OpenVPN active, inner endpoint routed via outer `tun0`, and second OpenVPN client attempt on `tun1` to a second isolated server.
+- AC1 / tproxy runtime wiring:
+  - Covered by: `bash tests/vpnkit-singbox-template-test.sh`; `sing-box check` on rendered tproxy config.
+  - Result: passed.
+  - Evidence: template test printed `vpnkit sing-box templates ok`; `sing-box check` exited 0 with deprecation warnings only.
+- AC2 / nested VPN-over-VPN:
+  - Covered by: pending live nested rerun after endpoint access is valid.
   - Result: blocked.
-  - Evidence: `verification/inner-nested.md`; outer came up, inner route used `tun0`, outer UDP TPROXY counter incremented, but `tun1` never appeared and inner server showed no client acceptance.
-- AC7 reporting/cleanup/production untouched:
-  - Covered by: `verification/inner-nested.md` resource list, cleanup status, production metadata.
+  - Evidence: `config/private-endpoints.local.env` loaded but `ssh` to configured VPS alias failed because it is still placeholder/unresolvable; no live test was attempted.
+- AC3 / default production mode remains unchanged:
+  - Covered by: diff review; redirect template untouched.
   - Result: passed.
-  - Evidence: production `vpnkit` metadata unchanged before/after/after-cleanup; all isolated resources removed.
-- AC8 no secrets committed/revealed:
-  - Covered by: sanitized verification docs and git status review before commit.
+  - Evidence: changes are limited to tproxy template/test plus task-package docs.
+- AC4 / local Docker lab before live mutation:
+  - Covered by: isolated project `vpnkit_tproxy_udp_nested_lab2`.
   - Result: passed.
-  - Evidence: no profile/log/private env contents are tracked or included.
+  - Evidence: OpenVPN connected; UDP DNS `NOERROR`; HTTPS hostname `200`; literal-IP HTTPS `200`; cleanup removed project containers/volumes/network.
+- AC7/AC8 / reporting and public safety:
+  - Covered by: this report and verification artifact.
+  - Result: passed for local continuation; live exact names not allocated because blocked before live start.
 
 ## System readiness
-- Runtime / deployment wiring: not final-ready for full nested UDP OpenVPN claim; outer UDP smoke remains validated, but non-DNS UDP TPROXY did not carry an inner OpenVPN handshake in the nested harness.
-- Config / env / secrets: private inputs used only locally; no tracked secret changes.
-- Production safety: production untouched by evidence.
+- Runtime / deployment wiring: partially ready; local tproxy smoke and config checks pass, but full live nested AC2 remains unproven after the new fix.
+- Config / env / secrets: blocked for live validation by placeholder/unresolvable VPS SSH host in gitignored local endpoint file.
+- Production safety: production untouched; no remote Docker commands succeeded or mutated state.
 
 ## Verification run
-- Live targeted checks:
-  - Outer isolated OpenVPN tunnel from moscow-tiger to vibe-practicum `21202/udp`: passed (`OUTER_UP`).
-  - Route to inner endpoint while outer tunnel was active: passed (`dev tun0`).
-  - Inner OpenVPN tunnel over outer to isolated server `21203/udp`: failed/blocked (`tun1` absent).
-  - Outer non-DNS UDP TPROXY rule during inner attempt: observed (`9` packets / `738` bytes).
-  - Cleanup and production metadata: passed.
-- Local automated checks: not rerun; this continuation changed task-package docs only.
-- Remote checks / CI: branch push pending in this continuation.
+- Local checks:
+  - `bash tests/vpnkit-singbox-template-test.sh` — PASS.
+  - `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh` — PASS.
+  - `go test ./...` — PASS.
+  - `go vet ./...` — PASS.
+  - `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn` — PASS.
+  - Rendered tproxy `sing-box check` — PASS with deprecation warnings only.
+- Local Docker lab:
+  - `vpnkit_tproxy_udp_nested_lab2` on `21196/udp` — PASS for OpenVPN, UDP DNS, HTTPS hostname, literal-IP HTTPS; cleanup done.
+- Live validation:
+  - Not run; endpoint SSH host from local private env is placeholder/unresolvable.
+- Remote checks / CI:
+  - Push pending after this report update.
 
 ## Issues
-### U-1: Full inner OpenVPN-over-OpenVPN blocked by non-DNS UDP TPROXY transport
-- Description: A real nested attempt routed the inner OpenVPN UDP transport through the established outer tunnel, but the inner OpenVPN handshake did not complete.
-- Evidence: `ip route get <inner-endpoint>` showed `dev tun0`; outer server non-DNS UDP TPROXY counter incremented `9` packets / `738` bytes; inner `tun1` never appeared; inner server had no accepted client session.
-- Why unresolved: safe continuation now requires debugging/fixing non-DNS UDP TPROXY forwarding semantics for OpenVPN handshake traffic, not merely rerunning the available profile.
-- Needed next: inspect sing-box tproxy UDP handling and route/outbound policy for arbitrary UDP, add targeted harness/tests for non-DNS UDP over TPROXY, then rerun the nested validation.
+### R-1: Opaque/non-DNS UDP was sent through sniffing before routing
+- Description: The tproxy route policy sniffed `vpnkit-tproxy-in` traffic before routing. For opaque UDP such as OpenVPN, sniffing is unnecessary and can delay or consume first packets before outbound association.
+- Evidence: Previous nested failure had packets reaching the tproxy rule but not the inner server; route policy had no UDP-specific route before the sniff rule.
+- Resolution: Added a tproxy inbound UDP route rule before sniffing: `{ "inbound": "vpnkit-tproxy-in", "network": "udp", "action": "route", "outbound": "selected-native-out" }`; added template assertion for rule presence/order.
+
+### U-1: Full live inner OpenVPN-over-OpenVPN rerun blocked by invalid local endpoint config
+- Description: The new code path has not been proven by isolated live nested validation because the gitignored private endpoint file available in this worktree currently points the VPS SSH host to an unresolved placeholder alias.
+- Evidence: After sourcing `config/private-endpoints.local.env` without printing values, `ssh -o BatchMode=yes -o ConnectTimeout=5 "$VPNKIT_VPS_SSH_HOST" ...` failed with unresolved placeholder hostname; no live Docker mutation was attempted.
+- Why unresolved: live validation requires valid private endpoint/SSH values, and using placeholders would violate the approved live-test safety path.
+- Needed next: provide/fix the local private endpoint file or run from an environment where `VPNKIT_VPS_SSH_HOST` and the remote client host are valid, then rerun the isolated nested harness.
 
 ## Side findings
-- No non-blocking follow-up issues were created; U-1 is a current-goal blocker for AC2 closure.
+- No non-blocking follow-up issues were created.
 
 ## Verdict
-- Status: blocked.
-- Goal state: AC2 full inner VPN-over-VPN not achieved.
-- Final readiness: not ready for a full nested OpenVPN-over-OpenVPN support claim; ready only for the previously proven outer UDP smoke scope.
-- Summary: The slice made a concrete isolated inner validation attempt and proved the inner OpenVPN packets reached the outer non-DNS UDP TPROXY path, but the inner tunnel did not establish.
+- Status: blocked after scoped fix and local verification.
+- Goal state: partially achieved; code/config fix is in place and local tproxy smoke passes, but AC2 full inner VPN-over-OpenVPN remains unverified live due to endpoint access blocker.
+- Final readiness: not ready for merge as a proven nested OpenVPN-over-OpenVPN support claim.
 
 ## Next-agent brief
-- Objective: fix or explain non-DNS UDP TPROXY forwarding for OpenVPN handshake traffic, then rerun isolated nested validation.
-- Target: `docker/vpnkit/setup-routing.sh`, sing-box tproxy template/route/outbound policy, and isolated nested harness.
-- Settled already: local and live outer UDP smoke pass; inner route via outer can be achieved with distinct endpoint spelling; production must remain untouched.
-- Boundaries: no production mutation, no Steam Deck, all generated profiles/logs/endpoints stay private and temporary.
-- Verification target: outer `tun0` active, route to inner endpoint via `tun0`, inner `tun1` active, UDP DNS/HTTPS through inner, counters/listeners captured, cleanup complete.
+- Objective: rerun isolated live nested validation after private endpoint config is corrected.
+- Target: PR #18 branch `vpnkit-tproxy-udp-nested`; verify `config/sing-box/config.tproxy.json.template` UDP pre-sniff route carries inner OpenVPN handshakes.
+- Settled already: automated checks pass; local Docker tproxy smoke passes; production must remain untouched.
+- Boundaries: no production containers, no Steam Deck, isolated names/ports/resources only, no secrets/log/profile contents in tracked artifacts.
+- Verification target: outer `tun0` active, route to inner endpoint via `tun0`, inner `tun1` active, UDP DNS/HTTPS through inner where feasible, counters/listeners captured, cleanup complete.

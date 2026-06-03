@@ -38,6 +38,10 @@ assert tproxy_in['vpnkit-dns-in']['type'] == 'direct'
 assert tproxy_in['vpnkit-dns-in']['listen_port'] == 5353
 
 rules = tproxy['route']['rules']
+udp_route = [rule for rule in rules if rule.get('inbound') == 'vpnkit-tproxy-in' and rule.get('network') == 'udp'][0]
+assert udp_route['action'] == 'route'
+assert udp_route['outbound'] == 'selected-native-out'
+assert rules.index(udp_route) < next(i for i, rule in enumerate(rules) if rule.get('action') == 'sniff')
 sniff = [rule for rule in rules if rule.get('action') == 'sniff'][0]
 assert 'vpnkit-tproxy-in' in sniff['inbound']
 assert 'vpnkit-redirect-in' in sniff['inbound']

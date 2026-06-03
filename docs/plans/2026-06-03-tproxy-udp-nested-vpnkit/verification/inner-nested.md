@@ -69,3 +69,21 @@ No production container was restarted, recreated, adopted, or mutated.
 - Removed inner isolated server project `vpnkit_tproxy_nested_inner_21203`, containers, volumes, and network.
 - Removed vibe-practicum temp path `/tmp/vpnkit_tproxy_nested_21202_21203`.
 - Nothing retained intentionally.
+
+## 2026-06-03 continuation after UDP pre-sniff route fix
+
+Code/config change:
+- Added a tproxy-route rule for `vpnkit-tproxy-in` UDP before the sniff rule in `config/sing-box/config.tproxy.json.template`.
+- This is intended to route opaque UDP/OpenVPN handshake packets directly to `selected-native-out` without waiting for or consuming protocol sniffing.
+
+Fresh local evidence:
+- Automated checks passed; see `verification/tproxy-udp-debug-2026-06-03-nondns.md`.
+- Isolated local Docker tproxy smoke project `vpnkit_tproxy_udp_nested_lab2` on `21196/udp` passed OpenVPN connect, UDP DNS, HTTPS hostname, and literal-IP HTTPS, then cleanup removed containers/volumes/network.
+
+Live nested rerun status:
+- BLOCKED before live mutation. The available gitignored `config/private-endpoints.local.env` in this worktree currently provides an unresolved placeholder VPS SSH alias and lacks a remote client host value.
+- Because valid private endpoint/SSH values are required for the approved isolated live-host staging, no live nested server/client containers were created and no production containers were touched.
+
+Current AC2 status:
+- The previous nested failure remains the latest live nested evidence.
+- The code fix is ready for a fresh isolated live nested rerun once valid private endpoint values are available.
