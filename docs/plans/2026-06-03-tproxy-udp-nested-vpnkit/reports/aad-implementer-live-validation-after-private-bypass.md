@@ -5,7 +5,7 @@ REPORT_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implemen
 PROGRESS_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-live-validation-after-private-bypass.md
 COMMITS:
 - 262eb8a: docs: record live tproxy udp validation
-- pending: final report commit metadata update
+- 478617e: docs: finalize live validation report
 FILES_CHANGED:
 - docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/live-validation-after-private-bypass.md: sanitized live validation evidence, pass/fail matrix, cleanup status, and public/private UDP distinction.
 - docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-live-validation-after-private-bypass.md: implementation report.
