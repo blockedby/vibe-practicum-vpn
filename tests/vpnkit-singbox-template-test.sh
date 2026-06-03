@@ -72,5 +72,7 @@ assert 'sb-tun0' in entrypoint
 render_script = (root / 'scripts/vpnkit-render-local-configs.sh').read_text()
 assert 'config.tun.json.template' in render_script
 assert 'config.tun.json' in render_script
+assert 'packet_encoding' in render_script
+assert 'xudp' in render_script
 print('vpnkit sing-box templates ok')
 PY

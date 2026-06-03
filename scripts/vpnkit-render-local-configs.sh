@@ -24,14 +24,22 @@ if server:
         # TLS/SNI settings untouched; only the dial address is pre-resolved during
         # local secret rendering, and the rendered files remain gitignored.
         selected['server']=socket.getaddrinfo(server, selected.get('server_port', 443), socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+selected_tun=dict(selected)
+# sing-box VLESS requires explicit UDP packet encoding for opaque UDP flows
+# (for example nested OpenVPN/WireGuard or NTP) to work through the selected
+# outbound in TUN mode. Redirect/TProxy keep the rendered selected outbound
+# unchanged; only TUN needs this UDP transport hint.
+if selected_tun.get('type') == 'vless':
+    selected_tun.setdefault('packet_encoding', 'xudp')
 rendered = json.dumps(selected, indent=4)
+rendered_tun = json.dumps(selected_tun, indent=4)
 outputs = [
-    (redirect_tmpl, pathlib.Path(out_dir) / 'config.json'),
-    (tproxy_tmpl, pathlib.Path(out_dir) / 'config.tproxy.json'),
-    (tun_tmpl, pathlib.Path(out_dir) / 'config.tun.json'),
+    (redirect_tmpl, pathlib.Path(out_dir) / 'config.json', rendered),
+    (tproxy_tmpl, pathlib.Path(out_dir) / 'config.tproxy.json', rendered),
+    (tun_tmpl, pathlib.Path(out_dir) / 'config.tun.json', rendered_tun),
 ]
-for tmpl, out in outputs:
-    text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', rendered)
+for tmpl, out, selected_json in outputs:
+    text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', selected_json)
     out.write_text(text)
 PY
 python3 - "$BASE/openvpn/pki" config/openvpn/test-client.ovpn.template "$BASE/openvpn/client/test-client.ovpn" <<'PY'
