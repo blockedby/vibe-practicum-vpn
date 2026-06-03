@@ -65,9 +65,100 @@ Dependencies:
 Executor:
 - `aad-slice-owner`
 
+## Plan tasks
+
+### Task 1: Mode-aware vpnkit sing-box TPROXY runtime config
+
+Goal:
+- Make `VPNKIT_ROUTING_MODE=tproxy` use a sing-box inbound set that can receive transparent TCP/UDP packets on the routing port, while `redirect` default behavior remains unchanged.
+
+Boundary:
+- System area: vpnkit container entrypoint/config rendering/readiness.
+- Primary verification: targeted shell/template tests plus `sing-box check` where available.
+
+Existing pattern / reuse:
+- `config/sing-box/config.json.template` currently provides redirect DNS/SOCKS inbounds and reusable route/outbound structure.
+- `docker/vpnkit/entrypoint.sh` copies the source config into `/var/lib/vpnkit/sing-box/config.json` and waits for fixed inbounds.
+- `docker/vpnkit/setup-routing.sh` already installs TCP and UDP TPROXY mangle rules when `VPNKIT_ROUTING_MODE=tproxy`.
+
+Missing change:
+- Add mode-specific sing-box config/readiness so the tproxy routing rules match an actual sing-box `tproxy` inbound, without changing the default `redirect` config.
+
+Scope / likely files:
+- `config/sing-box/` templates or mode-specific config files.
+- `docker/vpnkit/entrypoint.sh`.
+- tests under existing shell/Go test patterns as appropriate.
+
+Acceptance criteria:
+- Redirect/default config remains available and defaults to existing redirect mode.
+- TPROXY mode produces/checks a config with TCP+UDP transparent inbound on port 2082 and DNS handling compatible with existing route rules.
+- Readiness waits for the correct inbound(s) in each mode.
+
+Test plan:
+- Positive: mode-specific render/check or unit test for redirect and tproxy config/inbound names/types/ports.
+- Positive: `bash -n docker/vpnkit/*.sh scripts/*.sh` if shell touched.
+- Positive: `go test ./...` if Go tests added/changed.
+- Manual/lab: container startup in local Docker lab after implementation.
+
+Dependencies:
+- Depends on: none.
+- Blocks: Task 2 and staged validation.
+- Can run parallel with: none.
+
+Executor:
+- `aad-implementer`.
+
+### Task 2: Local/staged validation support and evidence
+
+Goal:
+- Validate the implemented tproxy/UDP path in local Docker lab first, then only proceed to isolated approved live-host tests if safe inputs are available.
+
+Boundary:
+- System area: validation commands, docs/scripts needed for safe isolated Docker lab/live tests.
+- Primary verification: sanitized verification artifacts in `verification/slice.md` and final report.
+
+Existing pattern / reuse:
+- `docs/DOCKER_SETUP.md` Docker lab workflow.
+- `docker/ovpn-client-test/run-tests.sh` for client-side DNS/HTTPS smoke checks.
+- repo public-safety rules for private endpoints and production-container boundaries.
+
+Missing change:
+- Add/update reusable docs/scripts only if needed to run isolated tproxy validation safely.
+- Capture sanitized local lab and live-test evidence, including exact isolated names/ports/state paths and cleanup.
+
+Acceptance criteria:
+- Local Docker lab passes before any live-host mutation.
+- Live tests stop if `config/private-endpoints.local.env` is unavailable or local lab fails.
+- Production containers are not mutated; before/after safe metadata supports this.
+
+Test plan:
+- Positive: repo checks (`go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, relevant `bash -n`).
+- Positive: local Docker lab with isolated project/container/port/state.
+- Manual/live: vibe-practicum isolated test server/client-test, then moscow-tiger isolated client-test if eligible.
+- Negative/blocker: record concrete blocker if Docker/live prerequisites are absent.
+
+Dependencies:
+- Depends on: Task 1 local implementation passes.
+- Blocks: final slice verdict.
+- Can run parallel with: none.
+
+Executor:
+- `aad-slice-owner` coordinating after implementer report; may delegate narrow audit if evidence needs independent check.
+
+## Dependency graph
+
+- Wave 1: Task 1 to `aad-implementer`.
+- Wave 2: owner integrates Task 1 report, runs fresh repo checks and local Docker lab.
+- Wave 3: approved isolated live tests only after local lab passes and private endpoint env is present.
+- Wave 4: final report/ledger update and push to PR #18; no merge.
+
 ## Execution ledger
 
 - 2026-06-03: Root worktree created at `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/vpnkit-tproxy-udp-nested` on branch `vpnkit-tproxy-udp-nested` from `main`.
 - 2026-06-03: Root task package initialized.
-
 - 2026-06-03: Draft PR opened: https://github.com/blockedby/vibe-practicum-vpn/pull/18.
+- 2026-06-03: Slice owner refined execution plan. Pre-dispatch gate passed for Task 1: intake/boundaries/repo orientation/reuse/missing pieces/tasks/dependencies are recorded above.
+- 2026-06-03: Attempted to delegate Task 1 to `aad-implementer`; pi-subagents blocked nested call at max depth, so slice owner implemented scoped Task 1 changes directly.
+- 2026-06-03: Added tproxy sing-box template, mode-aware entrypoint config selection/readiness, render support, and template tests. Automated checks passed: `bash tests/vpnkit-singbox-template-test.sh`, `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh`, `sing-box check` on dummy rendered redirect/tproxy configs, `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`.
+- 2026-06-03: Local Docker lab attempted with isolated project `vpnkit_tproxy_udp_nested_lab`, port `21194/udp`, generated gitignored local lab secrets under `secrets/`. Result: container/listeners/rules start; OpenVPN client connects; UDP DNS through tunnel times out even though UDP TPROXY mangle counter increments. Current-goal blocker U-1 recorded in `verification/slice.md` and owner report. No live tests attempted.
+- 2026-06-03: Cleanup completed for isolated lab via `docker compose -p vpnkit_tproxy_udp_nested_lab down -v --remove-orphans`; no lab containers remained. Existing non-slice containers were not touched.

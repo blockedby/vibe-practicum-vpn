@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.json}
+VPNKIT_ROUTING_MODE=${VPNKIT_ROUTING_MODE:-redirect}
 SINGBOX_CONFIG=${SINGBOX_CONFIG:-/var/lib/vpnkit/sing-box/config.json}
 SINGBOX_RESTART_FILE=${SINGBOX_RESTART_FILE:-/run/vpnkit/restart-sing-box}
 OPENVPN_CONFIG=${OPENVPN_CONFIG:-/etc/openvpn/server.conf}
 VIBE_VPN_CONFIG=${VIBE_VPN_CONFIG:-/etc/vibe-vpn/config.yaml}
 VPNKIT_ENABLE_VIBE_VPN_DAEMON=${VPNKIT_ENABLE_VIBE_VPN_DAEMON:-false}
+
+case "$VPNKIT_ROUTING_MODE" in
+  tproxy)
+    SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.tproxy.json}
+    ;;
+  redirect|tun)
+    SINGBOX_SOURCE_CONFIG=${SINGBOX_SOURCE_CONFIG:-/etc/sing-box/config.json}
+    ;;
+  *)
+    echo "unsupported VPNKIT_ROUTING_MODE=$VPNKIT_ROUTING_MODE (expected redirect, tun, or tproxy)" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! -r "$SINGBOX_SOURCE_CONFIG" ]]; then
   echo "missing sing-box source config: $SINGBOX_SOURCE_CONFIG" >&2
@@ -37,18 +50,23 @@ start_singbox() {
 wait_for_singbox_inbounds() {
   local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
   until ss -ltn sport = :2082 | grep -q ':2082' \
-    && ss -lun sport = :5353 | grep -q ':5353'; do
+    && ss -lun sport = :5353 | grep -q ':5353' \
+    && { [[ "$VPNKIT_ROUTING_MODE" != tproxy ]] || ss -lun sport = :2082 | grep -q ':2082'; }; do
     if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
       echo "sing-box exited before inbounds became ready" >&2
       wait "$SINGBOX_PID"
     fi
     if (( SECONDS >= deadline )); then
-      echo "timed out waiting for sing-box inbounds on tcp/2082 and udp/5353" >&2
+      if [[ "$VPNKIT_ROUTING_MODE" == tproxy ]]; then
+        echo "timed out waiting for sing-box tproxy inbounds on tcp/2082, udp/2082, and udp/5353" >&2
+      else
+        echo "timed out waiting for sing-box inbounds on tcp/2082 and udp/5353" >&2
+      fi
       return 1
     fi
     sleep 0.2
   done
-  echo "sing-box inbounds ready"
+  echo "sing-box inbounds ready for $VPNKIT_ROUTING_MODE mode"
 }
 
 restart_singbox() {

@@ -6,9 +6,9 @@ mkdir -p "$RENDERED/openvpn/pki" "$RENDERED/openvpn/ccd" "$RENDERED/sing-box" "$
 cp config/openvpn/server.tpl "$RENDERED/openvpn/server.conf"
 cp "$BASE/openvpn/pki/ca.crt" "$BASE/openvpn/pki/ta.key" "$BASE/openvpn/pki/vibe-asus.crt" "$BASE/openvpn/pki/vibe-asus.key" "$RENDERED/openvpn/pki/"
 cp "$BASE/openvpn/server/ccd-ignat" "$RENDERED/openvpn/ccd/ignat" 2>/dev/null || true
-python3 - "$BASE/sing-box/tproxy-canary.json" config/sing-box/config.json.template "$RENDERED/sing-box/config.json" <<'PY'
-import ipaddress, json, socket, sys
-src, tmpl, out = sys.argv[1:]
+python3 - "$BASE/sing-box/tproxy-canary.json" "$RENDERED/sing-box" config/sing-box/config.json.template config/sing-box/config.tproxy.json.template <<'PY'
+import ipaddress, json, pathlib, socket, sys
+src, out_dir, redirect_tmpl, tproxy_tmpl = sys.argv[1:]
 data=json.load(open(src))
 vless=[o for o in data.get('outbounds',[]) if o.get('tag')=='selected-native-out' and o.get('type')=='vless']
 if not vless:
@@ -22,10 +22,16 @@ if server:
         # Avoid a runtime bootstrap loop where sing-box must resolve its own VLESS
         # server through the VLESS outbound before the outbound is connected. Keep
         # TLS/SNI settings untouched; only the dial address is pre-resolved during
-        # local secret rendering, and the rendered file remains gitignored.
+        # local secret rendering, and the rendered files remain gitignored.
         selected['server']=socket.getaddrinfo(server, selected.get('server_port', 443), socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
-text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', json.dumps(selected, indent=4))
-open(out,'w').write(text)
+rendered = json.dumps(selected, indent=4)
+outputs = [
+    (redirect_tmpl, pathlib.Path(out_dir) / 'config.json'),
+    (tproxy_tmpl, pathlib.Path(out_dir) / 'config.tproxy.json'),
+]
+for tmpl, out in outputs:
+    text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', rendered)
+    out.write_text(text)
 PY
 python3 - "$BASE/openvpn/pki" config/openvpn/test-client.ovpn.template "$BASE/openvpn/client/test-client.ovpn" <<'PY'
 import pathlib, sys
@@ -67,10 +73,10 @@ fi
 if [[ -r "$BASE/vibe-vpn/example-extra-node-hy2-auth" ]]; then
   cp "$BASE/vibe-vpn/example-extra-node-hy2-auth" "$RENDERED/vibe-vpn/example-extra-node-hy2-auth"
 fi
-chmod 600 "$RENDERED/sing-box/config.json" "$BASE/openvpn/client/test-client.ovpn" "$RENDERED/vibe-vpn/config.yaml" "$RENDERED/vibe-vpn/extra-nodes.json"
+chmod 600 "$RENDERED/sing-box/config.json" "$RENDERED/sing-box/config.tproxy.json" "$BASE/openvpn/client/test-client.ovpn" "$RENDERED/vibe-vpn/config.yaml" "$RENDERED/vibe-vpn/extra-nodes.json"
 if [[ -f "$RENDERED/vibe-vpn/sub_url" ]]; then chmod 600 "$RENDERED/vibe-vpn/sub_url"; fi
 if [[ -f "$RENDERED/vibe-vpn/example-extra-node-hy2-auth" ]]; then chmod 600 "$RENDERED/vibe-vpn/example-extra-node-hy2-auth"; fi
-echo "Rendered $RENDERED/openvpn/server.conf, $RENDERED/sing-box/config.json, $RENDERED/vibe-vpn/config.yaml, and $BASE/openvpn/client/test-client.ovpn"
+echo "Rendered $RENDERED/openvpn/server.conf, $RENDERED/sing-box/config.json, $RENDERED/sing-box/config.tproxy.json, $RENDERED/vibe-vpn/config.yaml, and $BASE/openvpn/client/test-client.ovpn"
 if [[ ! -f "$RENDERED/vibe-vpn/sub_url" ]]; then
   echo "WARNING: missing vibe-vpn subscription input; see $RENDERED/vibe-vpn/README.missing-subscription" >&2
 fi
