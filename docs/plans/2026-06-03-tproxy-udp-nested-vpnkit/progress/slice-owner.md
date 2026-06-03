@@ -1,5 +1,7 @@
 # Slice owner progress
 
-- 2026-06-03: Read repo guidance and README; confirmed worktree/branch and PR #18.
-- 2026-06-03: Read plan and relevant vpnkit sing-box/routing files. Current mismatch: tproxy routing rules exist in `docker/vpnkit/setup-routing.sh`, but default sing-box template uses `redirect` inbound on port 2082; entrypoint readiness is fixed to TCP redirect+UDP DNS ports.
-- 2026-06-03: Updated plan with executable tasks and dependency graph. Dispatching Task 1 to aad-implementer.
+## 2026-06-03 continuation
+- Resumed slice in existing worktree/branch for PR #18.
+- Read repo guidance, README, plan, previous owner report, failure classifier report, and current runtime files.
+- Pre-dispatch gate: plan remains executable; U-1 is a current-goal CODE_BUG in local Docker lab UDP TPROXY runtime path. Scope remains isolated lab only until pass.
+- Delegating focused debug/fix to aad-implementer with report path `reports/aad-implementer-tproxy-udp-debug.md` and verification path `verification/tproxy-udp-debug.md`.

@@ -2,86 +2,84 @@
 
 ## Task
 
-Implement and validate vpnkit TPROXY/UDP nested-tunnel support without touching production containers.
+Continue and validate vpnkit TPROXY/UDP nested-tunnel runtime support after local Docker lab failure, without touching production containers.
 
 ## Context
 
 - Worktree: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/vpnkit-tproxy-udp-nested`
 - Branch: `vpnkit-tproxy-udp-nested`
 - PR: https://github.com/blockedby/vibe-practicum-vpn/pull/18
-- Slice stayed whole. Implementation delegation was attempted but blocked by subagent nesting depth, so the slice owner made the scoped implementation and validation attempt directly.
+- Slice stayed whole. Delegation was blocked by max subagent depth, so the slice owner made the scoped continuation fix directly.
 
 ## Spec compliance
 
-- Default production mode remains `redirect` (`docker-compose.yml` unchanged; entrypoint defaults to redirect config).
-- Added mode-aware tproxy sing-box config selection and readiness for TCP+UDP `2082`.
-- Added rendering support for a gitignored `config.tproxy.json` alongside the existing redirect `config.json`.
-- Added a template test that asserts redirect remains redirect-only and tproxy uses a `tproxy` inbound.
-- Local Docker lab was attempted before live testing. It did not pass; live tests were not attempted.
-- No secrets/profiles/logs/rendered configs/private endpoint values were committed or reported.
+- Default production mode remains `redirect`; `docker-compose.yml` remains defaulted to `VPNKIT_ROUTING_MODE:-redirect`.
+- TPROXY mode now starts sing-box with UDP tproxy listener `2082`, TCP redirect listener `2083`, DNS UDP listener `5353`, and SOCKS listener `2080`.
+- The local Docker lab now passes the existing tunnel smoke: OpenVPN connection, UDP DNS, HTTPS by hostname, and literal-IP HTTPS.
+- No live-host mutation was attempted because `config/private-endpoints.local.env` is absent after the local lab pass.
+- No generated profiles, secrets, logs, rendered configs, or private endpoint values are committed or reported.
 
 ## Files changed
 
-- `config/sing-box/config.tproxy.json.template` — new tproxy-mode sing-box template.
-- `docker/vpnkit/entrypoint.sh` — selects source config by `VPNKIT_ROUTING_MODE`; tproxy readiness waits for TCP/UDP `2082` plus DNS UDP `5353`.
-- `scripts/vpnkit-render-local-configs.sh` — renders both `config.json` and `config.tproxy.json` to gitignored rendered config dir.
-- `tests/vpnkit-singbox-template-test.sh` — validates mode-specific sing-box templates.
-- Task package plan/progress/verification/report files updated.
+- `config/sing-box/config.tproxy.json.template` — adds tproxy-mode TCP redirect inbound on `2083` while retaining UDP TPROXY inbound on `2082`.
+- `docker/vpnkit/entrypoint.sh` — refreshes runtime sing-box config from the selected source on startup and waits for tproxy-mode listeners including `2083`.
+- `docker/vpnkit/setup-routing.sh` — handles DNS via REDIRECT to `5353`, TCP via REDIRECT to `2083`, and keeps non-DNS UDP on TPROXY `2082` with an early fwmark rule.
+- `tests/vpnkit-singbox-template-test.sh` — covers the added tproxy-mode redirect inbound.
+- Task package verification/progress/report files updated.
 
 ## Acceptance verification matrix
 
 | AC | Status | Evidence |
 | --- | --- | --- |
-| AC1 TPROXY mode works | Blocked/partial | Config starts and listeners/rules are present, but tunneled UDP DNS times out in local lab. |
-| AC2 UDP/nested VPN-over-VPN validated | Blocked | UDP packet reaches TPROXY rule; no response. Inner/nested test not reached. |
-| AC3 Default production mode unchanged | Pass | Redirect template unchanged; compose default remains `VPNKIT_ROUTING_MODE:-redirect`; template test covers redirect inbound. |
-| AC4 Local Docker lab before live mutation | Pass for ordering, fail for result | Local lab attempted first and failed; no live mutation attempted. |
-| AC5 vibe-practicum isolated test | Not reached | Blocked by local lab failure and absent private endpoint env. |
-| AC6 moscow-tiger isolated client-test | Not reached | Blocked by AC5/local lab. |
-| AC7 Report exact tests/names/ports/cleanup | Pass | See `verification/slice.md`. |
-| AC8 No secrets committed/revealed | Pass | Git status shows `secrets/` ignored; reports use sanitized names only. |
+| AC1 TPROXY mode works | Partial/pass for local runtime gate | Local lab starts tproxy-mode listeners/rules and client smoke passes. Non-DNS UDP TPROXY rule remains installed; DNS/TCP use mode-specific REDIRECT special cases. |
+| AC2 UDP/nested VPN-over-VPN validated | Partial/blocked | UDP DNS through outer OpenVPN passes. Inner/live nested test not attempted because private endpoint env is absent. |
+| AC3 Default production mode unchanged | Pass | Compose default remains redirect; template test covers redirect and tproxy separately. |
+| AC4 Local Docker lab before live mutation | Pass | Local lab passed before any live action. |
+| AC5 vibe-practicum isolated test | Blocked | `config/private-endpoints.local.env` absent. |
+| AC6 moscow-tiger isolated client-test | Blocked | Depends on AC5/private endpoint env. |
+| AC7 Report exact tests/names/ports/cleanup | Pass | See `verification/tproxy-udp-debug.md`. |
+| AC8 No secrets committed/revealed | Pass | Evidence artifacts are sanitized; generated lab/rendered files remain gitignored. |
 
 ## Verification run
 
-See detailed evidence in `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/slice.md`.
+Detailed evidence: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/tproxy-udp-debug.md`.
 
-Passing checks:
-- `bash tests/vpnkit-singbox-template-test.sh`
-- `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh`
-- `sing-box check` on rendered dummy redirect and tproxy configs with required deprecation env flags
-- `go test ./...`
-- `go vet ./...`
-- `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`
+Fresh checks:
+- `bash tests/vpnkit-singbox-template-test.sh` — PASS.
+- `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh` — PASS.
+- `go test ./...` — PASS.
+- `go vet ./...` — PASS.
+- `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn` — PASS.
 
 Local Docker lab:
 - Project: `vpnkit_tproxy_udp_nested_lab`
-- Host test port: `21194/udp`
+- Host port: `21194/udp`
 - Server container: `vpnkit_tproxy_udp_nested_lab-vpnkit-1`
-- Client containers: `vpnkit_tproxy_udp_nested_lab-ovpn-client-test-run-*`
-- Result: OpenVPN connection succeeded; UDP DNS over tunnel timed out.
-- Cleanup: `docker compose -p vpnkit_tproxy_udp_nested_lab down -v --remove-orphans`; no lab containers remained afterward.
+- Passing client-test container: `vpnkit_tproxy_udp_nested_lab-ovpn-client-test-run-9e07b47b6321`
+- Result: PASS — UDP DNS `NOERROR`, HTTPS hostname `http_code=200`, literal-IP HTTPS `http_code=200`.
+- Cleanup: isolated lab server/client containers, volumes, and network removed; no `vpnkit_tproxy_udp_nested_lab-*` containers remain.
 
 ## Issues
 
-- U-1 — Local lab UDP TPROXY delivery is not yet functionally complete. Evidence: client connects over outer OpenVPN and receives routes; `dig @8.8.8.8 example.com` times out; server TPROXY UDP mangle counter increments. This blocks live-host tests and final acceptance.
+### R-1 — UDP DNS through local tproxy-mode lab timed out
+- Evidence: prior lab had UDP mangle counter incrementing but `dig @8.8.8.8 example.com` timed out.
+- Resolution: route DNS as a protocol-level special case to sing-box DNS inbound with local REDIRECT and keep non-DNS UDP TPROXY installed.
+- Verification: local lab `dig @8.8.8.8 example.com` now returns `NOERROR` over UDP.
+
+### U-1 — Approved isolated live/nested validation cannot run from this worktree
+- Evidence: `test -r config/private-endpoints.local.env` reported absent.
+- Why unresolved: public-safety rules require private endpoints from the gitignored local env before live-host access/mutation; none is available here.
+- Needed next: provide/populate `config/private-endpoints.local.env`, then run the approved isolated vibe-practicum server/client test and moscow-tiger client test without touching production containers.
 
 ## Side findings
 
-- `config/private-endpoints.local.env` is absent in this worktree. This is not the current blocker because local lab failed first; it would block live testing after local lab passes.
-- Existing non-slice Docker containers observed and not touched: `vpnkit-compat-bypass-vpnkit-1`, `vpnkit-client-127.0.0.1-183549`.
+- Existing non-slice containers observed and not touched: `vpnkit-compat-bypass-vpnkit-1`, `vpnkit-client-127.0.0.1-183549`.
+- No follow-up issue created because the remaining gap is an explicit current-goal blocker requiring private endpoint inputs, not a non-blocking future enhancement.
 
 ## System readiness
 
-Not ready for merge/deploy. Code/config checks pass, but acceptance requires local Docker lab UDP/nested behavior to pass before isolated live-host validation. Local lab currently exposes a current-goal blocker.
+Ready for PR review of the local runtime fix, but not ready for merge as full root acceptance because approved isolated live/nested validation is blocked by missing private endpoint env.
 
 ## Verdict
 
-Blocked, not complete. The branch contains a coherent partial implementation for mode-aware tproxy sing-box config/readiness, but UDP TPROXY still fails in local Docker lab.
-
-## Next-agent brief
-
-Continue from U-1. Focus on why packets that hit `OVPN_TO_SINGBOX` UDP TPROXY do not produce client responses. Suggested next checks:
-- Compare sing-box tproxy route/log behavior for UDP port 53 and arbitrary UDP.
-- Test whether DNS should be intercepted with a dedicated mangle redirect to `vpnkit-dns-in` or a different sing-box rule/action for tproxy inbound.
-- Inspect kernel TPROXY delivery requirements inside the Debian container (policy rule priority, mark mask, local route, INPUT path/counters, nft/iptables backend behavior).
-- Re-run the same isolated local lab only; do not attempt live-host tests until local lab passes.
+Blocked after local success. Local Docker lab TPROXY-mode UDP/TCP smoke now passes and production remained untouched, but final slice/root acceptance is blocked on absent `config/private-endpoints.local.env` for staged isolated live/nested validation.

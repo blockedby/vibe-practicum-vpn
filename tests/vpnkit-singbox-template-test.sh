@@ -32,13 +32,15 @@ tproxy_in = inbound_by_tag(tproxy)
 assert tproxy_in['vpnkit-tproxy-in']['type'] == 'tproxy'
 assert tproxy_in['vpnkit-tproxy-in']['listen_port'] == 2082
 assert 'network' not in tproxy_in['vpnkit-tproxy-in']
+assert tproxy_in['vpnkit-redirect-in']['type'] == 'redirect'
+assert tproxy_in['vpnkit-redirect-in']['listen_port'] == 2083
 assert tproxy_in['vpnkit-dns-in']['type'] == 'direct'
 assert tproxy_in['vpnkit-dns-in']['listen_port'] == 5353
-assert 'vpnkit-redirect-in' not in tproxy_in
 
 rules = tproxy['route']['rules']
 sniff = [rule for rule in rules if rule.get('action') == 'sniff'][0]
 assert 'vpnkit-tproxy-in' in sniff['inbound']
+assert 'vpnkit-redirect-in' in sniff['inbound']
 assert 'vpnkit-socks-in' in sniff['inbound']
 print('vpnkit sing-box templates ok')
 PY

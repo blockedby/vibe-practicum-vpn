@@ -31,9 +31,7 @@ if [[ ! -r "$OPENVPN_CONFIG" ]]; then
 fi
 
 mkdir -p "$(dirname "$SINGBOX_CONFIG")" "$(dirname "$SINGBOX_RESTART_FILE")"
-if [[ ! -f "$SINGBOX_CONFIG" ]]; then
-  cp "$SINGBOX_SOURCE_CONFIG" "$SINGBOX_CONFIG"
-fi
+cp "$SINGBOX_SOURCE_CONFIG" "$SINGBOX_CONFIG"
 
 sing-box check -c "$SINGBOX_CONFIG"
 SINGBOX_PID=""
@@ -51,14 +49,14 @@ wait_for_singbox_inbounds() {
   local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
   until ss -ltn sport = :2082 | grep -q ':2082' \
     && ss -lun sport = :5353 | grep -q ':5353' \
-    && { [[ "$VPNKIT_ROUTING_MODE" != tproxy ]] || ss -lun sport = :2082 | grep -q ':2082'; }; do
+    && { [[ "$VPNKIT_ROUTING_MODE" != tproxy ]] || { ss -lun sport = :2082 | grep -q ':2082' && ss -ltn sport = :2083 | grep -q ':2083'; }; }; do
     if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
       echo "sing-box exited before inbounds became ready" >&2
       wait "$SINGBOX_PID"
     fi
     if (( SECONDS >= deadline )); then
       if [[ "$VPNKIT_ROUTING_MODE" == tproxy ]]; then
-        echo "timed out waiting for sing-box tproxy inbounds on tcp/2082, udp/2082, and udp/5353" >&2
+        echo "timed out waiting for sing-box tproxy inbounds on tcp/2082, udp/2082, tcp/2083, and udp/5353" >&2
       else
         echo "timed out waiting for sing-box inbounds on tcp/2082 and udp/5353" >&2
       fi

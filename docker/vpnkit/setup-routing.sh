@@ -5,6 +5,7 @@ OVPN_CIDR=${OVPN_CIDR:-10.89.0.0/24}
 VPNKIT_ROUTING_MODE=${VPNKIT_ROUTING_MODE:-redirect}
 TPROXY_PORT=${TPROXY_PORT:-2082}
 DNS_REDIRECT_PORT=${DNS_REDIRECT_PORT:-5353}
+TCP_REDIRECT_PORT=${TCP_REDIRECT_PORT:-2083}
 MARK=${TPROXY_MARK:-0x1}
 TABLE=${TPROXY_TABLE:-100}
 TUN_IFACE=${SINGBOX_TUN_IFACE:-sb-tun0}
@@ -306,15 +307,32 @@ install_ipv6_policy
 case "$VPNKIT_ROUTING_MODE" in
   tproxy)
     if ! ip rule show | grep -q "fwmark $MARK lookup $TABLE"; then
-      run ip rule add fwmark "$MARK" table "$TABLE"
+      run ip rule add fwmark "$MARK" table "$TABLE" priority 100
     fi
     run ip route replace local default dev lo table "$TABLE"
+
+    run iptables -t nat -N OVPN_TPROXY_DNS 2>/dev/null || true
+    run iptables -t nat -F OVPN_TPROXY_DNS
+    iptables -t nat -C PREROUTING -i tun0 -s "$OVPN_CIDR" -p udp --dport 53 -j OVPN_TPROXY_DNS 2>/dev/null \
+      || run iptables -t nat -A PREROUTING -i tun0 -s "$OVPN_CIDR" -p udp --dport 53 -j OVPN_TPROXY_DNS
+    run iptables -t nat -A OVPN_TPROXY_DNS -p udp -j REDIRECT --to-ports "$DNS_REDIRECT_PORT"
 
     run iptables -t mangle -N OVPN_TO_SINGBOX 2>/dev/null || true
     run iptables -t mangle -F OVPN_TO_SINGBOX
     iptables -t mangle -C PREROUTING -i tun0 -s "$OVPN_CIDR" -j OVPN_TO_SINGBOX 2>/dev/null \
       || run iptables -t mangle -A PREROUTING -i tun0 -s "$OVPN_CIDR" -j OVPN_TO_SINGBOX
-    run iptables -t mangle -A OVPN_TO_SINGBOX -p tcp -j TPROXY --on-port "$TPROXY_PORT" --tproxy-mark "$MARK"/"$MARK"
+    run iptables -t nat -N OVPN_TPROXY_TCP 2>/dev/null || true
+    run iptables -t nat -F OVPN_TPROXY_TCP
+    iptables -t nat -C PREROUTING -i tun0 -s "$OVPN_CIDR" -p tcp -j OVPN_TPROXY_TCP 2>/dev/null \
+      || run iptables -t nat -A PREROUTING -i tun0 -s "$OVPN_CIDR" -p tcp -j OVPN_TPROXY_TCP
+    run iptables -t nat -A OVPN_TPROXY_TCP -p tcp -j REDIRECT --to-ports "$TCP_REDIRECT_PORT"
+
+    # DNS and TCP are protocol-level special cases that sing-box handles
+    # reliably through local REDIRECT in the Docker/OpenVPN lab. Keep UDP
+    # non-DNS traffic on the transparent path so nested UDP tunnels can use
+    # the tproxy inbound without breaking DNS/HTTPS smoke coverage.
+    run iptables -t mangle -A OVPN_TO_SINGBOX -p udp --dport 53 -j RETURN
+    run iptables -t mangle -A OVPN_TO_SINGBOX -p tcp -j RETURN
     run iptables -t mangle -A OVPN_TO_SINGBOX -p udp -j TPROXY --on-port "$TPROXY_PORT" --tproxy-mark "$MARK"/"$MARK"
     # Scoped local-delivery accept for marked TPROXY packets. This is not broad NAT;
     # it only prevents restrictive filter policies from dropping packets already
