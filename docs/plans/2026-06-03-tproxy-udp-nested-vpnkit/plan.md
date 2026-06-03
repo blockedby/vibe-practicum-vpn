@@ -171,3 +171,97 @@ Executor:
 - 2026-06-03 continuation/udp echo private-bypass fix: Delegated reduced UDP echo blocker fix to `aad-implementer`. Local isolated RED echo reproduced the non-DNS UDP failure without inner OpenVPN complexity: outer client route to private echo target used `tun0`, generic UDP TPROXY counter incremented, and echo timed out. Sing-box-only hypotheses (`direct-out` private route, `udp_connect`/`udp_timeout`) did not pass; kernel evidence showed TPROXY was terminal in this backend. Implemented a tproxy-mode-only private UDP bypass before the generic TPROXY rule, with MASQUERADE/FORWARD chains for RFC1918 private destinations, preserving default redirect mode. GREEN reduced echo passed using isolated project `udp_echo_fix_impl` on `21404/udp`; local nested rerun passed using `udp_echo_fix_nested` on `21405/udp` with inner `tun1` on temp subnet `10.90.0.0/24`. Targeted checks passed and cleanup removed isolated local resources. See `verification/udp-echo-tproxy-fix.md` and `reports/aad-implementer-udp-echo-tproxy-fix.md`.
 
 - 2026-06-03 owner final: Fresh owner verification after commits `978f3dd`/`c207e9c` passed (`bash tests/vpnkit-setup-routing-test.sh`, `bash tests/vpnkit-singbox-template-test.sh`, `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh`, `go test ./...`, `git diff --check`). Acceptance auditor accepted this blocker-fix slice with limitation that broader live nested proof remains a parent-level gap if required; report in `reports/acceptance-auditor-udp-echo-tproxy-fix.md`.
+
+## Continuation task: live isolated validation after private UDP bypass fix
+
+User-requested goal:
+- Run approved live isolated validation now that local UDP echo and local nested OpenVPN pass after the private UDP bypass fix.
+- Stage 1: isolated tproxy vpnkit server container on vibe-practicum using fresh high UDP port plus isolated client-test container on vibe-practicum; validate baseline and nested private OpenVPN if feasible using matching bundle.
+- Stage 2: if Stage 1 passes, isolated client-test container on moscow-tiger connecting to the isolated tproxy vpnkit server on vibe-practicum; validate baseline and nested private OpenVPN if feasible.
+- Public UDP distinction: because private Docker-IP bypass does not prove real public nested VPN endpoints, run a reduced public non-DNS UDP echo check using an isolated UDP echo endpoint on a different host/high UDP port where possible; send UDP through the outer OpenVPN tunnel and capture whether public UDP TPROXY egress works.
+
+Additional boundaries:
+- Unique names/ports/networks/volumes/temp paths only.
+- Do not restart/recreate/adopt/mutate production containers or Steam Deck.
+- Do not commit or print secrets, generated profiles, rendered configs, private endpoint values, raw logs, or temp artifacts.
+- Cleanup all isolated resources.
+- Commit only source/test/doc/report changes.
+- If public UDP TPROXY fails while private nested passes, report that distinction clearly.
+
+Pre-dispatch gate:
+- Task intake: clear; this is live isolated validation only, not production deployment.
+- Repo orientation/reuse: use existing Docker lab/runtime patterns in `docs/DOCKER_SETUP.md`, task-package prior evidence, gitignored private endpoint file if present, existing matching gitignored bundle if available, and SSH aliases without printing endpoint values.
+- Missing pieces: fresh sanitized live evidence for same-host server/client, remote moscow-tiger client, feasible matching-bundle nested private OpenVPN, and reduced public UDP echo.
+- Dependency graph: one implementation/operations task is sufficient; keep slice whole and delegate to `aad-implementer` for command execution/reporting. Owner integrates report, runs evidence review, updates final report.
+
+### Task 3: Live isolated validation and public UDP echo distinction
+
+Goal:
+- Produce sanitized evidence for the requested live isolated validation stages after the private UDP bypass fix, with cleanup and production untouched evidence.
+
+Acceptance criteria:
+- AC3/AC8 boundaries preserved: no production mutation, no secrets/logs/profiles/private endpoints committed or printed.
+- AC5: vibe-practicum isolated server + vibe-practicum isolated client baseline passes or concrete blocker recorded.
+- AC6: if AC5 passes, moscow-tiger isolated client baseline passes or concrete blocker recorded.
+- AC2 nested: nested private OpenVPN using matching bundle passes where feasible, or infeasibility/blocker is explicit with evidence.
+- Public UDP echo: reduced public non-DNS UDP echo endpoint on different host/high UDP port is attempted where possible and outcome distinguishes public TPROXY egress from private Docker-IP bypass.
+- Cleanup: all isolated containers/networks/volumes/temp paths removed or retained-for-debug explicitly listed.
+
+Test plan:
+- Source `config/private-endpoints.local.env` only if readable; do not print values.
+- Capture safe before/after metadata for production container(s): names/status/restart count/start time only, no env/config dumps.
+- Use fresh high UDP ports and unique Compose/project/container/network/volume/temp names.
+- Validate baseline through outer OpenVPN: client connect, UDP DNS result, HTTPS hostname result, literal-IP HTTPS result (or equivalent existing client-test checks).
+- Validate nested private OpenVPN if feasible with matching generated bundle/profile; rewrite only temp profile remote lines.
+- Public UDP echo: run isolated echo endpoint on different host/high UDP port where possible; send non-DNS UDP through outer tunnel from client and record pass/fail plus counters/routing evidence.
+- Cleanup commands for every isolated resource.
+
+Executor: `aad-implementer`.
+Report path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-live-validation-after-private-bypass.md`.
+Verification path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/live-validation-after-private-bypass.md`.
+Progress path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-live-validation-after-private-bypass.md`.
+Status: ready for dispatch.
+
+## Continuation task: public non-DNS UDP through generic vpnkit TPROXY variants
+
+User-requested goal:
+- Investigate public non-DNS UDP forwarding through generic vpnkit sing-box TPROXY for an outer OpenVPN client using an isolated live UDP echo server on vibe-practicum and an isolated local-host client through the outer OpenVPN tunnel.
+- Continue after any passing result; attempt all feasible variants in order and commit a sanitized results matrix/report.
+
+Additional boundaries:
+- Use the provided worktree/branch; do not create a new worktree.
+- Do not restart/recreate/adopt/mutate production `vpnkit`, `current-vpnkit-1`, or Steam Deck.
+- This task's client is the local host; do not use moscow-tiger as a test client unless only a read-only metadata check is needed.
+- Use unique project/container/network/volume/temp names and fresh high UDP ports for every live resource.
+- Keep generated profiles/logs/secrets/rendered configs/subscription URLs/private endpoints/tcpdump raw logs/temp artifacts out of git and out of reports; report only sanitized summaries.
+- Source `config/private-endpoints.local.env` only if readable and without printing values; stop before live mutation if missing.
+
+Pre-dispatch gate:
+- Task intake: clear; public non-DNS UDP generic TPROXY investigation with optional robust source/config fix, not production deployment.
+- Repo orientation/reuse: reuse existing vpnkit tproxy templates and routing scripts, prior live-validation task package evidence, Docker/Compose isolation conventions, `config/private-endpoints.local.env`, and source checks from prior tasks.
+- Missing pieces: fresh public UDP variant matrix, route-via-outer-`tun0` evidence, UDP TPROXY/bypass counters, sanitized sing-box/tcpdump summaries, production untouched metadata, cleanup evidence, and any scoped source/config fix with tests/docs if robust.
+- Dependency graph: keep as one owner slice; delegate one command-heavy implementation/investigation task to `aad-implementer`; owner integrates report/matrix, runs fresh source checks if source/test/docs changed, commits sanitized artifacts, and reports final state.
+
+### Task 4: Public non-DNS UDP TPROXY variants matrix
+
+Goal:
+- Attempt the seven required variants in order against an isolated live UDP echo endpoint and isolated local-host outer OpenVPN client, distinguishing generic public UDP TPROXY behavior from existing private UDP bypass.
+
+Acceptance criteria:
+- AC-S1 through AC-S8 from the user routing packet are satisfied or blockers are explicit.
+- The results matrix includes variant/config delta, implementation mode, isolated resource names/ports, route-via-`tun0` proof, echo result, counters, sing-box log summary, tcpdump summary, cleanup, and production untouched evidence.
+- If a robust source/config fix emerges, it is implemented with targeted tests/docs and committed; otherwise only sanitized docs/reports and safe test harness changes are committed.
+
+Test plan:
+- Live/manual: variants 1-7 in required order using fresh resources and safe sanitized evidence.
+- Source checks after source/test edits: `bash tests/vpnkit-setup-routing-test.sh`, `bash tests/vpnkit-singbox-template-test.sh`, `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh`, `go test ./...`, `git diff --check` if feasible.
+- Final: `git status --short`, commit IDs, cleanup evidence.
+
+Executor: `aad-implementer`.
+Report path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-public-udp-variants.md`.
+Verification path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/public-udp-variants-matrix.md`.
+Progress path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-public-udp-variants.md`.
+Status: ready for dispatch.
+
+Execution ledger update for Task 4:
+- 2026-06-03: Attempted to dispatch public UDP variant matrix to `aad-implementer`, but Pi nested subagent call was blocked by max depth. Owner completed only planning/report scaffolding, reused prior Variant 1 baseline public echo evidence, performed a local sing-box syntax feasibility check for Variant 2, and ran fresh source checks (`bash tests/vpnkit-setup-routing-test.sh`, `bash tests/vpnkit-singbox-template-test.sh`, `bash -n docker/vpnkit/*.sh scripts/*.sh tests/*.sh`, `go test ./...`, `git diff --check`). No live resources were created or cleaned by this continuation, and no production/Steam Deck commands were run. Task 4 remains blocked/partial; see `verification/public-udp-variants-matrix.md` and `reports/slice-owner-public-udp-variants.md`.
