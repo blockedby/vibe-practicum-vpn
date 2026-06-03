@@ -24,7 +24,7 @@ Task: Task 5 opt-in vpnkit sing-box TUN-mode runtime path
 - Redirect/default mode still selects `/etc/sing-box/config.json`, still has `vpnkit-redirect-in` on TCP 2082 and DNS direct inbound on UDP 5353, and does not include `vpnkit-tun-in`.
 - Tproxy mode still selects `/etc/sing-box/config.tproxy.json` and still expects TCP/UDP 2082, TCP 2083, and UDP 5353 readiness.
 - Tun mode selects `/etc/sing-box/config.tun.json`, waits for `sb-tun0` with `172.19.0.1/30` plus UDP 5353, and does not wait for redirect/tproxy-only ports.
-- Tun mode policy-routes `OVPN_CIDR` (`10.89.0.0/24` default) to routing table 101 via `sb-tun0`/`172.19.0.2` and does not install redirect/tproxy capture chains in the dry-run test.
+- Tun mode policy-routes `OVPN_CIDR` (historical default at this run: `10.89.0.0/24`; current default guidance: `10.231.89.0/24`) to routing table 101 via `sb-tun0`/`172.19.0.2` and does not install redirect/tproxy capture chains in the dry-run test.
 - Tun template uses `auto_route=false` and the setup script installs only the source-CIDR policy route, so sing-box process egress is not globally re-routed into its own TUN interface.
 
 ## Production/live boundary

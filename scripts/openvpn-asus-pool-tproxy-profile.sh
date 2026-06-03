@@ -26,12 +26,12 @@ What it does in --export mode:
   - SSHes to SSH_HOST (default: ${VPNKIT_VPS_SSH_HOST:-example-vps-host}) and uses sudo -n.
   - Creates/reuses an EasyRSA client cert for <client-cn>.
   - Writes CCD with DNS + redirect-gateway, but NO ifconfig-push.
-  - Lets OpenVPN assign 10.89.0.20-10.89.0.254 from the dynamic pool.
+  - Lets OpenVPN assign 10.231.89.20-10.231.89.254 from the dynamic pool.
   - Exports one embedded .ovpn into OUT_DIR with mode 0600.
 
 Required live prerequisite:
   /usr/local/sbin/vibe-openvpn-asus-rules must capture dynamic pool
-  10.89.0.20-10.89.0.254 into VIBE_OVPN_ASUS_TP and accept mark 0x1 INPUT.
+  10.231.89.20-10.231.89.254 into VIBE_OVPN_ASUS_TP and accept mark 0x1 INPUT.
 
 Examples:
   PUBLIC_ENDPOINT=${VPNKIT_VPS_PUBLIC_ENDPOINT:-203.0.113.10} OUT_DIR=/home/kcnc/vibe-openvpn-asus-profile \
@@ -118,7 +118,7 @@ public_endpoint: $PUBLIC_ENDPOINT:$OPENVPN_PORT/udp
 remote_state_dir: $REMOTE_STATE_DIR
 ccd_dir: $CCD_DIR
 local_output: $OUTPUT
-pool: 10.89.0.20-10.89.0.254 (server-assigned; no ifconfig-push)
+pool: 10.231.89.20-10.231.89.254 (server-assigned; no ifconfig-push)
 pushed_options:
   dhcp-option DNS $DNS1
   dhcp-option DNS $DNS2

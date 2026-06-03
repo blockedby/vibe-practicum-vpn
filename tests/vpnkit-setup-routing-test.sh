@@ -30,14 +30,13 @@ OUTPUT=$(PATH="$TMP:$PATH" \
   VPNKIT_ROUTING_DRY_RUN=true \
   VPNKIT_ROUTING_MODE=tproxy \
   VPNKIT_IPV6_POLICY=allow \
-  OVPN_CIDR=10.89.0.0/24 \
   bash "$ROOT/docker/vpnkit/setup-routing.sh")
 
 printf '%s\n' "$OUTPUT" | grep -q 'OVPN_TPROXY_UDP_POST'
 printf '%s\n' "$OUTPUT" | grep -q 'OVPN_TPROXY_UDP_FWD'
 printf '%s\n' "$OUTPUT" | grep -q -- '-A OVPN_TO_SINGBOX -p udp -d 172.16.0.0/12 -m comment --comment vpnkit:tproxy-private-udp-bypass -j RETURN'
 printf '%s\n' "$OUTPUT" | grep -q -- '-A OVPN_TPROXY_UDP_POST -d 172.16.0.0/12 -p udp -j MASQUERADE'
-printf '%s\n' "$OUTPUT" | grep -q -- '-A OVPN_TPROXY_UDP_FWD -s 10.89.0.0/24 -d 172.16.0.0/12 -p udp -j ACCEPT'
+printf '%s\n' "$OUTPUT" | grep -q -- '-A OVPN_TPROXY_UDP_FWD -s 10.231.89.0/24 -d 172.16.0.0/12 -p udp -j ACCEPT'
 
 private_line=$(printf '%s\n' "$OUTPUT" | grep -n -- '-A OVPN_TO_SINGBOX -p udp -d 172.16.0.0/12' | head -1 | cut -d: -f1)
 tproxy_line=$(printf '%s\n' "$OUTPUT" | grep -n -- '-A OVPN_TO_SINGBOX -p udp -j TPROXY' | head -1 | cut -d: -f1)
@@ -50,7 +49,6 @@ REDIRECT_OUTPUT=$(PATH="$TMP:$PATH" \
   VPNKIT_ROUTING_DRY_RUN=true \
   VPNKIT_ROUTING_MODE=redirect \
   VPNKIT_IPV6_POLICY=allow \
-  OVPN_CIDR=10.89.0.0/24 \
   bash "$ROOT/docker/vpnkit/setup-routing.sh")
 if printf '%s\n' "$REDIRECT_OUTPUT" | grep -q 'OVPN_TPROXY_UDP_POST'; then
   echo "redirect mode should not install tproxy private UDP bypass chains" >&2
@@ -61,10 +59,9 @@ TUN_OUTPUT=$(PATH="$TMP:$PATH" \
   VPNKIT_ROUTING_DRY_RUN=true \
   VPNKIT_ROUTING_MODE=tun \
   VPNKIT_IPV6_POLICY=allow \
-  OVPN_CIDR=10.89.0.0/24 \
   bash "$ROOT/docker/vpnkit/setup-routing.sh")
 printf '%s\n' "$TUN_OUTPUT" | grep -q -- 'ip route replace default via 172.19.0.2 dev sb-tun0 table 101'
-printf '%s\n' "$TUN_OUTPUT" | grep -q -- 'ip rule add from 10.89.0.0/24 table 101 priority 1000'
+printf '%s\n' "$TUN_OUTPUT" | grep -q -- 'ip rule add from 10.231.89.0/24 table 101 priority 1000'
 if printf '%s\n' "$TUN_OUTPUT" | grep -Eq 'OVPN_TO_SINGBOX|TPROXY|REDIRECT --to-ports|OVPN_REDIRECT_TO_SINGBOX'; then
   echo "tun mode should not install redirect/tproxy capture rules" >&2
   exit 1

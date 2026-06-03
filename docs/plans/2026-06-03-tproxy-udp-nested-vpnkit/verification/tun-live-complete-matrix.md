@@ -19,6 +19,12 @@ Important implementation detail for nested validation:
 - The inner isolated OpenVPN server used a temp-only non-conflicting tunnel subnet `10.90.0.0/24` instead of the outer `10.89.0.0/24`.
 - The inner client profile was temp-only with `dev tun1` and route-pull suppression for pushed routes/DNS, so the inner control channel continued to use the outer `tun0` route.
 
+Current subnet guidance added after this validation:
+
+- Future/default outer OpenVPN profiles should use `10.231.89.0/24` with gateway/DNS `10.231.89.1`.
+- Future nested/inner OpenVPN profiles should use `10.232.90.0/24` to avoid colliding with the outer tunnel.
+- The `10.89.0.0/24` and temporary `10.90.0.0/24` values below are preserved as historical evidence from this run, not current defaults.
+
 No generated profiles, rendered configs, raw logs, tcpdump output, secrets, subscription URLs, or auth files are included in this artifact.
 
 ## Production metadata

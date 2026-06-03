@@ -12,7 +12,7 @@ OpenVPN ASUS TPROXY canary rules
 
 This applies the scoped live fix for:
   CN: asus-tproxy
-  IP: 10.89.0.3
+  IP: 10.231.89.3
   ingress: tun-asus
   TPROXY port: 2082
   mark/table: 0x1/table100
@@ -30,7 +30,7 @@ fi
 ssh "$SSH_HOST" 'sudo bash -s' <<'REMOTE'
 set -euo pipefail
 OPENVPN_DEV="${OPENVPN_DEV:-tun-asus}"
-ASUS_TPROXY_IP="${ASUS_TPROXY_IP:-10.89.0.3}"
+ASUS_TPROXY_IP="${ASUS_TPROXY_IP:-10.231.89.3}"
 TPROXY_PORT="${TPROXY_PORT:-2082}"
 MARK="${MARK:-0x1}"
 TABLE="${TABLE:-100}"

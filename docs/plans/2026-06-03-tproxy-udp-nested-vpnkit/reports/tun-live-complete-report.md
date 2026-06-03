@@ -41,6 +41,8 @@ TUN mode successfully carried:
 
 The previous nested timeout was not a generic TUN UDP failure. The passing run used a temp-only inner OpenVPN server subnet `10.90.0.0/24` and an inner client profile using `dev tun1` plus route-pull suppression. That avoided conflict with the outer `10.89.0.0/24` tunnel and allowed nested OpenVPN to complete.
 
+Current guidance added after this historical validation: use `10.231.89.0/24` with gateway/DNS `10.231.89.1` for the outer/default OpenVPN subnet, and use `10.232.90.0/24` for future nested/inner OpenVPN profiles. The earlier `10.89.0.0/24` and temp-only `10.90.0.0/24` values above remain historical evidence, not current defaults.
+
 ## Cleanup and production safety
 
 All fresh local, `vibe-practicum`, and `moscow-tiger` isolated resources were removed by exact name/path. Final exact leftover checks found no matching `vpnkit_tun_final_21941` containers/networks or ports `21941/21942/21943` on either live host.

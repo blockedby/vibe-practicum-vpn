@@ -338,3 +338,61 @@ Report path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-impleme
 Verification path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/tun-canary-result-matrix.md`.
 Progress path: `docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-tun-canary-validation.md`.
 Status: pending Task 5.
+
+## Continuation task: chosen OpenVPN subnet defaults and nested guidance
+
+User decision:
+- Production/outer OpenVPN client subnet default: `10.231.89.0/24`; gateway/DNS: `10.231.89.1`.
+- Nested/inner OpenVPN guidance subnet: `10.232.90.0/24`.
+
+Scope and boundaries:
+- Update source/templates/tests/docs for current/default behavior only.
+- Search `10.89.0.0`, `10.89.0.1`, `10.89.0.2`, `10.90.0.0`; leave historical evidence intact where it records prior runs, adding explanatory notes where needed.
+- Do not touch production hosts, generated profiles/secrets/logs, rendered configs, or private endpoint values.
+- Final evidence: focused OpenVPN template/routing tests, `go test ./...`, `git diff --check`; commit and push if green.
+
+Repo orientation / reuse discovery:
+- Default OpenVPN server template: `config/openvpn/server.tpl`.
+- Routing default: `docker/vpnkit/setup-routing.sh` with assertions in `tests/vpnkit-setup-routing-test.sh` and compatibility tests.
+- ASUS/OpenVPN helper script defaults and guidance reference the old subnet under `scripts/openvpn-asus-*` and may need current defaults if they represent active guidance.
+- Task-package TUN validation reports contain historical `10.89.0.0/24` and temporary nested `10.90.0.0/24` evidence; do not rewrite those facts.
+
+Missing pieces:
+- Change active defaults/assertions/docs from outer `10.89.0.0/24` to `10.231.89.0/24` and gateway/DNS `10.231.89.1` where appropriate.
+- Record future nested guidance `10.232.90.0/24` near TUN validation docs/task package while preserving prior temporary `10.90.0.0/24` evidence.
+- Report intentionally retained historical references.
+
+### Task 4: Apply chosen OpenVPN subnet defaults and nested guidance
+
+Goal:
+- Make active source/templates/tests/docs use the chosen outer OpenVPN subnet and record future nested guidance.
+
+Boundary:
+- System area: source defaults, templates, shell tests, current docs/task package guidance.
+- Primary verification: focused template/routing tests, `go test ./...`, `git diff --check`.
+
+Acceptance criteria:
+- Default rendered OpenVPN server uses `10.231.89.0/24` and pushes DNS `10.231.89.1`.
+- Default TUN/routing expectations use `10.231.89.0/24` where current defaults are asserted/documented.
+- Nested guidance records `10.232.90.0/24` for future nested tests/profiles and notes previous validation used temporary `10.90.0.0/24` without rewriting historical evidence.
+- Search terms are reviewed and historical references intentionally left are listed.
+- No generated profiles/secrets/logs/private endpoints are edited or committed.
+
+Test plan:
+- `bash tests/vpnkit-singbox-template-test.sh` if still relevant to templates.
+- `bash tests/vpnkit-setup-routing-test.sh`.
+- Other focused shell tests touched, including compatibility routing tests if relevant.
+- `go test ./...`.
+- `git diff --check`.
+
+Dependencies:
+- Depends on: user subnet decision.
+- Blocks: final branch readiness for this continuation.
+- Can run parallel with: none.
+
+Executor:
+- `aad-implementer` preferred; slice owner may execute directly only if delegation is unavailable.
+
+Execution ledger:
+- 2026-06-03: Pre-dispatch gate passed for Task 4: intake/scope/repo orientation/reuse/missing pieces/AC/test plan/dependencies recorded above.
+- 2026-06-03: Implementer updated active outer defaults/guidance to `10.231.89.0/24` with gateway/DNS `10.231.89.1`, added future nested guidance `10.232.90.0/24`, preserved historical evidence using `10.89.0.0/24`/temporary `10.90.0.0/24`, and passed focused source checks before commit.
