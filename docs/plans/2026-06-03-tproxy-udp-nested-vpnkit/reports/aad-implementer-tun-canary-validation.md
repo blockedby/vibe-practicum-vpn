@@ -4,7 +4,7 @@ TASK_PACKAGE: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit
 REPORT_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-tun-canary-validation.md
 PROGRESS_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-tun-canary-validation.md
 COMMITS:
-- pending: commit not created yet at report-write time
+- 9e63d45: Add vpnkit tun routing canary
 FILES_CHANGED:
 - docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/verification/tun-canary-result-matrix.md: sanitized local Docker lab matrix and not-run live/nested entries.
 - docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-tun-canary-validation.md: progress notes for optional local validation and cleanup.

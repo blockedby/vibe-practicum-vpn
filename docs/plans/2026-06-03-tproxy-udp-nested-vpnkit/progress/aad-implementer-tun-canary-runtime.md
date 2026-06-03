@@ -6,4 +6,4 @@
 - 2026-06-03: GREEN implementation added `config.tun.json.template`, entrypoint tun config/readiness selection, render-script tun output, setup-routing tun timeout, docs note, and targeted tests. Targeted template/routing tests now pass; dummy `sing-box check` passes for redirect/tproxy/tun with required deprecation env flags (warnings only).
 - 2026-06-03: Required Task 5 checks passed: template test, setup-routing test, shell syntax, `go test ./...`, dummy rendered `sing-box check` with deprecation env flags, and `git diff --check`.
 - 2026-06-03: Safe prerequisites for optional validation checked without printing values: Docker available and existing gitignored rendered config/profile inputs available. Proceeded only to isolated local Docker lab first with unique project/port; no production/live mutation.
-- 2026-06-03: Wrote runtime and local-validation reports/verification. Preparing coherent local commit with source/tests/docs/task-package evidence.
+- 2026-06-03: Wrote runtime and local-validation reports/verification. Created local commit `9e63d45 Add vpnkit tun routing canary`; updated reports with commit SHA.

@@ -4,7 +4,7 @@ TASK_PACKAGE: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit
 REPORT_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/reports/aad-implementer-tun-canary-runtime.md
 PROGRESS_PATH: docs/plans/2026-06-03-tproxy-udp-nested-vpnkit/progress/aad-implementer-tun-canary-runtime.md
 COMMITS:
-- pending: commit not created yet at report-write time
+- 9e63d45: Add vpnkit tun routing canary
 FILES_CHANGED:
 - config/sing-box/config.tun.json.template: new opt-in sing-box TUN inbound template with `vpnkit-tun-in` on `sb-tun0`, DNS direct inbound, SOCKS loopback inbound, direct/private/rule-set routing, and selected native outbound final.
 - docker/vpnkit/entrypoint.sh: selects `/etc/sing-box/config.tun.json` for `VPNKIT_ROUTING_MODE=tun` and uses mode-specific readiness for redirect, tproxy, and tun.
