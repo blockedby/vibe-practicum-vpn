@@ -1,3 +1,4 @@
-# Slice owner progress
+# Slice owner progress - next TUN validation run
 
-- 2026-06-03: Received continuation request to implement opt-in sing-box TUN-mode canary as alternative to failed public UDP TPROXY, preserving default redirect and production safety boundaries. Loaded repo guidance, AAD planning/delegation/task-package/worktree/devops skills, and existing task package plan/evidence.
+- 2026-06-03: Intake received from root owner. Read repo guidance, README, Docker docs, task file, plan, prior TUN matrix/report, and AAD planning/delegation/reporting/verification skills.
+- Pre-dispatch gate: plan/task file are ready for execution. This stays one operational validation slice; execution is command-heavy and delegated to `aad-implementer` with exact live-resource constraints and report paths.
