@@ -13,6 +13,7 @@ NFT_TABLE=${DECK_HOTSPOT_NFT_TABLE:-vpnkit_deck_hotspot}
 HOTSPOT_CONTAINER=${DECK_HOTSPOT_CONTAINER:-vpnkit-deck-hotspot-ap}
 HOTSPOT_IMAGE=${DECK_HOTSPOT_IMAGE:-localhost/vpnkit-deck-hotspot-ap:latest}
 HOTSPOT_CIDR=${DECK_HOTSPOT_CIDR:-10.42.0.1/24}
+HOTSPOT_IP=${HOTSPOT_CIDR%%/*}
 HOTSPOT_SUBNET=${DECK_HOTSPOT_SUBNET:-10.42.0.0/24}
 DHCP_RANGE=${DECK_HOTSPOT_DHCP_RANGE:-10.42.0.10,10.42.0.100,255.255.255.0,12h}
 REPORT_PATH=${DECK_HOTSPOT_REPORT_PATH:-}
@@ -78,7 +79,7 @@ shell_quote(){ printf '%q' "$1"; }
   echo
   echo '```text'
   ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
-    "DRY_RUN=$(shell_quote "$DRY_RUN") REMOTE_DIR=$(shell_quote "$REMOTE_DIR") PODMAN_CMD=$(shell_quote "$PODMAN_CMD") UPLINK_IFACE=$(shell_quote "$UPLINK_IFACE") HOTSPOT_IFACE=$(shell_quote "$HOTSPOT_IFACE") SSID=$(shell_quote "$SSID") PASSWORD=$(shell_quote "$PASSWORD") VPN_IFACE=$(shell_quote "$VPN_IFACE") NFT_TABLE=$(shell_quote "$NFT_TABLE") HOTSPOT_CONTAINER=$(shell_quote "$HOTSPOT_CONTAINER") HOTSPOT_IMAGE=$(shell_quote "$HOTSPOT_IMAGE") HOTSPOT_CIDR=$(shell_quote "$HOTSPOT_CIDR") HOTSPOT_SUBNET=$(shell_quote "$HOTSPOT_SUBNET") DHCP_RANGE=$(shell_quote "$DHCP_RANGE") bash -s" <<'REMOTE'
+    "DRY_RUN=$(shell_quote "$DRY_RUN") REMOTE_DIR=$(shell_quote "$REMOTE_DIR") PODMAN_CMD=$(shell_quote "$PODMAN_CMD") UPLINK_IFACE=$(shell_quote "$UPLINK_IFACE") HOTSPOT_IFACE=$(shell_quote "$HOTSPOT_IFACE") SSID=$(shell_quote "$SSID") PASSWORD=$(shell_quote "$PASSWORD") VPN_IFACE=$(shell_quote "$VPN_IFACE") NFT_TABLE=$(shell_quote "$NFT_TABLE") HOTSPOT_CONTAINER=$(shell_quote "$HOTSPOT_CONTAINER") HOTSPOT_IMAGE=$(shell_quote "$HOTSPOT_IMAGE") HOTSPOT_CIDR=$(shell_quote "$HOTSPOT_CIDR") HOTSPOT_IP=$(shell_quote "$HOTSPOT_IP") HOTSPOT_SUBNET=$(shell_quote "$HOTSPOT_SUBNET") DHCP_RANGE=$(shell_quote "$DHCP_RANGE") bash -s" <<'REMOTE'
 set -Eeuo pipefail
 read -r -a PODMAN <<<"$PODMAN_CMD"
 log(){ printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
@@ -129,14 +130,17 @@ rsn_pairwise=CCMP
 EOF_HOSTAPD
 cat >"$RUNTIME_DIR/dnsmasq.conf" <<EOF_DNSMASQ
 interface=$HOTSPOT_IFACE
-bind-interfaces
+bind-dynamic
+listen-address=$HOTSPOT_IP
+dhcp-authoritative
 dhcp-range=$DHCP_RANGE
-dhcp-option=3,10.42.0.1
-dhcp-option=6,10.42.0.1
+dhcp-option=3,$HOTSPOT_IP
+dhcp-option=6,$HOTSPOT_IP
 server=1.1.1.1
 server=8.8.8.8
 log-dhcp
 log-queries
+log-facility=/var/log/vpnkit-hotspot/dnsmasq.log
 EOF_DNSMASQ
 run podman_cmd build -t "$HOTSPOT_IMAGE" -f "$REMOTE_DIR/Containerfile.hotspot" "$REMOTE_DIR"
 run sudo sysctl -w net.ipv4.ip_forward=1
@@ -160,9 +164,31 @@ run podman_cmd run -d --name "$HOTSPOT_CONTAINER" --replace --network host --pri
   -v "$RUNTIME_DIR:/etc/vpnkit-hotspot:ro" \
   -v "$LOG_DIR:/var/log/vpnkit-hotspot" \
   "$HOTSPOT_IMAGE"
-sleep 3
+sleep 1
+log "checking hostapd/dnsmasq readiness"
+ready=0
+for attempt in {1..10}; do
+  if podman_cmd exec "$HOTSPOT_CONTAINER" pgrep -x hostapd >/dev/null 2>&1 \
+    && podman_cmd exec "$HOTSPOT_CONTAINER" pgrep -x dnsmasq >/dev/null 2>&1 \
+    && sudo ss -H -lunp 2>/dev/null | grep -E "[.:]67\\b" | grep -q 'dnsmasq' \
+    && grep -q 'AP-ENABLED' "$LOG_DIR/hostapd.log" \
+    && grep -Eq 'DHCP, sockets bound|DHCP, IP range|started' "$LOG_DIR/dnsmasq.log"; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+if [[ $ready -ne 1 ]]; then
+  log "dnsmasq readiness failed"
+  podman_cmd ps -a --filter "name=^${HOTSPOT_CONTAINER}$" --format 'container={{.Names}} status={{.Status}} image={{.Image}}' || true
+  podman_cmd logs --tail 80 "$HOTSPOT_CONTAINER" 2>&1 | grep -E 'dnsmasq|hostapd|DHCP|failed|error|warning|started|AP-ENABLED|listening|bound' || true
+  sudo ss -lunp | grep -E ':(53|67)\\b|dnsmasq|hostapd' || true
+  exit 14
+fi
 podman_cmd ps --filter "name=^${HOTSPOT_CONTAINER}$" --format 'container={{.Names}} status={{.Status}} image={{.Image}}'
 iw dev | sed -n "/Interface $HOTSPOT_IFACE/,+10p" || true
+sudo ss -lunp | grep -E ':(53|67)\\b|dnsmasq' || true
+grep -E 'AP-ENABLED|DHCP, sockets bound|DHCP, IP range|started' "$LOG_DIR/hostapd.log" "$LOG_DIR/dnsmasq.log" || true
 trap - EXIT
 log "up done"
 REMOTE

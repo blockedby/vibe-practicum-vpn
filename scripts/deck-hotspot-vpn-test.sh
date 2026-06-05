@@ -2,6 +2,9 @@
 set -Eeuo pipefail
 
 SSH_TARGET=${DECK_HOTSPOT_SSH_TARGET:-${VPNKIT_STEAMDECK_SSH_TARGET:-deck}}
+PODMAN_CMD=${DECK_HOTSPOT_PODMAN:-"sudo podman --root /home/deck/.local/share/vpnkit-root-podman --runroot /run/vpnkit-root-podman"}
+HOTSPOT_CONTAINER=${DECK_HOTSPOT_CONTAINER:-vpnkit-deck-hotspot-ap}
+NFT_TABLE=${DECK_HOTSPOT_NFT_TABLE:-vpnkit_deck_hotspot}
 HOTSPOT_IFACE=${DECK_HOTSPOT_IFACE:-ap0}
 VPN_IFACE=${DECK_HOTSPOT_VPN_IFACE:-tun0}
 REPORT_PATH=${DECK_HOTSPOT_REPORT_PATH:-}
@@ -9,21 +12,24 @@ SSH_OPTS=()
 
 usage(){ cat <<'EOF'
 Usage: scripts/deck-hotspot-vpn-test.sh [--ssh-target deck] [--hotspot-iface ap0] [--vpn-iface tun0] [--report PATH]
+       [--podman CMD] [--container NAME] [--nft-table NAME]
 
-Run Deck-side gateway checks and write redacted report. Does not mutate state.
+Run Deck-side gateway checks, including hostapd/dnsmasq readiness, and write redacted report. Does not mutate state.
 Client devices should additionally run the commands printed at the end while
 connected to the Deck hotspot.
 EOF
 }
 while [[ $# -gt 0 ]]; do case "$1" in
-  --ssh-target) SSH_TARGET=${2:?}; shift 2;; --hotspot-iface) HOTSPOT_IFACE=${2:?}; shift 2;; --vpn-iface) VPN_IFACE=${2:?}; shift 2;;
+  --ssh-target) SSH_TARGET=${2:?}; shift 2;; --podman) PODMAN_CMD=${2:?}; shift 2;; --container) HOTSPOT_CONTAINER=${2:?}; shift 2;;
+  --nft-table) NFT_TABLE=${2:?}; shift 2;; --hotspot-iface) HOTSPOT_IFACE=${2:?}; shift 2;; --vpn-iface) VPN_IFACE=${2:?}; shift 2;;
   --report) REPORT_PATH=${2:?}; shift 2;; --ssh-option) read -r -a opt <<< "${2:?}"; SSH_OPTS+=("${opt[@]}"); shift 2;;
   -h|--help) usage; exit 0;; *) echo "unknown argument: $1" >&2; usage >&2; exit 2;;
 esac; done
-[[ "$HOTSPOT_IFACE$VPN_IFACE" =~ ^[A-Za-z0-9_.:-]+$ ]] || { echo "unsafe iface name" >&2; exit 2; }
+[[ "$HOTSPOT_CONTAINER$NFT_TABLE$HOTSPOT_IFACE$VPN_IFACE" =~ ^[A-Za-z0-9_.:-]+$ ]] || { echo "unsafe name" >&2; exit 2; }
 [[ -n "$REPORT_PATH" ]] || REPORT_PATH="reports/steam-deck-hotspot-test-$(date -u +%Y%m%dT%H%M%SZ).md"
 mkdir -p "$(dirname "$REPORT_PATH")"
 redact(){ sed -E -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/<IP>/g' -e 's/([0-9a-f]{2}:){5}[0-9a-f]{2}/<MAC>/Ig' -e 's/[0-9a-f]{4}(:[0-9a-f]{0,4}){2,7}/<IPv6>/Ig' -e 's/[0-9a-f]{8}-[0-9a-f-]{27,}/<UUID>/Ig' -e 's/(Machine ID:).*/\1 <redacted>/I' -e 's/(Boot ID:).*/\1 <redacted>/I'; }
+shell_quote(){ printf '%q' "$1"; }
 {
   echo "# Steam Deck hotspot VPN test report"
   echo
@@ -32,9 +38,11 @@ redact(){ sed -E -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/<IP>/g' -e 's/([0-9a-f]{2}:){
   echo "- Mutation: none/read-only"
   echo
   echo '```text'
-  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "HOTSPOT_IFACE='$HOTSPOT_IFACE' VPN_IFACE='$VPN_IFACE' bash -s" <<'REMOTE'
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "PODMAN_CMD=$(shell_quote "$PODMAN_CMD") HOTSPOT_CONTAINER=$(shell_quote "$HOTSPOT_CONTAINER") NFT_TABLE=$(shell_quote "$NFT_TABLE") HOTSPOT_IFACE=$(shell_quote "$HOTSPOT_IFACE") VPN_IFACE=$(shell_quote "$VPN_IFACE") bash -s" <<'REMOTE'
 set -Eeuo pipefail
+read -r -a PODMAN <<<"$PODMAN_CMD"
 log(){ printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
+podman_cmd(){ "${PODMAN[@]}" "$@"; }
 hash8(){ if command -v sha256sum >/dev/null 2>&1; then printf '%s' "$1" | sha256sum | cut -c1-8; elif command -v md5sum >/dev/null 2>&1; then printf '%s' "$1" | md5sum | cut -c1-8; else printf unavailable; fi; }
 ping_probe(){ target=$1; if ping -4 -c 1 -W 1 "$target" >/dev/null 2>&1; then ping -4 -c 3 -W 3 "$target" || true; else ping -c 3 -W 3 "$target" || true; fi; }
 fetch(){ name=$1; url=$2; if command -v curl >/dev/null 2>&1; then body=$(curl -4fsS --max-time 15 "$url" 2>/tmp/${name}.err) && rc=0 || rc=$?; else echo "$name=skip no_curl"; return; fi; if [[ $rc -eq 0 ]]; then ip=$(printf '%s\n' "$body" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1 || true); [[ -n $ip ]] && echo "$name=ok ip_hash=$(hash8 "$ip")" || echo "$name=ok body_hash=$(hash8 "$body")"; else echo "$name=fail rc=$rc"; fi; }
@@ -47,6 +55,21 @@ log "vpn iface"
 ip link show "$VPN_IFACE" || true
 log "hotspot iface"
 ip link show "$HOTSPOT_IFACE" || true
+log "dnsmasq readiness"
+podman_cmd ps -a --filter "name=^${HOTSPOT_CONTAINER}$" --format 'container={{.Names}} status={{.Status}} image={{.Image}}' || true
+podman_cmd exec "$HOTSPOT_CONTAINER" pgrep -a hostapd || true
+podman_cmd exec "$HOTSPOT_CONTAINER" pgrep -a dnsmasq || true
+if command -v ss >/dev/null 2>&1; then sudo ss -lunp | grep -E ':(53|67)\\b|dnsmasq|hostapd' || true; fi
+for f in /home/deck/code/tools/vibe-practicum-vpn/steam-deck/hotspot-client/logs/hotspot/hostapd.log /home/deck/code/tools/vibe-practicum-vpn/steam-deck/hotspot-client/logs/hotspot/dnsmasq.log; do
+  if [[ -r "$f" ]]; then
+    echo "log_file=$(basename "$f")"
+    tail -n 40 "$f" | grep -E 'AP-ENABLED|DHCP, sockets bound|DHCP, IP range|DHCPDISCOVER|DHCPOFFER|DHCPREQUEST|DHCPACK|started|failed|error|warning' || true
+  else
+    echo "log_file=$(basename "$f") missing"
+  fi
+done
+log "nft tables relevant"
+command -v nft >/dev/null 2>&1 && sudo nft list table inet "$NFT_TABLE" || true
 log "icmp"
 ping_probe 1.1.1.1
 ping_probe 8.8.8.8
