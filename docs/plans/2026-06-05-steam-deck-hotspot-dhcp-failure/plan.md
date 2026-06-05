@@ -60,3 +60,32 @@ Executor:
 
 ## Issues
 - none yet.
+
+## Owner verification update (2026-06-05)
+
+Execution result:
+- Task 1 delegated to `aad-implementer`; implementation commits pushed:
+  - `e94a9c1` Harden Deck hotspot DHCP readiness
+  - `bb68bf9` Record Deck DHCP live readiness evidence
+  - `04f009b` Report Deck DHCP apply blocker
+- Acceptance audit completed: `reports/acceptance-auditor.md`; verdict `accepted-with-limits`.
+
+Acceptance verification:
+- AC1 dnsmasq starts/stays running with `ap0` addressed/up: passed for current live server state via `verification/dhcp-live.md`; fixed image re-apply blocked by missing `DECK_HOTSPOT_PASSWORD`.
+- AC2 UDP67/DHCP readiness: passed for current live server state via `verification/dhcp-live.md`; no client lease proof captured.
+- AC3 hostapd/AP up: passed via `verification/dhcp-live.md` (`AP-ENABLED`, `ap0` up).
+- AC4 rollback idempotency: passed via fake-name smoke in `verification/down-idempotent-check-rerun.md`; actual rollback/re-apply not run to avoid leaving AP down without password.
+- AC5 public-safety: passed; artifacts are redacted and no secret/profile contents were committed.
+
+Fresh owner checks:
+- `bash -n scripts/*.sh steam-deck/hotspot-client/scripts/*.sh`: passed.
+- `git diff --check`: passed.
+
+Issues:
+- R-01: Script/runtime DHCP readiness hardened: dnsmasq now uses dynamic binding, explicit hotspot listen address/options, authoritative DHCP, durable dnsmasq log; entrypoint waits for hostapd `AP-ENABLED`; up/test scripts record readiness evidence.
+- U-01: Full live closure remains blocked by missing hotspot password in approved local secret source. Needed next: export/provide `DECK_HOTSPOT_PASSWORD`, rerun `scripts/deck-hotspot-vpn-up.sh --ssh-target deck --apply --yes`, then `scripts/deck-hotspot-vpn-test.sh --ssh-target deck` and client DHCP lease proof if possible.
+
+Final slice state:
+- Code/script fix: complete and pushed.
+- Current live server-side DHCP readiness: evidenced.
+- Fixed-image live apply and client-DHCP proof: blocked pending password.
