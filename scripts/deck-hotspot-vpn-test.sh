@@ -68,7 +68,10 @@ for f in /home/deck/code/tools/vibe-practicum-vpn/steam-deck/hotspot-client/logs
     echo "log_file=$(basename "$f") missing"
   fi
 done
-log "nft tables relevant"
+log "firewalld/nft hotspot readiness"
+if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
+  sudo firewall-cmd --get-active-zones || true
+fi
 command -v nft >/dev/null 2>&1 && sudo nft list table inet "$NFT_TABLE" || true
 log "icmp"
 ping_probe 1.1.1.1

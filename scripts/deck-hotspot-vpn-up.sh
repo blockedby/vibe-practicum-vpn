@@ -100,10 +100,11 @@ if [[ "$DRY_RUN" = 1 ]]; then
   log "dry-run plan: would create virtual AP iface $HOTSPOT_IFACE from $UPLINK_IFACE"
   log "dry-run plan: would assign $HOTSPOT_CIDR to $HOTSPOT_IFACE"
   log "dry-run plan: would build/run hostapd+dnsmasq container $HOTSPOT_CONTAINER ($HOTSPOT_IMAGE)"
+  log "dry-run plan: would put $HOTSPOT_IFACE into firewalld trusted zone when firewalld is active"
   log "dry-run plan: would enable net.ipv4.ip_forward=1 and nft NAT $HOTSPOT_SUBNET -> $VPN_IFACE"
   exit 0
 fi
-cleanup_on_fail(){ rc=$?; if [[ $rc -ne 0 ]]; then log "failure rc=$rc; cleanup"; podman_cmd rm -f "$HOTSPOT_CONTAINER" || true; sudo nft delete table inet "$NFT_TABLE" || true; sudo iw dev "$HOTSPOT_IFACE" del || true; fi; exit $rc; }
+cleanup_on_fail(){ rc=$?; if [[ $rc -ne 0 ]]; then log "failure rc=$rc; cleanup"; podman_cmd rm -f "$HOTSPOT_CONTAINER" || true; sudo nft delete table inet "$NFT_TABLE" || true; if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then sudo firewall-cmd --zone=trusted --remove-interface="$HOTSPOT_IFACE" || true; fi; sudo iw dev "$HOTSPOT_IFACE" del || true; fi; exit $rc; }
 trap cleanup_on_fail EXIT
 podman_cmd rm -f "$HOTSPOT_CONTAINER" >/dev/null 2>&1 || true
 sudo nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || true
@@ -112,6 +113,9 @@ run sudo iw dev "$UPLINK_IFACE" interface add "$HOTSPOT_IFACE" type __ap
 run sudo ip addr flush dev "$HOTSPOT_IFACE"
 run sudo ip addr add "$HOTSPOT_CIDR" dev "$HOTSPOT_IFACE"
 run sudo ip link set "$HOTSPOT_IFACE" up
+if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
+  run sudo firewall-cmd --zone=trusted --add-interface="$HOTSPOT_IFACE"
+fi
 RUNTIME_DIR="$REMOTE_DIR/runtime/hotspot"
 LOG_DIR="$REMOTE_DIR/logs/hotspot"
 run mkdir -p "$RUNTIME_DIR" "$LOG_DIR"

@@ -55,6 +55,10 @@ if command -v nft >/dev/null 2>&1; then
     log "nft table inet $NFT_TABLE already absent"
   fi
 fi
+if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
+  log "removing $HOTSPOT_IFACE from firewalld trusted zone"
+  sudo firewall-cmd --zone=trusted --remove-interface="$HOTSPOT_IFACE" || true
+fi
 if [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]] && ip link show "$HOTSPOT_IFACE" >/dev/null 2>&1; then
   log "deleting virtual AP interface $HOTSPOT_IFACE"
   sudo iw dev "$HOTSPOT_IFACE" del || true
