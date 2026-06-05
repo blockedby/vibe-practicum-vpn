@@ -58,3 +58,5 @@ steam-deck/hotspot-client/reports/
 # Keep sanitized examples/docs tracked explicitly if needed
 !config/private-endpoints.example.env
 !steam-deck/hotspot-client/.env.example
+
+steam-deck/hotspot-client/runtime/

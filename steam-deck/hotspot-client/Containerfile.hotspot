@@ -1,0 +1,7 @@
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends bash dnsmasq-base hostapd iproute2 procps \
+ && rm -rf /var/lib/apt/lists/*
+COPY scripts/hotspot-entrypoint.sh /usr/local/bin/vpnkit-hotspot-entrypoint
+RUN chmod +x /usr/local/bin/vpnkit-hotspot-entrypoint
+ENTRYPOINT ["/usr/local/bin/vpnkit-hotspot-entrypoint"]
