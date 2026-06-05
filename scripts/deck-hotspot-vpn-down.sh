@@ -47,15 +47,15 @@ log(){ printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
 log "down start"
 if nmcli -t -f NAME con show | grep -Fxq "$CONNECTION"; then
   log "bringing down NetworkManager connection $CONNECTION"
-  nmcli con down "$CONNECTION" || true
+  sudo nmcli con down "$CONNECTION" || true
   log "deleting NetworkManager connection $CONNECTION"
-  nmcli con delete "$CONNECTION" || true
+  sudo nmcli con delete "$CONNECTION" || true
 else
   log "NetworkManager connection not present: $CONNECTION"
 fi
 if command -v nft >/dev/null 2>&1 && nft list table inet "$NFT_TABLE" >/dev/null 2>&1; then
   log "deleting nft table inet $NFT_TABLE"
-  sudo nft delete table inet "$NFT_TABLE" || nft delete table inet "$NFT_TABLE" || true
+  sudo nft delete table inet "$NFT_TABLE" || true
 else
   log "nft table not present: inet $NFT_TABLE"
 fi

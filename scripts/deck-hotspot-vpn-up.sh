@@ -75,7 +75,7 @@ set -Eeuo pipefail
 log(){ printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
 run(){ log "+ $*"; "$@"; }
 need(){ command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" >&2; exit 10; }; }
-need nmcli; need ip; need sysctl
+need nmcli; need ip; need sysctl; need sudo
 log "preflight"
 nmcli -f DEVICE,TYPE,STATE dev status || true
 ip -br addr || true
@@ -105,20 +105,20 @@ if [[ "$DRY_RUN" = 1 ]]; then
   exit 0
 fi
 if [[ "$VPN_IFACE_PRESENT" = 0 ]]; then echo "vpn iface missing: $VPN_IFACE (start/reuse host-namespace VPN first)"; exit 13; fi
-cleanup_on_fail(){ rc=$?; if [[ $rc -ne 0 ]]; then log "failure rc=$rc; invoking down cleanup"; nmcli con down "$CONNECTION" || true; nmcli con delete "$CONNECTION" || true; command -v nft >/dev/null 2>&1 && (sudo nft delete table inet "$NFT_TABLE" || nft delete table inet "$NFT_TABLE" || true); if [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]]; then sudo iw dev "$HOTSPOT_IFACE" del || true; fi; fi; exit $rc; }
+cleanup_on_fail(){ rc=$?; if [[ $rc -ne 0 ]]; then log "failure rc=$rc; invoking down cleanup"; sudo nmcli con down "$CONNECTION" || true; sudo nmcli con delete "$CONNECTION" || true; command -v nft >/dev/null 2>&1 && sudo nft delete table inet "$NFT_TABLE" || true; if [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]]; then sudo iw dev "$HOTSPOT_IFACE" del || true; fi; fi; exit $rc; }
 trap cleanup_on_fail EXIT
-if nmcli -t -f NAME con show | grep -Fxq "$CONNECTION"; then run nmcli con delete "$CONNECTION" || true; fi
+if nmcli -t -f NAME con show | grep -Fxq "$CONNECTION"; then run sudo nmcli con delete "$CONNECTION" || true; fi
 if ! ip link show "$HOTSPOT_IFACE" >/dev/null 2>&1 && [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]]; then
   need iw
   run sudo iw dev "$UPLINK_IFACE" interface add "$HOTSPOT_IFACE" type __ap
   run sudo ip link set "$HOTSPOT_IFACE" up || true
 fi
-run nmcli con add type wifi ifname "$HOTSPOT_IFACE" con-name "$CONNECTION" autoconnect no ssid "$SSID"
-run nmcli con modify "$CONNECTION" 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared
-run nmcli con modify "$CONNECTION" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PASSWORD"
-run sysctl -w net.ipv4.ip_forward=1
+run sudo nmcli con add type wifi ifname "$HOTSPOT_IFACE" con-name "$CONNECTION" autoconnect no ssid "$SSID"
+run sudo nmcli con modify "$CONNECTION" 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared
+run sudo nmcli con modify "$CONNECTION" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PASSWORD"
+run sudo sysctl -w net.ipv4.ip_forward=1
 if command -v nft >/dev/null 2>&1; then
-  sudo nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || true
+  sudo nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || true
   cat > /tmp/${NFT_TABLE}.nft <<EOF_NFT
 table inet $NFT_TABLE {
  chain forward {
@@ -133,11 +133,11 @@ table inet $NFT_TABLE {
  }
 }
 EOF_NFT
-  sudo nft -f /tmp/${NFT_TABLE}.nft || nft -f /tmp/${NFT_TABLE}.nft
+  sudo nft -f /tmp/${NFT_TABLE}.nft
 else
   echo "nft missing; refusing apply until iptables fallback is explicitly implemented"; exit 14
 fi
-run nmcli con up "$CONNECTION"
+run sudo nmcli con up "$CONNECTION"
 log "post status"
 nmcli -f DEVICE,TYPE,STATE dev status || true
 ip -br addr || true
