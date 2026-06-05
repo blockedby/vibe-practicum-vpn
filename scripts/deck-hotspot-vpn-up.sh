@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 SSH_TARGET=${DECK_HOTSPOT_SSH_TARGET:-${VPNKIT_STEAMDECK_SSH_TARGET:-deck}}
 UPLINK_IFACE=${DECK_HOTSPOT_UPLINK_IFACE:-wlan0}
-HOTSPOT_IFACE=${DECK_HOTSPOT_IFACE:-wlan0}
+HOTSPOT_IFACE=${DECK_HOTSPOT_IFACE:-ap0}
 CONNECTION=${DECK_HOTSPOT_CONNECTION:-vpnkit-deck-hotspot}
 SSID=${DECK_HOTSPOT_SSID:-vpnkit-deck}
 PASSWORD=${DECK_HOTSPOT_PASSWORD:-}
@@ -25,7 +25,7 @@ container; it expects the VPN interface/container to already exist or reports it
 Options:
   --ssh-target HOST      SSH target (default deck)
   --uplink-iface IFACE   Internet uplink iface (default wlan0)
-  --hotspot-iface IFACE  Hotspot iface; one-adapter default wlan0
+  --hotspot-iface IFACE  Hotspot/AP iface; one-adapter default ap0 virtual AP
   --connection NAME      NM connection name (default vpnkit-deck-hotspot)
   --ssid SSID            Hotspot SSID (default vpnkit-deck)
   --password PASS        Hotspot WPA password (not printed)
@@ -66,7 +66,7 @@ shell_quote(){ printf '%q' "$1"; }
   echo "- Timestamp: $(date -u +%FT%TZ)"
   echo "- SSH target: <redacted>"
   echo "- Mode: $([[ $DRY_RUN -eq 1 ]] && echo dry-run || echo apply)"
-  echo "- Topology: $UPLINK_IFACE uplink, $HOTSPOT_IFACE hotspot, $VPN_IFACE VPN egress"
+  echo "- Topology: $UPLINK_IFACE uplink, $HOTSPOT_IFACE hotspot/AP, $VPN_IFACE VPN egress"
   echo
   echo '```text'
   ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
@@ -81,7 +81,13 @@ nmcli -f DEVICE,TYPE,STATE dev status || true
 ip -br addr || true
 ip route get 1.1.1.1 || true
 if ! ip link show "$UPLINK_IFACE" >/dev/null 2>&1; then echo "uplink iface missing: $UPLINK_IFACE"; exit 11; fi
-if ! ip link show "$HOTSPOT_IFACE" >/dev/null 2>&1; then echo "hotspot iface missing: $HOTSPOT_IFACE"; exit 12; fi
+if ! ip link show "$HOTSPOT_IFACE" >/dev/null 2>&1; then
+  if [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]]; then
+    log "hotspot iface missing: $HOTSPOT_IFACE; will create virtual AP iface from $UPLINK_IFACE on apply"
+  else
+    echo "hotspot iface missing: $HOTSPOT_IFACE"; exit 12
+  fi
+fi
 VPN_IFACE_PRESENT=1
 if ! ip link show "$VPN_IFACE" >/dev/null 2>&1; then
   VPN_IFACE_PRESENT=0
@@ -89,6 +95,9 @@ if ! ip link show "$VPN_IFACE" >/dev/null 2>&1; then
 fi
 HOTSPOT_SUBNET="10.42.0.0/24"
 if [[ "$DRY_RUN" = 1 ]]; then
+  if ! ip link show "$HOTSPOT_IFACE" >/dev/null 2>&1 && [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]]; then
+    log "dry-run plan: would create virtual AP iface: sudo iw dev $UPLINK_IFACE interface add $HOTSPOT_IFACE type __ap"
+  fi
   log "dry-run plan: would create NM AP connection $CONNECTION on $HOTSPOT_IFACE"
   log "dry-run plan: would enable net.ipv4.ip_forward=1"
   log "dry-run plan: would create nft inet $NFT_TABLE allowing $HOTSPOT_IFACE->$VPN_IFACE, replies, masquerade, and rejecting $HOTSPOT_IFACE->$UPLINK_IFACE"
@@ -96,9 +105,14 @@ if [[ "$DRY_RUN" = 1 ]]; then
   exit 0
 fi
 if [[ "$VPN_IFACE_PRESENT" = 0 ]]; then echo "vpn iface missing: $VPN_IFACE (start/reuse host-namespace VPN first)"; exit 13; fi
-cleanup_on_fail(){ rc=$?; if [[ $rc -ne 0 ]]; then log "failure rc=$rc; invoking down cleanup"; nmcli con down "$CONNECTION" || true; nmcli con delete "$CONNECTION" || true; command -v nft >/dev/null 2>&1 && (sudo nft delete table inet "$NFT_TABLE" || nft delete table inet "$NFT_TABLE" || true); fi; exit $rc; }
+cleanup_on_fail(){ rc=$?; if [[ $rc -ne 0 ]]; then log "failure rc=$rc; invoking down cleanup"; nmcli con down "$CONNECTION" || true; nmcli con delete "$CONNECTION" || true; command -v nft >/dev/null 2>&1 && (sudo nft delete table inet "$NFT_TABLE" || nft delete table inet "$NFT_TABLE" || true); if [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]]; then sudo iw dev "$HOTSPOT_IFACE" del || true; fi; fi; exit $rc; }
 trap cleanup_on_fail EXIT
 if nmcli -t -f NAME con show | grep -Fxq "$CONNECTION"; then run nmcli con delete "$CONNECTION" || true; fi
+if ! ip link show "$HOTSPOT_IFACE" >/dev/null 2>&1 && [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]]; then
+  need iw
+  run sudo iw dev "$UPLINK_IFACE" interface add "$HOTSPOT_IFACE" type __ap
+  run sudo ip link set "$HOTSPOT_IFACE" up || true
+fi
 run nmcli con add type wifi ifname "$HOTSPOT_IFACE" con-name "$CONNECTION" autoconnect no ssid "$SSID"
 run nmcli con modify "$CONNECTION" 802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared
 run nmcli con modify "$CONNECTION" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PASSWORD"
