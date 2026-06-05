@@ -45,6 +45,8 @@ __pycache__/
 # Hermes/Pi orchestration artifacts and worktrees
 .hermes/
 /.hermes/
+.pi/
+/.pi/
 .worktrees/
 /.worktrees/
 progress.md
