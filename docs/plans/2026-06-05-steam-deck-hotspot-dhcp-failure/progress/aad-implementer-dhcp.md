@@ -1,0 +1,13 @@
+# aad-implementer DHCP progress
+
+- 2026-06-05T00:00:00Z startup: Loaded repo/task/package guidance, confirmed branch `feat/steam-deck-hotspot-client`, and `git status --short` was clean before edits.
+- 2026-06-05T00:00:00Z plan: Inspect current Deck hotspot scripts/config generation, run closest non-mutating RED checks because test edits were not explicitly delegated, patch minimal DHCP readiness issue, then run syntax/dry-run/live apply/read-only test/rollback evidence with redaction.
+- 2026-06-05T11:32Z live read-only inspect: Deck `ap0` was up, hotspot container was up, dnsmasq process was present and UDP 67 listener was bound to `ap0`; hostapd log showed AP enabled and one sanitized station connect/disconnect. No raw private endpoints/passwords/profile contents were printed.
+- 2026-06-05T11:33Z RED: Static proving check failed as expected because scripts lacked `bind-dynamic`, dnsmasq `log-facility`, test-script dnsmasq readiness reporting, and entrypoint AP-ENABLED wait before dnsmasq.
+- 2026-06-05T11:36Z GREEN: Patched minimal runtime readiness hardening: dnsmasq `bind-dynamic`/`listen-address`/`dhcp-authoritative`/durable log-facility, entrypoint waits for hostapd `AP-ENABLED`, up script fails fast if dnsmasq/UDP67 readiness is absent, and test script reports sanitized dnsmasq/hostapd/listener/nft evidence.
+- 2026-06-05T11:36Z GREEN check: targeted static checks and `bash -n scripts/*.sh steam-deck/hotspot-client/scripts/*.sh` passed.
+- 2026-06-05T11:37Z commit/push: Created and pushed `e94a9c1 Harden Deck hotspot DHCP readiness` so the Deck can pull updated runtime scripts before live apply.
+- 2026-06-05T11:37Z live apply blocked: `scripts/deck-hotspot-vpn-up.sh --apply --yes` refused to run because no `DECK_HOTSPOT_PASSWORD` was present after sourcing `config/private-endpoints.local.env`. I did not read/reuse the existing remote hotspot passphrase.
+- 2026-06-05T11:37Z read-only live test: wrote `verification/dhcp-live.md`; current live AP has `ap0` up, hostapd AP-ENABLED, dnsmasq process listening on UDP 67 for `ap0`, and Deck-side VPN egress checks pass. The new dnsmasq log file is missing because the fixed image was not reapplied.
+- 2026-06-05T11:38Z rollback REFACTOR: fake-name rollback smoke showed an expected missing-table nft error while still exiting successfully; patched `deck-hotspot-vpn-down.sh` to log already-absent nft tables quietly and reran fake-name rollback smoke successfully without touching the live `ap0` hotspot.
+- 2026-06-05T11:39Z commit/push: Created and pushed `bb68bf9 Record Deck DHCP live readiness evidence` with rollback idempotency quieting and safe verification artifacts. Preparing final implementation report.

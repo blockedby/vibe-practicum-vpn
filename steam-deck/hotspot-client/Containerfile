@@ -1,0 +1,11 @@
+FROM docker.io/library/debian:bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      bash ca-certificates curl dnsutils iproute2 iptables iputils-ping openvpn procps \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/container-entrypoint.sh /usr/local/bin/vpnkit-host-ovpn-entrypoint
+RUN chmod +x /usr/local/bin/vpnkit-host-ovpn-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/vpnkit-host-ovpn-entrypoint"]

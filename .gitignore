@@ -20,13 +20,16 @@ secrets/**/rendered/
 
 # Logs / snapshots / dumps
 logs/
+/reports/
 snapshots/
 *.log
 *.pcap
 *.dump
 *.trace
 
-# Local binaries and image/archive exports
+# Local binaries, caches, and image/archive exports
+__pycache__/
+*.pyc
 /vibe-vpn
 *.bin
 *.img
@@ -46,5 +49,14 @@ snapshots/
 /.worktrees/
 progress.md
 
+# Steam Deck local operator inputs
+steam-deck/hotspot-client/.env
+steam-deck/hotspot-client/local/
+steam-deck/hotspot-client/logs/
+steam-deck/hotspot-client/reports/
+
 # Keep sanitized examples/docs tracked explicitly if needed
 !config/private-endpoints.example.env
+!steam-deck/hotspot-client/.env.example
+
+steam-deck/hotspot-client/runtime/
