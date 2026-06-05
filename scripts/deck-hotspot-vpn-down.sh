@@ -48,8 +48,12 @@ log "down start"
 log "removing hotspot AP container $HOTSPOT_CONTAINER"
 podman_cmd rm -f "$HOTSPOT_CONTAINER" || true
 if command -v nft >/dev/null 2>&1; then
-  log "deleting nft table inet $NFT_TABLE"
-  sudo nft delete table inet "$NFT_TABLE" || true
+  if sudo nft list table inet "$NFT_TABLE" >/dev/null 2>&1; then
+    log "deleting nft table inet $NFT_TABLE"
+    sudo nft delete table inet "$NFT_TABLE" || true
+  else
+    log "nft table inet $NFT_TABLE already absent"
+  fi
 fi
 if [[ "$HOTSPOT_IFACE" != "$UPLINK_IFACE" ]] && ip link show "$HOTSPOT_IFACE" >/dev/null 2>&1; then
   log "deleting virtual AP interface $HOTSPOT_IFACE"
