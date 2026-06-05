@@ -61,9 +61,9 @@ podman_cmd exec "$HOTSPOT_CONTAINER" pgrep -a hostapd || true
 podman_cmd exec "$HOTSPOT_CONTAINER" pgrep -a dnsmasq || true
 if command -v ss >/dev/null 2>&1; then sudo ss -lunp | grep -E ':(53|67)\\b|dnsmasq|hostapd' || true; fi
 for f in /home/deck/code/tools/vibe-practicum-vpn/steam-deck/hotspot-client/logs/hotspot/hostapd.log /home/deck/code/tools/vibe-practicum-vpn/steam-deck/hotspot-client/logs/hotspot/dnsmasq.log; do
-  if [[ -r "$f" ]]; then
+  if sudo test -r "$f"; then
     echo "log_file=$(basename "$f")"
-    tail -n 40 "$f" | grep -E 'AP-ENABLED|DHCP, sockets bound|DHCP, IP range|DHCPDISCOVER|DHCPOFFER|DHCPREQUEST|DHCPACK|started|failed|error|warning' || true
+    sudo tail -n 40 "$f" | grep -E 'AP-ENABLED|DHCP, sockets bound|DHCP, IP range|DHCPDISCOVER|DHCPOFFER|DHCPREQUEST|DHCPACK|started|failed|error|warning' || true
   else
     echo "log_file=$(basename "$f") missing"
   fi

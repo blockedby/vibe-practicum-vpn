@@ -171,8 +171,8 @@ for attempt in {1..10}; do
   if podman_cmd exec "$HOTSPOT_CONTAINER" pgrep -x hostapd >/dev/null 2>&1 \
     && podman_cmd exec "$HOTSPOT_CONTAINER" pgrep -x dnsmasq >/dev/null 2>&1 \
     && sudo ss -H -lunp 2>/dev/null | grep -E "[.:]67\\b" | grep -q 'dnsmasq' \
-    && grep -q 'AP-ENABLED' "$LOG_DIR/hostapd.log" \
-    && grep -Eq 'DHCP, sockets bound|DHCP, IP range|started' "$LOG_DIR/dnsmasq.log"; then
+    && sudo grep -q 'AP-ENABLED' "$LOG_DIR/hostapd.log" \
+    && sudo grep -Eq 'DHCP, sockets bound|DHCP, IP range|started' "$LOG_DIR/dnsmasq.log"; then
     ready=1
     break
   fi
@@ -188,7 +188,7 @@ fi
 podman_cmd ps --filter "name=^${HOTSPOT_CONTAINER}$" --format 'container={{.Names}} status={{.Status}} image={{.Image}}'
 iw dev | sed -n "/Interface $HOTSPOT_IFACE/,+10p" || true
 sudo ss -lunp | grep -E ':(53|67)\\b|dnsmasq' || true
-grep -E 'AP-ENABLED|DHCP, sockets bound|DHCP, IP range|started' "$LOG_DIR/hostapd.log" "$LOG_DIR/dnsmasq.log" || true
+sudo grep -E 'AP-ENABLED|DHCP, sockets bound|DHCP, IP range|started' "$LOG_DIR/hostapd.log" "$LOG_DIR/dnsmasq.log" || true
 trap - EXIT
 log "up done"
 REMOTE
