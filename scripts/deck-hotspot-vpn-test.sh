@@ -2,13 +2,13 @@
 set -Eeuo pipefail
 
 SSH_TARGET=${DECK_HOTSPOT_SSH_TARGET:-${VPNKIT_STEAMDECK_SSH_TARGET:-deck}}
-HOTSPOT_IFACE=${DECK_HOTSPOT_IFACE:-wlan0}
+HOTSPOT_IFACE=${DECK_HOTSPOT_IFACE:-ap0}
 VPN_IFACE=${DECK_HOTSPOT_VPN_IFACE:-tun0}
 REPORT_PATH=${DECK_HOTSPOT_REPORT_PATH:-}
 SSH_OPTS=()
 
 usage(){ cat <<'EOF'
-Usage: scripts/deck-hotspot-vpn-test.sh [--ssh-target deck] [--hotspot-iface wlan0] [--vpn-iface tun0] [--report PATH]
+Usage: scripts/deck-hotspot-vpn-test.sh [--ssh-target deck] [--hotspot-iface ap0] [--vpn-iface tun0] [--report PATH]
 
 Run Deck-side gateway checks and write redacted report. Does not mutate state.
 Client devices should additionally run the commands printed at the end while
@@ -36,6 +36,7 @@ redact(){ sed -E -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/<IP>/g' -e 's/([0-9a-f]{2}:){
 set -Eeuo pipefail
 log(){ printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
 hash8(){ if command -v sha256sum >/dev/null 2>&1; then printf '%s' "$1" | sha256sum | cut -c1-8; elif command -v md5sum >/dev/null 2>&1; then printf '%s' "$1" | md5sum | cut -c1-8; else printf unavailable; fi; }
+ping_probe(){ target=$1; if ping -4 -c 1 -W 1 "$target" >/dev/null 2>&1; then ping -4 -c 3 -W 3 "$target" || true; else ping -c 3 -W 3 "$target" || true; fi; }
 fetch(){ name=$1; url=$2; if command -v curl >/dev/null 2>&1; then body=$(curl -4fsS --max-time 15 "$url" 2>/tmp/${name}.err) && rc=0 || rc=$?; else echo "$name=skip no_curl"; return; fi; if [[ $rc -eq 0 ]]; then ip=$(printf '%s\n' "$body" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1 || true); [[ -n $ip ]] && echo "$name=ok ip_hash=$(hash8 "$ip")" || echo "$name=ok body_hash=$(hash8 "$body")"; else echo "$name=fail rc=$rc"; fi; }
 log "interfaces"
 ip -br addr || true
@@ -47,8 +48,8 @@ ip link show "$VPN_IFACE" || true
 log "hotspot iface"
 ip link show "$HOTSPOT_IFACE" || true
 log "icmp"
-ping -4 -c 3 -W 3 1.1.1.1 || true
-ping -4 -c 3 -W 3 8.8.8.8 || true
+ping_probe 1.1.1.1
+ping_probe 8.8.8.8
 log "dns"
 if command -v nslookup >/dev/null 2>&1; then nslookup x.com 8.8.8.8 || true; nslookup ya.ru 8.8.8.8 || true; nslookup www.linkedin.com 8.8.8.8 || true; fi
 log "ip identity"
@@ -59,7 +60,7 @@ fetch https_x https://x.com/
 fetch https_ya https://ya.ru/
 fetch https_linkedin https://www.linkedin.com/
 log "nft tables relevant"
-command -v nft >/dev/null 2>&1 && nft list tables | grep vpnkit || true
+command -v nft >/dev/null 2>&1 && sudo nft list tables | grep vpnkit || true
 REMOTE
   echo '```'
   cat <<'CLIENT'
