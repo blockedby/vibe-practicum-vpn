@@ -19,8 +19,12 @@ dns_probe(){
     dig +time=8 +tries=1 @8.8.8.8 "$host" A || true
   elif command -v nslookup >/dev/null 2>&1; then
     nslookup "$host" 8.8.8.8 || true
+  elif command -v resolvectl >/dev/null 2>&1; then
+    resolvectl query "$host" || echo "dns_${host}=fail"
+  elif command -v getent >/dev/null 2>&1; then
+    getent hosts "$host" || echo "dns_${host}=fail"
   else
-    podman_cmd exec "$CONTAINER" dig +time=8 +tries=1 @8.8.8.8 "$host" A || echo "dns_${host}=fail"
+    echo "dns_${host}=skip no_host_dns_tool"
   fi
 }
 
