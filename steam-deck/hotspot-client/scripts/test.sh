@@ -4,6 +4,26 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib.sh"
 
+ping_probe(){
+  local target=$1
+  if ping -4 -c 1 -W 1 "$target" >/dev/null 2>&1; then
+    ping -4 -c 3 -W 3 "$target" || true
+  else
+    ping -c 3 -W 3 "$target" || true
+  fi
+}
+
+dns_probe(){
+  local host=$1
+  if command -v dig >/dev/null 2>&1; then
+    dig +time=8 +tries=1 @8.8.8.8 "$host" A || true
+  elif command -v nslookup >/dev/null 2>&1; then
+    nslookup "$host" 8.8.8.8 || true
+  else
+    podman_cmd exec "$CONTAINER" dig +time=8 +tries=1 @8.8.8.8 "$host" A || echo "dns_${host}=fail"
+  fi
+}
+
 curl_ip_hash(){
   local name=$1 url=$2 body rc
   body=$(curl -4fsS --max-time 20 "$url" 2>/tmp/${name}.err) && rc=0 || rc=$?
@@ -32,18 +52,12 @@ REPORT=$(new_report_path test)
   ip route get 1.1.1.1 || true
   ip route get 8.8.8.8 || true
   echo "icmp_checks_start"
-  ping -4 -c 3 -W 3 1.1.1.1 || true
-  ping -4 -c 3 -W 3 8.8.8.8 || true
+  ping_probe 1.1.1.1
+  ping_probe 8.8.8.8
   echo "dns_checks_start"
-  if command -v dig >/dev/null 2>&1; then
-    dig +time=8 +tries=1 @8.8.8.8 x.com A || true
-    dig +time=8 +tries=1 @8.8.8.8 ya.ru A || true
-  elif command -v nslookup >/dev/null 2>&1; then
-    nslookup x.com 8.8.8.8 || true
-    nslookup ya.ru 8.8.8.8 || true
-  else
-    echo "dns_tool=missing"
-  fi
+  dns_probe x.com
+  dns_probe ya.ru
+  dns_probe www.linkedin.com
   echo "ip_identity_checks_start"
   curl_ip_hash ip_ifconfig_me https://ifconfig.me
   curl_ip_hash ip_api_ipify https://api.ipify.org
