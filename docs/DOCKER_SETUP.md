@@ -93,8 +93,10 @@ The Compose default is `VPNKIT_ROUTING_MODE=redirect`, matching the tracked
 inbound on UDP `5353`. Keep these settings aligned for redirect-mode production
 runs: if production sets `VPNKIT_ROUTING_MODE=redirect`, the rendered sing-box
 config must include both the redirect inbound and the DNS inbound. `tproxy` mode
-uses TCP `2082` without the DNS redirect readiness gate, and `tun` mode waits
-for `${SINGBOX_TUN_IFACE:-sb-tun0}` instead of redirect ports.
+uses TCP `2082` without the DNS redirect readiness gate. `tun` mode uses
+`config/sing-box/config.tun.json.template`, creates `${SINGBOX_TUN_IFACE:-sb-tun0}`
+with the tracked default address/peer pair used by `setup-routing.sh`, and waits
+for that interface instead of redirect ports.
 
 `docker-compose.yml` passes `OVPN_CIDR` with the same public-safe default used by
 `docker/vpnkit/setup-routing.sh`; production may override it from its local
