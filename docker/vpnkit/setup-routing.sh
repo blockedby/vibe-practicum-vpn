@@ -335,6 +335,8 @@ case "$VPNKIT_ROUTING_MODE" in
     if ! ip rule show | grep -q "from $OVPN_CIDR lookup $TUN_TABLE"; then
       run ip rule add from "$OVPN_CIDR" table "$TUN_TABLE" priority 1000
     fi
+    ensure_iptables_rule filter FORWARD -i tun0 -o "$TUN_IFACE" -s "$OVPN_CIDR" -j ACCEPT
+    ensure_iptables_rule filter FORWARD -i "$TUN_IFACE" -o tun0 -d "$OVPN_CIDR" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     ip rule show
     ip route show table "$TUN_TABLE"
     ip -s link show "$TUN_IFACE"

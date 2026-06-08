@@ -50,5 +50,7 @@ require_literal "$repo_root/config/sing-box/config.tun.json.template" '"type": "
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"interface_name": "sb-tun0"' 'tun interface matches routing default'
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"address": ["172.19.0.1/30"]' 'tun address matches routing peer default'
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"auto_route": false' 'tun template leaves route policy to setup-routing'
+require_literal "$repo_root/docker/vpnkit/setup-routing.sh" 'ensure_iptables_rule filter FORWARD -i tun0 -o "$TUN_IFACE" -s "$OVPN_CIDR" -j ACCEPT' 'tun forward allow from OpenVPN to sing-box TUN'
+require_literal "$repo_root/docker/vpnkit/setup-routing.sh" 'ensure_iptables_rule filter FORWARD -i "$TUN_IFACE" -o tun0 -d "$OVPN_CIDR" -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT' 'tun forward return allow to OpenVPN'
 
 echo 'vpnkit production routing wiring tests passed'
