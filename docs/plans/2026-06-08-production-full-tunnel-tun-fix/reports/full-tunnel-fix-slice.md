@@ -6,7 +6,8 @@ Restore full-tunnel semantics for both known vpnkit production servers using sin
 ## Context
 - Worktree: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/prod-full-tunnel-tun-fix`
 - Branch: `prod-full-tunnel-tun-fix`
-- Commits: `b12aa89` (TUN render support), `dc943a6` (OpenVPN-to-sing-box TUN forwarding)
+- Commits: `b12aa89` (TUN render support), `dc943a6` (OpenVPN-to-sing-box TUN forwarding), `d372ae0` (sanitized verification report)
+- Draft PR: https://github.com/blockedby/vibe-practicum-vpn/pull/23
 - Profile verified: `secrets/vps/openvpn/client/rabotau-na-failover-20260608T162953Z/phone.ovpn` (gitignored; contents not printed)
 
 ## Changes
