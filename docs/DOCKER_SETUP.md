@@ -86,6 +86,20 @@ docker compose --profile test run --rm ovpn-client-test
 
 Expected client-test result: OpenVPN connects, client receives a VPN address, DNS returns `NOERROR`, HTTPS returns `200`, and literal-IP HTTPS returns `200`.
 
+### Routing mode consistency
+
+The Compose default is `VPNKIT_ROUTING_MODE=redirect`, matching the tracked
+`config/sing-box/config.json.template` redirect inbound on TCP `2082` and DNS
+inbound on UDP `5353`. Keep these settings aligned for redirect-mode production
+runs: if production sets `VPNKIT_ROUTING_MODE=redirect`, the rendered sing-box
+config must include both the redirect inbound and the DNS inbound. `tproxy` mode
+uses TCP `2082` without the DNS redirect readiness gate, and `tun` mode waits
+for `${SINGBOX_TUN_IFACE:-sb-tun0}` instead of redirect ports.
+
+`docker-compose.yml` passes `OVPN_CIDR` with the same public-safe default used by
+`docker/vpnkit/setup-routing.sh`; production may override it from its local
+`.env` without changing tracked files.
+
 ## Live operations boundary
 
 Do not run SSH/SCP/deploy/recreate commands from public docs by copy-paste without first loading `config/private-endpoints.local.env` and confirming the target. Live runtime mutation is intentionally not documented with real hostnames or IP addresses in tracked files.

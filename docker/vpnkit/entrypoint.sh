@@ -34,21 +34,58 @@ start_singbox() {
   echo "started sing-box pid=$SINGBOX_PID config=$SINGBOX_CONFIG"
 }
 
+singbox_tcp_ready() {
+  local port=$1
+  ss -ltn sport = :"$port" | grep -q ":$port"
+}
+
+singbox_udp_ready() {
+  local port=$1
+  ss -lun sport = :"$port" | grep -q ":$port"
+}
+
+singbox_tun_ready() {
+  local iface=${SINGBOX_TUN_IFACE:-sb-tun0}
+  ip link show "$iface" >/dev/null 2>&1
+}
+
 wait_for_singbox_inbounds() {
+  local mode=${VPNKIT_ROUTING_MODE:-redirect}
+  mode=${mode,,}
   local deadline=$((SECONDS + ${SINGBOX_STARTUP_TIMEOUT_SECONDS:-30}))
-  until ss -ltn sport = :2082 | grep -q ':2082' \
-    && ss -lun sport = :5353 | grep -q ':5353'; do
+  local ready_message timeout_message
+
+  case "$mode" in
+    tun)
+      ready_message="sing-box tun inbound ready on ${SINGBOX_TUN_IFACE:-sb-tun0}"
+      timeout_message="timed out waiting for sing-box tun interface ${SINGBOX_TUN_IFACE:-sb-tun0}"
+      ;;
+    tproxy)
+      ready_message="sing-box tproxy inbound ready on tcp/2082"
+      timeout_message="timed out waiting for sing-box tproxy inbound on tcp/2082"
+      ;;
+    redirect|*)
+      ready_message="sing-box redirect inbounds ready on tcp/2082 and udp/5353"
+      timeout_message="timed out waiting for sing-box redirect inbounds on tcp/2082 and udp/5353"
+      ;;
+  esac
+
+  until case "$mode" in
+    tun) singbox_tun_ready ;;
+    tproxy) singbox_tcp_ready 2082 ;;
+    redirect|*) singbox_tcp_ready 2082 && singbox_udp_ready 5353 ;;
+  esac; do
     if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
       echo "sing-box exited before inbounds became ready" >&2
       wait "$SINGBOX_PID"
     fi
     if (( SECONDS >= deadline )); then
-      echo "timed out waiting for sing-box inbounds on tcp/2082 and udp/5353" >&2
+      echo "$timeout_message" >&2
       return 1
     fi
     sleep 0.2
   done
-  echo "sing-box inbounds ready"
+  echo "$ready_message"
 }
 
 restart_singbox() {
