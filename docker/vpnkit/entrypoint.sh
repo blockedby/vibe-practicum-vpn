@@ -59,6 +59,8 @@ restart_singbox() {
     wait "$SINGBOX_PID" 2>/dev/null || true
   fi
   start_singbox
+  wait_for_singbox_inbounds
+  /usr/local/bin/setup-routing.sh
 }
 
 cleanup() {
