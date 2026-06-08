@@ -45,5 +45,10 @@ require_literal "$compose" 'OVPN_CIDR: "${OVPN_CIDR:-10.89.0.0/24}"' 'compose OV
 require_literal "$docs" 'VPNKIT_ROUTING_MODE=redirect' 'redirect-mode consistency docs mode'
 require_literal "$docs" 'redirect inbound on TCP `2082` and DNS' 'redirect-mode consistency docs inbounds'
 require_literal "$docs" 'OVPN_CIDR' 'OVPN_CIDR compose override docs'
+require_literal "$repo_root/scripts/vpnkit-render-local-configs.sh" 'tun) singbox_template=config/sing-box/config.tun.json.template ;;' 'tun render template selection'
+require_literal "$repo_root/config/sing-box/config.tun.json.template" '"type": "tun"' 'tun inbound template'
+require_literal "$repo_root/config/sing-box/config.tun.json.template" '"interface_name": "sb-tun0"' 'tun interface matches routing default'
+require_literal "$repo_root/config/sing-box/config.tun.json.template" '"address": ["172.19.0.1/30"]' 'tun address matches routing peer default'
+require_literal "$repo_root/config/sing-box/config.tun.json.template" '"auto_route": false' 'tun template leaves route policy to setup-routing'
 
 echo 'vpnkit production routing wiring tests passed'

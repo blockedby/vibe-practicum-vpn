@@ -6,7 +6,14 @@ mkdir -p "$RENDERED/openvpn/pki" "$RENDERED/openvpn/ccd" "$RENDERED/sing-box" "$
 cp config/openvpn/server.tpl "$RENDERED/openvpn/server.conf"
 cp "$BASE/openvpn/pki/ca.crt" "$BASE/openvpn/pki/ta.key" "$BASE/openvpn/pki/vibe-asus.crt" "$BASE/openvpn/pki/vibe-asus.key" "$RENDERED/openvpn/pki/"
 cp "$BASE/openvpn/server/ccd-ignat" "$RENDERED/openvpn/ccd/ignat" 2>/dev/null || true
-python3 - "$BASE/sing-box/tproxy-canary.json" config/sing-box/config.json.template "$RENDERED/sing-box/config.json" <<'PY'
+routing_mode=${VPNKIT_ROUTING_MODE:-redirect}
+routing_mode=${routing_mode,,}
+case "$routing_mode" in
+  redirect|tproxy) singbox_template=config/sing-box/config.json.template ;;
+  tun) singbox_template=config/sing-box/config.tun.json.template ;;
+  *) echo "unsupported VPNKIT_ROUTING_MODE=$VPNKIT_ROUTING_MODE (expected redirect, tproxy, or tun)" >&2; exit 2 ;;
+esac
+python3 - "$BASE/sing-box/tproxy-canary.json" "$singbox_template" "$RENDERED/sing-box/config.json" <<'PY'
 import ipaddress, json, socket, sys
 src, tmpl, out = sys.argv[1:]
 data=json.load(open(src))
