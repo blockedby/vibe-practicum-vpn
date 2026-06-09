@@ -138,3 +138,4 @@ Dependencies:
 - Depends on prior lifecycle implementation commit `f789c4b`.
 - Blocks root live acceptance retry.
 - Executor: `aad-implementer` with report `reports/aad-implementer-live-remediation.md`, progress `progress/aad-implementer-live-remediation.md`, verification `verification/live-remediation.md`.
+- 2026-06-09: Root final verification passed safe local checks after remediation; evidence: `verification/root-final.md`. Final root status is partial/blocked: implementation is ready for bounded live retry, but issue #27 is not accepted done because no green live Deck `cycle` result is available with real non-placeholder private Deck bindings. Final report: `final-report.md`.
