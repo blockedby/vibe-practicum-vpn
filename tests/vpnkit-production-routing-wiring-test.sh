@@ -55,8 +55,8 @@ require_literal "$repo_root/docker/vpnkit/setup-routing.sh" 'ensure_iptables_rul
 
 require_literal "$repo_root/config/sing-box/config.json.template" '"type": "tls"' 'redirect template new DNS server schema'
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"type": "tls"' 'tun template new DNS server schema'
-require_literal "$repo_root/config/sing-box/config.json.template" '"default_domain_resolver": "remote-dns"' 'redirect template explicit domain resolver'
-require_literal "$repo_root/config/sing-box/config.tun.json.template" '"default_domain_resolver": "remote-dns"' 'tun template explicit domain resolver'
+require_literal "$repo_root/config/sing-box/config.json.template" '"default_domain_resolver": "direct-dns"' 'redirect template explicit domain resolver'
+require_literal "$repo_root/config/sing-box/config.tun.json.template" '"default_domain_resolver": "direct-dns"' 'tun template explicit domain resolver'
 if grep -R -n 'ENABLE_DEPRECATED_LEGACY_DNS_SERVERS\|ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER' "$compose" "$repo_root/scripts/vpnkit-steamdeck-podman.sh" "$repo_root/config/sing-box" >/tmp/vpnkit-deprecated-dns-env.out; then
   cat /tmp/vpnkit-deprecated-dns-env.out >&2
   echo 'deprecated sing-box DNS compatibility env must not be required by tracked vpnkit runtime wiring' >&2

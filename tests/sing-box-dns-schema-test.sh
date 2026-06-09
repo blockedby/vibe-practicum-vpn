@@ -36,7 +36,7 @@ PY
     || { echo "missing new DNS type=tls in $template" >&2; return 1; }
   grep -q '"server"[[:space:]]*:[[:space:]]*"8\.8\.8\.8"' "$out" \
     || { echo "missing new DNS server in $template" >&2; return 1; }
-  grep -q '"default_domain_resolver"[[:space:]]*:[[:space:]]*"remote-dns"' "$out" \
+  grep -q '"default_domain_resolver"[[:space:]]*:[[:space:]]*"direct-dns"' "$out" \
     || { echo "missing route.default_domain_resolver in $template" >&2; return 1; }
 
   env -u ENABLE_DEPRECATED_LEGACY_DNS_SERVERS \
