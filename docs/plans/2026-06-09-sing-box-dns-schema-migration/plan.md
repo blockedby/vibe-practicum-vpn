@@ -35,3 +35,4 @@ Out of scope:
 - Deployment helper added: `scripts/vpnkit-prod-singbox-dns-migration.sh` with verify/deploy modes, Docker-label workdir discovery, rollback backups, render/check without deprecated DNS env, vpnkit-only recreate, and runtime smoke.
 - Local verification refreshed after deployment helper: targeted tests, shell syntax, `go test ./...`, Docker image build, and public-safety grep passed; see `verification/local.md` and `verification/public-safety.md`.
 - Design correction: `route.default_domain_resolver` uses `direct-dns` (direct-out TLS resolver) instead of `remote-dns` to avoid cold-start rule-set/bootstrap DNS dependence on the selected outbound. Client DNS still uses `dns.final=remote-dns`.
+- Resolved runtime regression found during final redeploy: sing-box rejects DNS server detours to an empty direct outbound, so `direct-dns` now has no detour. Added high-port startup smoke because `sing-box check` alone did not catch this class.

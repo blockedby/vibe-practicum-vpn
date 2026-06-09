@@ -14,18 +14,10 @@ ok  	github.com/kcnc/vibe-practicum-vpn/internal/logging	(cached)
 ok  	github.com/kcnc/vibe-practicum-vpn/internal/nettest	(cached)
 ok  	github.com/kcnc/vibe-practicum-vpn/internal/picker	(cached)
 ok  	github.com/kcnc/vibe-practicum-vpn/internal/service	(cached)
-ok  	github.com/kcnc/vibe-practicum-vpn/internal/singbox	0.003s
+ok  	github.com/kcnc/vibe-practicum-vpn/internal/singbox	(cached)
 ?   	github.com/kcnc/vibe-practicum-vpn/internal/state	[no test files]
 ok  	github.com/kcnc/vibe-practicum-vpn/internal/subscription	(cached)
 ok  	github.com/kcnc/vibe-practicum-vpn/internal/vless	(cached)
 ok  	github.com/kcnc/vibe-practicum-vpn/internal/xray	(cached)
 
-Design adjustment after VPN-over-VPN cold-start evidence: `route.default_domain_resolver` now uses `direct-dns` so remote rule-set/bootstrap domain resolution does not depend on the selected outbound. `dns.final` remains `remote-dns` for client DNS handling.
-
-$ render both templates with gitignored current selected outbound into temp dir and run sing-box check without deprecated DNS env
-checking redirect.json with real selected outbound (redacted)
-checking tun.json with real selected outbound (redacted)
-Result: passed; temp files removed; no config values printed.
-$ docker build -q -t vpnkit-singbox-dns-migration:local -f docker/vpnkit/Dockerfile .
-sha256:e25c0e357ea12606222aab00919ceda5bca56edfef8396244e2396cc5b33c6fe
-docker_build=passed
+Final correction: `direct-dns` has no detour because sing-box rejects detours to an empty direct outbound. Added high-port redirect startup smoke because `sing-box check` did not catch that runtime error.

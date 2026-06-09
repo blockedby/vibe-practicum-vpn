@@ -47,6 +47,45 @@ PY
 render_and_check config/sing-box/config.json.template "$tmp/redirect.json"
 render_and_check config/sing-box/config.tun.json.template "$tmp/tun.json"
 
+# `sing-box check` does not catch every runtime DNS-server wiring error. Start a
+# high-port redirect config briefly and fail on early FATAL/exited process. The
+# startup smoke removes remote rule-set downloads so it only validates local
+# service wiring and DNS server initialization.
+python3 - "$tmp/redirect.json" "$tmp/redirect-startup.json" <<'PY'
+import json, pathlib, sys
+src, dst = map(pathlib.Path, sys.argv[1:])
+data = json.load(open(src))
+for inbound in data.get("inbounds", []):
+    if inbound.get("tag") == "vpnkit-redirect-in":
+        inbound["listen_port"] = 39082
+    if inbound.get("tag") == "vpnkit-dns-in":
+        inbound["listen_port"] = 39053
+for outbound in data.get("outbounds", []):
+    if outbound.get("tag") == "selected-native-out":
+        outbound.clear()
+        outbound.update({"type": "socks", "tag": "selected-native-out", "server": "127.0.0.1", "server_port": 9})
+route = data.get("route", {})
+route["rules"] = [rule for rule in route.get("rules", []) if "rule_set" not in rule]
+route["rule_set"] = []
+dst.write_text(json.dumps(data, indent=2))
+PY
+sing-box run -c "$tmp/redirect-startup.json" >"$tmp/redirect-run.log" 2>&1 &
+run_pid=$!
+sleep 3
+if ! kill -0 "$run_pid" 2>/dev/null; then
+  cat "$tmp/redirect-run.log" >&2
+  wait "$run_pid" || true
+  echo "sing-box redirect startup smoke exited early" >&2
+  exit 1
+fi
+kill "$run_pid" 2>/dev/null || true
+wait "$run_pid" 2>/dev/null || true
+if grep -q 'FATAL' "$tmp/redirect-run.log"; then
+  cat "$tmp/redirect-run.log" >&2
+  echo "sing-box redirect startup smoke logged FATAL" >&2
+  exit 1
+fi
+
 if grep -R -n 'ENABLE_DEPRECATED_LEGACY_DNS_SERVERS\|ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER' \
   docker-compose.yml scripts/vpnkit-steamdeck-podman.sh config/sing-box >/tmp/deprecated-env-grep.out; then
   cat /tmp/deprecated-env-grep.out >&2
