@@ -21,6 +21,7 @@ secrets/**/rendered/
 # Logs / snapshots / dumps
 logs/
 /reports/
+docs/
 snapshots/
 *.log
 *.pcap
