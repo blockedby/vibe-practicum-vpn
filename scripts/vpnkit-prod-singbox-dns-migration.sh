@@ -120,7 +120,25 @@ rm -f "$archive"
 set -a
 [ -r .env ] && . ./.env
 set +a
-scripts/vpnkit-render-local-configs.sh >/tmp/vpnkit-render.out
+if scripts/vpnkit-render-local-configs.sh >/tmp/vpnkit-render.out 2>/tmp/vpnkit-render.err; then
+  echo "render=full"
+else
+  echo "render=singbox-only-fallback"
+  python3 - "$rollback_dir/runtime-config.json" "${VPNKIT_ROUTING_MODE:-redirect}" <<'PYREMOTE'
+import json, pathlib, sys
+src = pathlib.Path(sys.argv[1])
+mode = (sys.argv[2] or "redirect").lower()
+template = pathlib.Path("config/sing-box/config.tun.json.template" if mode == "tun" else "config/sing-box/config.json.template")
+out = pathlib.Path("secrets/vps/rendered/sing-box/config.json")
+data = json.load(open(src))
+selected = [o for o in data.get("outbounds", []) if o.get("tag") == "selected-native-out"]
+if not selected:
+    raise SystemExit("selected-native-out outbound not found in runtime backup")
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(template.read_text().replace("{{SELECTED_NATIVE_OUT_JSON}}", json.dumps(selected[0], indent=4)))
+PYREMOTE
+  chmod 600 secrets/vps/rendered/sing-box/config.json
+fi
 if grep -q \"address\"[[:space:]]*:[[:space:]]*\"tls:// secrets/vps/rendered/sing-box/config.json; then
   echo "rendered_schema=legacy"
   exit 30
