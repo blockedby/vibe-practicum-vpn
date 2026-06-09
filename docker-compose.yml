@@ -7,8 +7,6 @@ services:
     ports:
       - "${VPNKIT_OPENVPN_PORT:-1194}:1194/udp"
     environment:
-      ENABLE_DEPRECATED_LEGACY_DNS_SERVERS: "true"
-      ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER: "true"
       VPNKIT_ROUTING_MODE: "${VPNKIT_ROUTING_MODE:-redirect}"
       OVPN_CIDR: "${OVPN_CIDR:-10.89.0.0/24}"
       VPNKIT_IPV6_POLICY: "${VPNKIT_IPV6_POLICY:-block}"

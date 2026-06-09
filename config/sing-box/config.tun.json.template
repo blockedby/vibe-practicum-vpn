@@ -2,8 +2,8 @@
   "log": { "level": "debug", "timestamp": true },
   "dns": {
     "servers": [
-      { "tag": "remote-dns", "address": "tls://8.8.8.8", "detour": "selected-native-out" },
-      { "tag": "remote-dns-fallback", "address": "tls://8.8.4.4", "detour": "selected-native-out" }
+      { "tag": "remote-dns", "type": "tls", "server": "8.8.8.8", "detour": "selected-native-out" },
+      { "tag": "remote-dns-fallback", "type": "tls", "server": "8.8.4.4", "detour": "selected-native-out" }
     ],
     "final": "remote-dns",
     "strategy": "ipv4_only"
@@ -31,6 +31,7 @@
     { "type": "block", "tag": "block-out" }
   ],
   "route": {
+    "default_domain_resolver": "remote-dns",
     "rules": [
       { "protocol": "dns", "action": "hijack-dns" },
       { "inbound": ["vpnkit-tun-in", "vpnkit-socks-in"], "action": "sniff", "timeout": "1s" },
