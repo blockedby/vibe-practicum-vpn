@@ -4,7 +4,7 @@ TASK_PACKAGE: docs/plans/2026-06-09-issue-24-smart-routing-manifest
 REPORT_PATH: docs/plans/2026-06-09-issue-24-smart-routing-manifest/reports/aad-implementer-f1-profile-intents.md
 PROGRESS_PATH: docs/plans/2026-06-09-issue-24-smart-routing-manifest/progress/aad-implementer-f1.md
 COMMITS:
-- pending local commit after report write: scoped F1 implementation/report changes
+- 0694efd: feat: add profile intent split for manifest pairs
 FILES_CHANGED:
 - AGENTS.md: records Steam Deck server-host use as test/lab, not production, while preserving Podman-only and explicit live-action boundaries.
 - README.md: documents test/production profile intents, Deck test/lab policy, default selected-pair intent, and explicit production intent usage.
