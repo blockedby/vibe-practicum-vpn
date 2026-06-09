@@ -106,3 +106,19 @@ Dependencies:
 
 Executor:
 - `aad-implementer` with progress at `progress/aad-implementer-b1.md` and report at `reports/aad-implementer-b1-smart-routing.md`.
+
+## Root integration ledger
+
+- 2026-06-09: Slice B was integrated by cherry-picking local commit `4825d00` into root branch as `345d91b`.
+- 2026-06-09: Slice A changes were copied into the root worktree after remediation for explicit client identity fields and real `jsonschema` dependency behavior.
+- 2026-06-09: Root tightened the dev-direct rule set to include the conservative issue #24 candidate domains and updated route-decision proof samples.
+- 2026-06-09: Root changed fixture profile material to non-PEM placeholder strings to avoid committing any key/certificate-shaped material while keeping OpenVPN profile section shape for harness handoff.
+- 2026-06-09: README runbook added for manifest/profile matrix and smart-routing local proof commands.
+- 2026-06-09: Final local verification recorded in `verification/local.md`; acceptance auditor updated verdict to accepted with limitations for repo-local scope.
+
+## Final integrated status
+
+- Slice A (AC1-AC4): complete for repo-local scope. Positive manifest/schema/resolve/render/harness checks pass in a disposable venv with public PyYAML/jsonschema installed; system Python without `jsonschema` fails with clear dependency guidance as required.
+- Slice B (AC5-AC6): complete for repo-local scope. Smart route policy is wired into both sing-box templates, rule sets are copied during render, and route-decision proof passes.
+- Docs/runbook (AC7): complete in `README.md` and task package.
+- Verification (AC8): complete for repo-local scope; live/prod acceptance remains unclaimed and requires explicit operator approval/private inputs.

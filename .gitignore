@@ -63,3 +63,8 @@ steam-deck/hotspot-client/reports/
 !steam-deck/hotspot-client/.env.example
 
 steam-deck/hotspot-client/runtime/
+
+# vpnkit manifest/profile local artifacts
+config/vpnkit-manifest.local.yaml
+config/vpnkit-bindings.local.env
+generated/openvpn-profiles/

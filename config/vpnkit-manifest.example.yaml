@@ -1,0 +1,43 @@
+version: 1
+capabilities:
+  - openvpn
+  - full-tunnel
+  - fixture-profile
+servers:
+  steamdeck:
+    displayName: Steam Deck vpnkit endpoint (public example)
+    capabilities: [openvpn, full-tunnel, fixture-profile]
+    profile_inputs:
+      endpoint: local:VPNKIT_STEAMDECK_LAN_ENDPOINT
+      ca: local:VPNKIT_OPENVPN_CA_CRT
+      cert: local:VPNKIT_OPENVPN_CLIENT_CRT
+      key: local:VPNKIT_OPENVPN_CLIENT_KEY
+      tls_auth: local:VPNKIT_OPENVPN_TA_KEY
+    config_inputs:
+      ssh_target: local:VPNKIT_STEAMDECK_SSH_TARGET
+clients:
+  host-machine:
+    id: host-machine
+    displayName: Host machine OpenVPN client (public fixture)
+    profileCommonName: host-machine
+    clientCertIdentity: host-machine
+    capabilities: [openvpn, fixture-profile]
+    profile_inputs:
+      profileCommonName: local:VPNKIT_OPENVPN_CLIENT_CN
+      clientCertIdentity: local:VPNKIT_OPENVPN_CLIENT_CERT_IDENTITY
+pairs:
+  steamdeck-host-machine:
+    server: steamdeck
+    client: host-machine
+    requires_capabilities: [openvpn, fixture-profile]
+    profile:
+      mode: openvpn
+      remote: local:VPNKIT_STEAMDECK_LAN_ENDPOINT
+      port: 1194
+      proto: udp
+      required_bindings:
+        - endpoint
+        - ca
+        - cert
+        - key
+        - tls_auth

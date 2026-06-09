@@ -23,6 +23,10 @@
 #   VPNKIT_TEST_SERVER_CONTAINER=${VPNKIT_TEST_SERVER_CONTAINER:-vpnkit}
 #   VPNKIT_TEST_ENDPOINT=${VPNKIT_TEST_ENDPOINT:-${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}}
 #   VPNKIT_TEST_PROFILE=${VPNKIT_TEST_PROFILE:-secrets/vps/openvpn/client/test-client.ovpn}
+#   VPNKIT_TEST_MANIFEST=config/vpnkit-manifest.example.yaml
+#   VPNKIT_TEST_MANIFEST_SERVER=steamdeck
+#   VPNKIT_TEST_MANIFEST_CLIENT=host-machine
+#   VPNKIT_TEST_MANIFEST_RENDER_MODE=fixture|real (default: fixture)
 
 set -u -o pipefail
 
@@ -59,6 +63,11 @@ REMOTE_RUNTIME=${VPNKIT_TEST_RUNTIME:-podman}
 SERVER_CONTAINER=${VPNKIT_TEST_SERVER_CONTAINER:-vpnkit}
 TEST_ENDPOINT=${VPNKIT_TEST_ENDPOINT:-${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}}
 TEST_PROFILE=${VPNKIT_TEST_PROFILE:-secrets/vps/openvpn/client/test-client.ovpn}
+TEST_MANIFEST=${VPNKIT_TEST_MANIFEST:-}
+TEST_MANIFEST_SERVER=${VPNKIT_TEST_MANIFEST_SERVER:-}
+TEST_MANIFEST_CLIENT=${VPNKIT_TEST_MANIFEST_CLIENT:-}
+TEST_MANIFEST_RENDER_MODE=${VPNKIT_TEST_MANIFEST_RENDER_MODE:-fixture}
+TEST_MANIFEST_OUT_DIR=${VPNKIT_TEST_MANIFEST_OUT_DIR:-generated/openvpn-profiles}
 
 PASS=0; FAIL=0; SKIP=0
 RESULTS=()
@@ -154,8 +163,62 @@ else
   record SKIP "server:route-decision-proof" "server container unavailable; scaffold cases: ${route_cases[*]}"
 fi
 
+# Optional manifest-pair preparation: explicit selection validates, resolves, renders,
+# then hands the generated profile to the existing client smoke/profile path.
+manifest_pair_selected=0
+manifest_fixture_profile=0
+rendered_profile=""
+if [[ -n "$TEST_MANIFEST" || -n "$TEST_MANIFEST_SERVER" || -n "$TEST_MANIFEST_CLIENT" ]]; then
+  manifest_pair_selected=1
+  if [[ -z "$TEST_MANIFEST" ]]; then TEST_MANIFEST="config/vpnkit-manifest.example.yaml"; fi
+  if [[ -z "$TEST_MANIFEST_SERVER" || -z "$TEST_MANIFEST_CLIENT" ]]; then
+    record FAIL "manifest:selection" "VPNKIT_TEST_MANIFEST_SERVER and VPNKIT_TEST_MANIFEST_CLIENT are required when manifest mode is selected"
+  elif [[ ! -r "$TEST_MANIFEST" ]]; then
+    record FAIL "manifest:validate" "manifest missing/unreadable: $TEST_MANIFEST"
+  elif [[ ! -x scripts/vpnkit-manifest-validate.py ]]; then
+    record FAIL "manifest:validate" "scripts/vpnkit-manifest-validate.py not executable"
+  elif out=$(run_capture python3 scripts/vpnkit-manifest-validate.py --manifest "$TEST_MANIFEST"); then
+    record PASS "manifest:validate" "manifest schema/semantics passed"
+    if out=$(run_capture python3 scripts/vpnkit-manifest-validate.py --manifest "$TEST_MANIFEST" --server "$TEST_MANIFEST_SERVER" --client "$TEST_MANIFEST_CLIENT"); then
+      record PASS "manifest:resolve-pair" "resolved $TEST_MANIFEST_SERVER/$TEST_MANIFEST_CLIENT to sanitized JSON"
+      if [[ ! -x scripts/vpnkit-render-profile-for-pair.sh ]]; then
+        record FAIL "manifest:render-profile" "scripts/vpnkit-render-profile-for-pair.sh not executable"
+      elif out=$(run_capture scripts/vpnkit-render-profile-for-pair.sh --manifest "$TEST_MANIFEST" --server "$TEST_MANIFEST_SERVER" --client "$TEST_MANIFEST_CLIENT" --out-dir "$TEST_MANIFEST_OUT_DIR" --"$TEST_MANIFEST_RENDER_MODE"); then
+        printf '%s\n' "$out"
+        rendered_profile=$(printf '%s\n' "$out" | awk -F= '/^profile_written=/{print $2; exit}')
+        if [[ -n "$rendered_profile" && -r "$rendered_profile" ]]; then
+          TEST_PROFILE="$rendered_profile"
+          [[ "$TEST_MANIFEST_RENDER_MODE" == "fixture" ]] && manifest_fixture_profile=1
+          record PASS "manifest:render-profile" "profile rendered for selected pair"
+        else
+          record FAIL "manifest:render-profile" "renderer did not produce a readable profile path"
+        fi
+      else
+        printf '%s\n' "$out"
+        record FAIL "manifest:render-profile" "selected pair profile render failed"
+      fi
+    else
+      printf '%s\n' "$out"
+      record FAIL "manifest:resolve-pair" "selected pair resolution failed"
+    fi
+  else
+    printf '%s\n' "$out"
+    record FAIL "manifest:validate" "manifest validation failed"
+  fi
+  if [[ -z "$rendered_profile" || ! -r "$rendered_profile" ]]; then
+    TEST_PROFILE="$TEST_MANIFEST_OUT_DIR/selected-manifest-pair-not-rendered.ovpn"
+  fi
+fi
+
 # Client checks: reuse existing public-safe smoke scripts where inputs allow.
-if [[ -r "$TEST_PROFILE" ]]; then
+if [[ $manifest_fixture_profile -eq 1 && -r "$TEST_PROFILE" ]]; then
+  perms=$(stat -c '%a' "$TEST_PROFILE" 2>/dev/null || stat -f '%Lp' "$TEST_PROFILE")
+  if [[ "$perms" == "600" ]] && grep -q '^remote vpnkit-fixture.invalid 1194$' "$TEST_PROFILE" && grep -q '^<ca>$' "$TEST_PROFILE"; then
+    record PASS "client:manifest-fixture-profile-shape" "fixture profile is readable, mode 600, and shaped for OpenVPN client smoke handoff"
+  else
+    record FAIL "client:manifest-fixture-profile-shape" "fixture profile failed safe shape/permission checks"
+  fi
+elif [[ -r "$TEST_PROFILE" ]]; then
   if [[ -n "$TEST_ENDPOINT" ]]; then
     if [[ -x scripts/vpnkit-steamdeck-client-test.sh ]]; then
       if out=$(run_capture env VPNKIT_STEAMDECK_CLIENT_ENDPOINT="$TEST_ENDPOINT" VPNKIT_STEAMDECK_CLIENT_PROFILE="$TEST_PROFILE" VPNKIT_STEAMDECK_CLIENT_LOG_FILE= scripts/vpnkit-steamdeck-client-test.sh --endpoint "$TEST_ENDPOINT" --profile "$TEST_PROFILE"); then
@@ -180,7 +243,11 @@ if [[ -r "$TEST_PROFILE" ]]; then
     record SKIP "client:profile-check" "scripts/vpnkit-profile-check.sh not executable"
   fi
 else
-  record SKIP "client:profile-check" "profile missing/unreadable: $TEST_PROFILE"
+  if [[ $manifest_pair_selected -eq 1 ]]; then
+    record FAIL "client:profile-check" "selected manifest pair did not produce/read a usable profile: $TEST_PROFILE"
+  else
+    record SKIP "client:profile-check" "profile missing/unreadable: $TEST_PROFILE"
+  fi
 fi
 record SKIP "client:policy-visible-extension" "TODO: add cheap dev/adblock policy-visible checks after smart route proof exists"
 
