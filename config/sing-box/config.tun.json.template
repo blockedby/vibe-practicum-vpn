@@ -4,7 +4,7 @@
     "servers": [
       { "tag": "remote-dns", "type": "tls", "server": "8.8.8.8", "detour": "selected-native-out" },
       { "tag": "remote-dns-fallback", "type": "tls", "server": "8.8.4.4", "detour": "selected-native-out" },
-      { "tag": "direct-dns", "type": "tls", "server": "8.8.8.8" }
+      { "tag": "direct-dns", "type": "local" }
     ],
     "final": "remote-dns",
     "strategy": "ipv4_only"
