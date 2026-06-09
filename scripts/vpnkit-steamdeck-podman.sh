@@ -140,8 +140,6 @@ podman run -d --name "$CONTAINER" --replace \
   --sysctl net.ipv4.conf.all.rp_filter=0 \
   --sysctl net.ipv4.conf.default.rp_filter=0 \
   -p "${OPENVPN_PORT}:1194/udp" \
-  -e ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true \
-  -e ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER=true \
   -e VPNKIT_ROUTING_MODE=redirect \
   -v "$REMOTE_DIR/secrets/vps/rendered/openvpn:/etc/openvpn:ro" \
   -v "$REMOTE_DIR/secrets/vps/rendered/sing-box:/etc/sing-box:ro" \
