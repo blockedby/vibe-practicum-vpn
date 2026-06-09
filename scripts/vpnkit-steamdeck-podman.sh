@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SSH_TARGET=${VPNKIT_STEAMDECK_SSH_TARGET:-deck}
+SSH_TARGET=${VPNKIT_TEST_SSH_TARGET:-${VPNKIT_STEAMDECK_SSH_TARGET:-${VPNKIT_STEAMDECK_SSH_HOST:-deck}}}
 REMOTE_DIR=${VPNKIT_STEAMDECK_REMOTE_DIR:-'~/.local/state/vpnkit'}
 IMAGE=${VPNKIT_STEAMDECK_IMAGE:-localhost/vpnkit:steamdeck}
 CONTAINER=${VPNKIT_STEAMDECK_CONTAINER:-vpnkit}
@@ -12,6 +12,12 @@ LAN_ENDPOINT=${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}
 TAILSCALE_ENDPOINT=${VPNKIT_STEAMDECK_TAILSCALE_ENDPOINT:-}
 LOG_FILE=${VPNKIT_STEAMDECK_LOG_FILE:-}
 ALLOW_PRODUCTION_CONTAINER=${VPNKIT_STEAMDECK_ALLOW_PRODUCTION_CONTAINER:-0}
+SSH_TIMEOUT=${VPNKIT_STEAMDECK_SSH_TIMEOUT:-${VPNKIT_TEST_SSH_TIMEOUT:-12}}
+REMOTE_CMD_TIMEOUT=${VPNKIT_STEAMDECK_REMOTE_CMD_TIMEOUT:-${VPNKIT_TEST_REMOTE_CMD_TIMEOUT:-120}}
+BUILD_TIMEOUT=${VPNKIT_STEAMDECK_BUILD_TIMEOUT:-${VPNKIT_TEST_BUILD_TIMEOUT:-600}}
+RUN_TIMEOUT=${VPNKIT_STEAMDECK_RUN_TIMEOUT:-${VPNKIT_TEST_RUN_TIMEOUT:-120}}
+LOGS_TIMEOUT=${VPNKIT_STEAMDECK_LOGS_TIMEOUT:-${VPNKIT_TEST_LOGS_TIMEOUT:-60}}
+VERIFY_TIMEOUT=${VPNKIT_STEAMDECK_VERIFY_TIMEOUT:-${VPNKIT_TEST_VERIFY_TIMEOUT:-180}}
 SSH_OPTS=()
 
 usage() {
@@ -45,6 +51,10 @@ Options:
   --ssh-option OPT         Extra ssh option, repeatable (for example '-p 2222')
   --log-file PATH          Write redacted command output to PATH as well as stdout
   --remove-image           With cleanup, also remove image
+
+Timeout env knobs (seconds): VPNKIT_STEAMDECK_SSH_TIMEOUT, VPNKIT_STEAMDECK_REMOTE_CMD_TIMEOUT,
+  VPNKIT_STEAMDECK_BUILD_TIMEOUT, VPNKIT_STEAMDECK_RUN_TIMEOUT, VPNKIT_STEAMDECK_LOGS_TIMEOUT,
+  VPNKIT_STEAMDECK_VERIFY_TIMEOUT. VPNKIT_TEST_* equivalents are accepted by the test harness.
   -h, --help               Show help
 
 The script never prints config file contents. It transfers rendered configs as files and logs only file names,
@@ -95,8 +105,10 @@ if [[ -n "$LOG_FILE" ]]; then
 fi
 
 log() { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
-remote() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"; }
-remote_sh() { ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' -- "$@"; }
+remote() { timeout --preserve-status "$REMOTE_CMD_TIMEOUT" ssh -o ConnectTimeout="$SSH_TIMEOUT" "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"; }
+remote_sh() { timeout --preserve-status "$REMOTE_CMD_TIMEOUT" ssh -o ConnectTimeout="$SSH_TIMEOUT" "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' -- "$@"; }
+remote_timeout() { local seconds=$1; shift; timeout --preserve-status "$seconds" ssh -o ConnectTimeout="$SSH_TIMEOUT" "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"; }
+remote_sh_timeout() { local seconds=$1; shift; timeout --preserve-status "$seconds" ssh -o ConnectTimeout="$SSH_TIMEOUT" "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' -- "$@"; }
 normalize_remote_dir() {
   remote_sh "$REMOTE_DIR" <<'REMOTE'
 set -Eeuo pipefail
@@ -123,14 +135,14 @@ sync_context() {
   log "creating remote directories under $REMOTE_DIR on $SSH_TARGET"
   remote "mkdir -p '$REMOTE_DIR/src' '$REMOTE_DIR/secrets/vps/rendered' '$REMOTE_DIR/state/vibe-vpn' '$REMOTE_DIR/state/sing-box' '$REMOTE_DIR/logs/vibe-vpn'"
   log "transferring tracked repository build context (git archive; no .gitignored secrets)"
-  git archive --format=tar HEAD | ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "tar -xf - -C '$REMOTE_DIR/src'"
+  git archive --format=tar HEAD | timeout --preserve-status "$REMOTE_CMD_TIMEOUT" ssh -o ConnectTimeout="$SSH_TIMEOUT" "${SSH_OPTS[@]}" "$SSH_TARGET" "tar -xf - -C '$REMOTE_DIR/src'"
   log "transferring rendered config files from $CONFIG_SOURCE (contents not printed)"
-  tar -C "$CONFIG_SOURCE" -cf - openvpn sing-box vibe-vpn | ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "tar -xf - -C '$REMOTE_DIR/secrets/vps/rendered'"
+  tar -C "$CONFIG_SOURCE" -cf - openvpn sing-box vibe-vpn | timeout --preserve-status "$REMOTE_CMD_TIMEOUT" ssh -o ConnectTimeout="$SSH_TIMEOUT" "${SSH_OPTS[@]}" "$SSH_TARGET" "tar -xf - -C '$REMOTE_DIR/secrets/vps/rendered'"
   remote "find '$REMOTE_DIR/secrets/vps/rendered' -type f -printf '%P %s bytes\\n' | sort"
 }
 
 build_image() {
-  remote "cd '$REMOTE_DIR/src' && podman build -t '$IMAGE' -f docker/vpnkit/Dockerfile ."
+  remote_timeout "$BUILD_TIMEOUT" "cd '$REMOTE_DIR/src' && podman build -t '$IMAGE' -f docker/vpnkit/Dockerfile ."
 }
 
 run_container() {
@@ -139,7 +151,7 @@ run_container() {
     exit 2
   fi
   case "$ROUTING_MODE" in tun|redirect|tproxy) ;; *) echo "unsupported routing mode: $ROUTING_MODE" >&2; exit 2 ;; esac
-  remote_sh "$REMOTE_DIR" "$CONTAINER" "$IMAGE" "$OPENVPN_PORT" "$ROUTING_MODE" <<'REMOTE'
+  remote_sh_timeout "$RUN_TIMEOUT" "$REMOTE_DIR" "$CONTAINER" "$IMAGE" "$OPENVPN_PORT" "$ROUTING_MODE" <<'REMOTE'
 set -Eeuo pipefail
 REMOTE_DIR=$1; CONTAINER=$2; IMAGE=$3; OPENVPN_PORT=$4; ROUTING_MODE=$5
 podman rm -f "$CONTAINER" >/dev/null 2>&1 || true
@@ -165,14 +177,14 @@ REMOTE
 }
 
 verify_container() {
-  remote_sh "$CONTAINER" <<'REMOTE' | redact_stream
+  remote_sh_timeout "$VERIFY_TIMEOUT" "$CONTAINER" "$LOGS_TIMEOUT" "$VERIFY_TIMEOUT" <<'REMOTE' | redact_stream
 set -Eeuo pipefail
-CONTAINER=$1
+CONTAINER=$1; LOGS_TIMEOUT=$2; VERIFY_TIMEOUT=$3
 podman ps --filter "name=^${CONTAINER}$" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
-podman logs --tail 80 "$CONTAINER" || true
+timeout --preserve-status "$LOGS_TIMEOUT" podman logs --tail 80 "$CONTAINER" || true
 podman exec "$CONTAINER" pgrep -a openvpn
 podman exec "$CONTAINER" pgrep -a sing-box
-podman exec "$CONTAINER" sing-box check -c /var/lib/vpnkit/sing-box/config.json
+timeout --preserve-status "$VERIFY_TIMEOUT" podman exec "$CONTAINER" sing-box check -c /var/lib/vpnkit/sing-box/config.json
 if podman exec "$CONTAINER" test -r /etc/vibe-vpn/sub_url; then
   podman exec "$CONTAINER" /usr/local/bin/vibe-vpn doctor --config /etc/vibe-vpn/config.yaml
 else
@@ -192,7 +204,7 @@ case "$ACTION" in
   deploy) REMOTE_DIR=$(normalize_remote_dir); sync_context; build_image; run_container; sleep 5; verify_container ;;
   status) remote "podman ps -a --filter 'name=^${CONTAINER}$' --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}\\t{{.Ports}}'" ;;
   verify) verify_container ;;
-  logs) remote "podman logs --tail 200 '$CONTAINER'" | redact_stream ;;
+  logs) remote_timeout "$LOGS_TIMEOUT" "podman logs --tail 200 '$CONTAINER'" | redact_stream ;;
   stop) remote "podman stop '$CONTAINER' || true" ;;
   cleanup) remote "podman rm -f '$CONTAINER' || true; if [[ '$REMOVE_IMAGE' = 1 ]]; then podman rmi '$IMAGE' || true; fi" ;;
   *) echo "unknown action: $ACTION" >&2; usage >&2; exit 2 ;;

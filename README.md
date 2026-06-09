@@ -105,7 +105,9 @@ VPNKIT_TEST_ROUTING_MODE=tun \
   test/containers-test.sh --scenario steamdeck-host --action cycle
 ```
 
-Missing explicit scenario prerequisites are reported as `FAIL` diagnostics rather than green acceptance.
+For explicit `steamdeck-host`, SSH target precedence is `VPNKIT_TEST_SSH_TARGET`, then `VPNKIT_STEAMDECK_SSH_TARGET`, then `VPNKIT_STEAMDECK_SSH_HOST`, then `deck`. Endpoint precedence is `VPNKIT_TEST_ENDPOINT`, then `VPNKIT_STEAMDECK_LAN_ENDPOINT`. Documented example placeholders (`your-*`, `*.invalid`, `192.0.2.*`, `203.0.113.*`) are treated as missing prerequisites and reported as `FAIL` diagnostics rather than green acceptance.
+
+Timeouts are bounded and configurable for slow Deck operations: `VPNKIT_TEST_SSH_TIMEOUT`, `VPNKIT_TEST_REMOTE_CMD_TIMEOUT`, `VPNKIT_TEST_DEPLOY_TIMEOUT`, `VPNKIT_TEST_CLIENT_TIMEOUT`, plus helper-level `VPNKIT_STEAMDECK_BUILD_TIMEOUT`, `VPNKIT_STEAMDECK_RUN_TIMEOUT`, `VPNKIT_STEAMDECK_LOGS_TIMEOUT`, and `VPNKIT_STEAMDECK_VERIFY_TIMEOUT`.
 
 ## Issue #24 manifest/profile matrix and smart routing
 
