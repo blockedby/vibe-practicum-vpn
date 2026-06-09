@@ -77,6 +77,36 @@ container and does not touch the existing `vpnkit` container.
 
 Real private endpoints belong in gitignored `config/private-endpoints.local.env`, never in tracked docs or configs.
 
+## Steam Deck test-lab lifecycle runner
+
+Issue #27 adds an isolated public-safe Steam Deck lab scenario. Load private Deck bindings locally when available, without printing them:
+
+```bash
+test -r config/private-endpoints.local.env && set -a && . config/private-endpoints.local.env && set +a
+
+test/containers-test.sh --scenario steamdeck-host --action cycle
+# or individual lifecycle phases:
+test/containers-test.sh --scenario steamdeck-host --action up
+test/containers-test.sh --scenario steamdeck-host --action test
+test/containers-test.sh --scenario steamdeck-host --action down
+```
+
+Defaults are intentionally distinct from production: container `vpnkit-test-steamdeck-host`, image `localhost/vpnkit:test-steamdeck-host`, remote state `~/.local/state/vpnkit-labs/steamdeck-host`, and host UDP `21194 -> 1194/udp`. `down` refuses the default/prod `vpnkit` container and only removes the isolated lab container unless `VPNKIT_TEST_LAB_REMOVE_REMOTE_STATE=1` is explicitly set for the isolated remote lab directory.
+
+Generated lab PKI, rendered configs, and client profiles live under the gitignored layout `secrets/vpnkit-labs/steamdeck-host/` (for example `rendered/`, `openvpn/pki/`, and `openvpn/client/test-client.ovpn`). Tracked templates and rule sets remain public-safe; never commit `.ovpn`, PEM/key/cert, rendered private configs, or logs.
+
+Useful overrides:
+
+```bash
+VPNKIT_TEST_SSH_TARGET=<local-deck-ssh-alias> \
+VPNKIT_TEST_ENDPOINT=<deck-lan-or-approved-test-endpoint> \
+VPNKIT_OPENVPN_PORT=21194 \
+VPNKIT_TEST_ROUTING_MODE=tun \
+  test/containers-test.sh --scenario steamdeck-host --action cycle
+```
+
+Missing explicit scenario prerequisites are reported as `FAIL` diagnostics rather than green acceptance.
+
 ## Issue #24 manifest/profile matrix and smart routing
 
 Public topology examples live in `config/vpnkit-manifest.example.yaml` and are validated against `config/vpnkit-manifest.schema.json`. The tracked example uses the logical pair `server=steamdeck` and `client=host-machine` with separate `test` and `production` profile intents. The Steam Deck server host is a test/lab target, not production: Deck test runs do not require the production approval gate, but they still remain public-safe, Podman-only on the Deck, and bounded by explicit live-action approval. Real endpoint values and certificate/key material must be supplied only through local environment bindings and must not be committed.

@@ -2,12 +2,13 @@
 # Unified public-safe vpnkit container test harness.
 #
 # Usage:
-#   test/containers-test.sh [-h|--help]
+#   test/containers-test.sh [-h|--help] [--scenario steamdeck-host] [--action up|test|down|cycle]
 #
-# The script runs every server/client container check it currently knows about.
-# Missing inputs or unavailable tools are reported as SKIP/FAIL and do not abort
-# later checks. Final exit status is non-zero only when at least one FAIL exists;
-# SKIP-only runs exit 0.
+# Actions for --scenario steamdeck-host:
+#   up     prepare isolated lab config and deploy isolated Deck Podman container
+#   test   run server/container/client/policy smoke checks against isolated lab
+#   down   remove only isolated lab container and optional isolated remote state
+#   cycle  down + up + test
 #
 # Log output is redacted and written to both console and a log file immediately.
 # Default log: logs/vpnkit-containers-test-<timestamp>.log
@@ -23,6 +24,7 @@
 #   VPNKIT_TEST_SERVER_CONTAINER=${VPNKIT_TEST_SERVER_CONTAINER:-vpnkit}
 #   VPNKIT_TEST_ENDPOINT=${VPNKIT_TEST_ENDPOINT:-${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}}
 #   VPNKIT_TEST_PROFILE=${VPNKIT_TEST_PROFILE:-secrets/vps/openvpn/client/test-client.ovpn}
+#   VPNKIT_TEST_ROUTING_MODE=${VPNKIT_TEST_ROUTING_MODE:-tun}
 #   VPNKIT_TEST_MANIFEST=config/vpnkit-manifest.example.yaml
 #   VPNKIT_TEST_MANIFEST_SERVER=steamdeck
 #   VPNKIT_TEST_MANIFEST_CLIENT=host-machine
@@ -31,9 +33,21 @@
 
 set -u -o pipefail
 
-usage() { sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; }
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then usage; exit 0; fi
-
+usage() { sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; }
+SCENARIO=${VPNKIT_TEST_SCENARIO:-}
+ACTION=${VPNKIT_TEST_ACTION:-test}
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --scenario) SCENARIO=${2:?missing value}; shift 2 ;;
+    --action) ACTION=${2:?missing value}; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+case "$ACTION" in up|test|down|cycle) ;; *) echo "unknown action: $ACTION" >&2; usage >&2; exit 2 ;; esac
+if [[ -n "$SCENARIO" && "$SCENARIO" != "steamdeck-host" ]]; then
+  echo "unknown scenario: $SCENARIO (supported: steamdeck-host)" >&2; exit 2
+fi
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 LOG_FILE=${VPNKIT_CONTAINERS_TEST_LOG:-"logs/vpnkit-containers-test-$TS.log"}
 LOG_NOTE=""
@@ -64,12 +78,29 @@ REMOTE_RUNTIME=${VPNKIT_TEST_RUNTIME:-podman}
 SERVER_CONTAINER=${VPNKIT_TEST_SERVER_CONTAINER:-vpnkit}
 TEST_ENDPOINT=${VPNKIT_TEST_ENDPOINT:-${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}}
 TEST_PROFILE=${VPNKIT_TEST_PROFILE:-secrets/vps/openvpn/client/test-client.ovpn}
+TEST_ROUTING_MODE=${VPNKIT_TEST_ROUTING_MODE:-tun}
 TEST_MANIFEST=${VPNKIT_TEST_MANIFEST:-}
 TEST_MANIFEST_SERVER=${VPNKIT_TEST_MANIFEST_SERVER:-}
 TEST_MANIFEST_CLIENT=${VPNKIT_TEST_MANIFEST_CLIENT:-}
 TEST_MANIFEST_RENDER_MODE=${VPNKIT_TEST_MANIFEST_RENDER_MODE:-fixture}
 TEST_MANIFEST_PROFILE_INTENT=${VPNKIT_TEST_MANIFEST_PROFILE_INTENT:-test}
 TEST_MANIFEST_OUT_DIR=${VPNKIT_TEST_MANIFEST_OUT_DIR:-generated/openvpn-profiles}
+
+if [[ "$SCENARIO" == "steamdeck-host" ]]; then
+  LAB_SCENARIO_DIR=${VPNKIT_TEST_LAB_SECRETS_DIR:-secrets/vpnkit-labs/steamdeck-host}
+  LAB_CONTAINER=${VPNKIT_TEST_SERVER_CONTAINER:-vpnkit-test-steamdeck-host}
+  LAB_IMAGE=${VPNKIT_STEAMDECK_IMAGE:-localhost/vpnkit:test-steamdeck-host}
+  LAB_PORT=${VPNKIT_OPENVPN_PORT:-21194}
+  LAB_REMOTE_DIR=${VPNKIT_STEAMDECK_REMOTE_DIR:-'~/.local/state/vpnkit-labs/steamdeck-host'}
+  LAB_ROUTING_MODE=${VPNKIT_TEST_ROUTING_MODE:-${VPNKIT_ROUTING_MODE:-tun}}
+  SERVER_CONTAINER=$LAB_CONTAINER
+  TEST_PROFILE=${VPNKIT_TEST_PROFILE:-$LAB_SCENARIO_DIR/openvpn/client/test-client.ovpn}
+  TEST_ROUTING_MODE=$LAB_ROUTING_MODE
+  export VPNKIT_TEST_SERVER_CONTAINER=$LAB_CONTAINER VPNKIT_TEST_PROFILE=$TEST_PROFILE VPNKIT_TEST_ROUTING_MODE=$TEST_ROUTING_MODE
+  export VPNKIT_STEAMDECK_CONTAINER=$LAB_CONTAINER VPNKIT_STEAMDECK_IMAGE=$LAB_IMAGE VPNKIT_OPENVPN_PORT=$LAB_PORT VPNKIT_STEAMDECK_REMOTE_DIR=$LAB_REMOTE_DIR VPNKIT_ROUTING_MODE=$LAB_ROUTING_MODE
+  export VPNKIT_STEAMDECK_CONFIG_SOURCE="$LAB_SCENARIO_DIR/rendered"
+  TEST_ENDPOINT=${VPNKIT_TEST_ENDPOINT:-${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}}
+fi
 
 PASS=0; FAIL=0; SKIP=0
 RESULTS=()
@@ -91,6 +122,75 @@ log "log_file=$LOG_FILE"
 [[ -n "$LOG_NOTE" ]] && log "$LOG_NOTE"
 log "ssh_target=$SSH_TARGET remote_runtime=$REMOTE_RUNTIME server_container=$SERVER_CONTAINER"
 log "client_profile_path=$TEST_PROFILE endpoint_set=$([[ -n "$TEST_ENDPOINT" ]] && echo yes || echo no)"
+
+run_lifecycle_down() {
+  [[ "$SCENARIO" == "steamdeck-host" ]] || return 0
+  if [[ "$SERVER_CONTAINER" == "vpnkit" ]]; then
+    record FAIL "lifecycle:down-safety" "refusing to operate on default/prod container name vpnkit"
+    return 1
+  fi
+  if ! out=$(run_capture scripts/vpnkit-steamdeck-podman.sh cleanup); then
+    record FAIL "lifecycle:down" "isolated container cleanup failed: $out"
+    return 1
+  fi
+  record PASS "lifecycle:down" "isolated lab container cleanup completed for $SERVER_CONTAINER"
+  if [[ "${VPNKIT_TEST_LAB_REMOVE_REMOTE_STATE:-0}" == "1" ]]; then
+    if out=$(run_capture ssh -o BatchMode=yes -o ConnectTimeout=8 "$SSH_TARGET" "case '$VPNKIT_STEAMDECK_REMOTE_DIR' in '~/'*|/*) rm -rf '$VPNKIT_STEAMDECK_REMOTE_DIR' ;; *) exit 2 ;; esac"); then
+      record PASS "lifecycle:remote-state-down" "optional isolated remote state removed"
+    else
+      record FAIL "lifecycle:remote-state-down" "optional remote state cleanup failed: $out"
+    fi
+  fi
+}
+
+run_lifecycle_up() {
+  [[ "$SCENARIO" == "steamdeck-host" ]] || return 0
+  if [[ "$SERVER_CONTAINER" == "vpnkit" ]]; then
+    record FAIL "lifecycle:up-safety" "refusing to operate on default/prod container name vpnkit"
+    return 1
+  fi
+  if [[ -z "$TEST_ENDPOINT" ]]; then
+    record FAIL "lifecycle:prereq-endpoint" "steamdeck-host requires VPNKIT_TEST_ENDPOINT or VPNKIT_STEAMDECK_LAN_ENDPOINT for generated client profile/live smoke"
+  fi
+  if [[ -z "$SSH_TARGET" ]]; then
+    record FAIL "lifecycle:prereq-ssh" "steamdeck-host requires VPNKIT_TEST_SSH_TARGET or VPNKIT_STEAMDECK_SSH_TARGET"
+  fi
+  if [[ $FAIL -gt 0 ]]; then return 1; fi
+  if out=$(run_capture env VPNKIT_TEST_LAB_SECRETS_DIR="$LAB_SCENARIO_DIR" VPNKIT_TEST_LAB_ENDPOINT="$TEST_ENDPOINT" VPNKIT_TEST_LAB_PORT="$LAB_PORT" VPNKIT_ROUTING_MODE="$TEST_ROUTING_MODE" scripts/vpnkit-test-lab-setup.sh); then
+    printf '%s\n' "$out"
+    record PASS "lifecycle:prepare" "generated isolated lab artifacts under $LAB_SCENARIO_DIR (contents not printed)"
+  else
+    printf '%s\n' "$out"
+    record FAIL "lifecycle:prepare" "lab setup failed"
+    return 1
+  fi
+  if out=$(run_capture scripts/vpnkit-steamdeck-podman.sh deploy); then
+    printf '%s\n' "$out"
+    record PASS "lifecycle:deploy" "isolated Podman lab deployed"
+  else
+    printf '%s\n' "$out"
+    record FAIL "lifecycle:deploy" "isolated Podman lab deploy failed"
+    return 1
+  fi
+}
+
+if [[ "$SCENARIO" == "steamdeck-host" ]]; then
+  case "$ACTION" in
+    down) run_lifecycle_down; printf '\nTotals: PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"; [[ $FAIL -eq 0 ]]; exit $? ;;
+    up) run_lifecycle_up; printf '\nTotals: PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"; [[ $FAIL -eq 0 ]]; exit $? ;;
+    cycle) run_lifecycle_down || true; run_lifecycle_up || true ;;
+    test) ;;
+  esac
+fi
+
+if [[ "$SCENARIO" == "steamdeck-host" && "$ACTION" == "test" ]]; then
+  if [[ "$SERVER_CONTAINER" == "vpnkit" ]]; then
+    record FAIL "lifecycle:test-safety" "refusing to test default/prod container name vpnkit for explicit steamdeck-host scenario"
+  fi
+  if [[ -z "$TEST_ENDPOINT" ]]; then
+    record FAIL "lifecycle:prereq-endpoint" "steamdeck-host requires VPNKIT_TEST_ENDPOINT or VPNKIT_STEAMDECK_LAN_ENDPOINT for live client smoke"
+  fi
+fi
 
 # Server checks: best-effort remote read-only inspection.
 server_ready=0
@@ -126,7 +226,11 @@ check_exec_contains() {
 check_exec_contains "server:openvpn-process" "ps ww 2>/dev/null || ps" "openvpn" FAIL
 check_exec_contains "server:sing-box-process" "ps ww 2>/dev/null || ps" "sing-box" FAIL
 check_exec_contains "server:tun0-interface" "ip link show tun0 2>/dev/null || ifconfig tun0 2>/dev/null" "tun0" FAIL
-check_exec_contains "server:sb-tun0-interface" "ip link show sb-tun0 2>/dev/null || ifconfig sb-tun0 2>/dev/null" "sb-tun0" FAIL
+if [[ "$TEST_ROUTING_MODE" == "tun" ]]; then
+  check_exec_contains "server:sb-tun0-interface" "ip link show sb-tun0 2>/dev/null || ifconfig sb-tun0 2>/dev/null" "sb-tun0" FAIL
+else
+  record SKIP "server:sb-tun0-interface" "routing mode '$TEST_ROUTING_MODE' does not use sing-box TUN; set VPNKIT_TEST_ROUTING_MODE=tun for full-tunnel sb-tun0 acceptance"
+fi
 
 if [[ $container_ready -eq 1 ]]; then
   if out=$(run_capture container_exec 'if command -v sing-box >/dev/null 2>&1; then for c in /var/lib/vpnkit/sing-box/config.json /etc/sing-box/config.json /run/sing-box/config.json; do [ -r "$c" ] && exec sing-box check -c "$c"; done; echo no-readable-config; exit 77; else echo no-sing-box-command; exit 78; fi'); then

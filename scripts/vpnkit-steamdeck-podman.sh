@@ -6,10 +6,12 @@ REMOTE_DIR=${VPNKIT_STEAMDECK_REMOTE_DIR:-'~/.local/state/vpnkit'}
 IMAGE=${VPNKIT_STEAMDECK_IMAGE:-localhost/vpnkit:steamdeck}
 CONTAINER=${VPNKIT_STEAMDECK_CONTAINER:-vpnkit}
 OPENVPN_PORT=${VPNKIT_OPENVPN_PORT:-1194}
+ROUTING_MODE=${VPNKIT_ROUTING_MODE:-tun}
 CONFIG_SOURCE=${VPNKIT_STEAMDECK_CONFIG_SOURCE:-secrets/vps/rendered}
 LAN_ENDPOINT=${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}
 TAILSCALE_ENDPOINT=${VPNKIT_STEAMDECK_TAILSCALE_ENDPOINT:-}
 LOG_FILE=${VPNKIT_STEAMDECK_LOG_FILE:-}
+ALLOW_PRODUCTION_CONTAINER=${VPNKIT_STEAMDECK_ALLOW_PRODUCTION_CONTAINER:-0}
 SSH_OPTS=()
 
 usage() {
@@ -36,6 +38,7 @@ Options:
   --image IMAGE            Podman image tag (env VPNKIT_STEAMDECK_IMAGE)
   --container NAME         Container name (env VPNKIT_STEAMDECK_CONTAINER; default vpnkit)
   --openvpn-port PORT      Host UDP port mapped to container 1194/udp (env VPNKIT_OPENVPN_PORT)
+  --routing-mode MODE      Container routing mode: tun, redirect, or tproxy (env VPNKIT_ROUTING_MODE; default tun)
   --config-source DIR      Local rendered config dir (env VPNKIT_STEAMDECK_CONFIG_SOURCE; default secrets/vps/rendered)
   --lan-endpoint HOST      Optional LAN endpoint to ping from this host after deploy
   --tailscale-endpoint IP  Optional Tailscale endpoint to ping from this host after deploy
@@ -57,6 +60,7 @@ while [[ $# -gt 0 ]]; do
     --image) IMAGE=${2:?missing value}; shift 2 ;;
     --container) CONTAINER=${2:?missing value}; shift 2 ;;
     --openvpn-port) OPENVPN_PORT=${2:?missing value}; shift 2 ;;
+    --routing-mode) ROUTING_MODE=${2:?missing value}; shift 2 ;;
     --config-source) CONFIG_SOURCE=${2:?missing value}; shift 2 ;;
     --lan-endpoint) LAN_ENDPOINT=${2:?missing value}; shift 2 ;;
     --tailscale-endpoint) TAILSCALE_ENDPOINT=${2:?missing value}; shift 2 ;;
@@ -106,9 +110,12 @@ esac
 REMOTE
 }
 need_config() {
-  for path in "$CONFIG_SOURCE/openvpn/server.conf" "$CONFIG_SOURCE/sing-box/config.json" "$CONFIG_SOURCE/vibe-vpn/config.yaml" "$CONFIG_SOURCE/vibe-vpn/sub_url"; do
+  for path in "$CONFIG_SOURCE/openvpn/server.conf" "$CONFIG_SOURCE/sing-box/config.json" "$CONFIG_SOURCE/vibe-vpn/config.yaml"; do
     [[ -r "$path" ]] || { echo "missing required rendered input: $path" >&2; exit 1; }
   done
+  if [[ ! -r "$CONFIG_SOURCE/vibe-vpn/sub_url" ]]; then
+    echo "notice: optional vibe-vpn sub_url missing; server smoke can proceed because the daemon is not required for OpenVPN/sing-box checks" >&2
+  fi
 }
 
 sync_context() {
@@ -127,9 +134,14 @@ build_image() {
 }
 
 run_container() {
-  remote_sh "$REMOTE_DIR" "$CONTAINER" "$IMAGE" "$OPENVPN_PORT" <<'REMOTE'
+  if [[ "$CONTAINER" == "vpnkit" && "$ALLOW_PRODUCTION_CONTAINER" != "1" ]]; then
+    echo "refusing to recreate production/default container 'vpnkit'; set --container to a distinct test name or VPNKIT_STEAMDECK_ALLOW_PRODUCTION_CONTAINER=1 for an explicitly approved production action" >&2
+    exit 2
+  fi
+  case "$ROUTING_MODE" in tun|redirect|tproxy) ;; *) echo "unsupported routing mode: $ROUTING_MODE" >&2; exit 2 ;; esac
+  remote_sh "$REMOTE_DIR" "$CONTAINER" "$IMAGE" "$OPENVPN_PORT" "$ROUTING_MODE" <<'REMOTE'
 set -Eeuo pipefail
-REMOTE_DIR=$1; CONTAINER=$2; IMAGE=$3; OPENVPN_PORT=$4
+REMOTE_DIR=$1; CONTAINER=$2; IMAGE=$3; OPENVPN_PORT=$4; ROUTING_MODE=$5
 podman rm -f "$CONTAINER" >/dev/null 2>&1 || true
 podman run -d --name "$CONTAINER" --replace \
   --privileged \
@@ -140,7 +152,7 @@ podman run -d --name "$CONTAINER" --replace \
   --sysctl net.ipv4.conf.all.rp_filter=0 \
   --sysctl net.ipv4.conf.default.rp_filter=0 \
   -p "${OPENVPN_PORT}:1194/udp" \
-  -e VPNKIT_ROUTING_MODE=redirect \
+  -e VPNKIT_ROUTING_MODE="$ROUTING_MODE" \
   -v "$REMOTE_DIR/secrets/vps/rendered/openvpn:/etc/openvpn:ro" \
   -v "$REMOTE_DIR/secrets/vps/rendered/sing-box:/etc/sing-box:ro" \
   -v "$REMOTE_DIR/secrets/vps/rendered/vibe-vpn:/etc/vibe-vpn:ro" \
@@ -161,7 +173,11 @@ podman logs --tail 80 "$CONTAINER" || true
 podman exec "$CONTAINER" pgrep -a openvpn
 podman exec "$CONTAINER" pgrep -a sing-box
 podman exec "$CONTAINER" sing-box check -c /var/lib/vpnkit/sing-box/config.json
-podman exec "$CONTAINER" /usr/local/bin/vibe-vpn doctor --config /etc/vibe-vpn/config.yaml
+if podman exec "$CONTAINER" test -r /etc/vibe-vpn/sub_url; then
+  podman exec "$CONTAINER" /usr/local/bin/vibe-vpn doctor --config /etc/vibe-vpn/config.yaml
+else
+  echo "vibe-vpn doctor skipped: no lab subscription file mounted; OpenVPN/sing-box checks remain authoritative for disabled-daemon lab path"
+fi
 REMOTE
   [[ -z "$LAN_ENDPOINT" ]] || { log "host LAN ping $LAN_ENDPOINT"; ping -c 2 -W 2 "$LAN_ENDPOINT" || true; }
   [[ -z "$TAILSCALE_ENDPOINT" ]] || { log "host Tailscale ping $TAILSCALE_ENDPOINT"; ping -c 2 -W 2 "$TAILSCALE_ENDPOINT" || true; }
