@@ -125,7 +125,7 @@ Executor:
 
 ## Follow-up ledger — Deck test policy and production/test profile intents
 
-Status: implementation evidence complete in the existing root worktree; owner/auditor acceptance pending.
+Status: complete for repo-local/public-safe scope in the existing root worktree.
 
 ### Task F1: Deck test-scope semantics and profile intent split
 
@@ -171,3 +171,4 @@ Dependencies:
 
 Implementation evidence:
 - 2026-06-09: F1 added `test` and `production` profile intents for the selected `steamdeck`/`host-machine` manifest pair, resolver/renderer `--profile-intent` selection, harness default `VPNKIT_TEST_MANIFEST_PROFILE_INTENT=test`, and Deck test/lab docs semantics. See `verification/profile-intents.md` and `reports/aad-implementer-f1-profile-intents.md`.
+- 2026-06-09: Owner reran targeted verification: shell syntax, resolver `test`/`production`, `test/manifest-profile-intents-test.sh`, non-live selected-pair harness defaulting to `intent=test`, `git diff --check`, and `git ls-files '*.ovpn'`. Final follow-up report: `reports/slice-owner-f1-final.md`.
