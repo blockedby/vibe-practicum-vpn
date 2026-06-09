@@ -2,7 +2,7 @@
 set -euo pipefail
 BASE=${VPNKIT_SECRETS_DIR:-secrets/vps}
 RENDERED="$BASE/rendered"
-mkdir -p "$RENDERED/openvpn/pki" "$RENDERED/openvpn/ccd" "$RENDERED/sing-box" "$RENDERED/vibe-vpn" "$BASE/openvpn/client"
+mkdir -p "$RENDERED/openvpn/pki" "$RENDERED/openvpn/ccd" "$RENDERED/sing-box/rule-sets" "$RENDERED/vibe-vpn" "$BASE/openvpn/client"
 cp config/openvpn/server.tpl "$RENDERED/openvpn/server.conf"
 cp "$BASE/openvpn/pki/ca.crt" "$BASE/openvpn/pki/ta.key" "$BASE/openvpn/pki/vibe-asus.crt" "$BASE/openvpn/pki/vibe-asus.key" "$RENDERED/openvpn/pki/"
 cp "$BASE/openvpn/server/ccd-ignat" "$RENDERED/openvpn/ccd/ignat" 2>/dev/null || true
@@ -34,6 +34,7 @@ if server:
 text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', json.dumps(selected, indent=4))
 open(out,'w').write(text)
 PY
+cp config/sing-box/rule-sets/*.json "$RENDERED/sing-box/rule-sets/"
 python3 - "$BASE/openvpn/pki" config/openvpn/test-client.ovpn.template "$BASE/openvpn/client/test-client.ovpn" <<'PY'
 import pathlib, sys
 p=pathlib.Path(sys.argv[1]); text=pathlib.Path(sys.argv[2]).read_text()
@@ -74,7 +75,7 @@ fi
 if [[ -r "$BASE/vibe-vpn/example-extra-node-hy2-auth" ]]; then
   cp "$BASE/vibe-vpn/example-extra-node-hy2-auth" "$RENDERED/vibe-vpn/example-extra-node-hy2-auth"
 fi
-chmod 600 "$RENDERED/sing-box/config.json" "$BASE/openvpn/client/test-client.ovpn" "$RENDERED/vibe-vpn/config.yaml" "$RENDERED/vibe-vpn/extra-nodes.json"
+chmod 600 "$RENDERED/sing-box/config.json" "$RENDERED/sing-box/rule-sets"/*.json "$BASE/openvpn/client/test-client.ovpn" "$RENDERED/vibe-vpn/config.yaml" "$RENDERED/vibe-vpn/extra-nodes.json"
 if [[ -f "$RENDERED/vibe-vpn/sub_url" ]]; then chmod 600 "$RENDERED/vibe-vpn/sub_url"; fi
 if [[ -f "$RENDERED/vibe-vpn/example-extra-node-hy2-auth" ]]; then chmod 600 "$RENDERED/vibe-vpn/example-extra-node-hy2-auth"; fi
 echo "Rendered $RENDERED/openvpn/server.conf, $RENDERED/sing-box/config.json, $RENDERED/vibe-vpn/config.yaml, and $BASE/openvpn/client/test-client.ovpn"
