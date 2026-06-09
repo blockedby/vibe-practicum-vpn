@@ -41,8 +41,9 @@
         "client": {"$ref": "#/$defs/id"},
         "requires_capabilities": {"type": "array", "items": {"$ref": "#/$defs/id"}, "uniqueItems": true},
         "profile": {
-          "type": "object", "required": ["mode", "remote", "port", "proto", "required_bindings"], "additionalProperties": false,
+          "type": "object", "required": ["intent", "mode", "remote", "port", "proto", "required_bindings"], "additionalProperties": false,
           "properties": {
+            "intent": {"type": "string", "enum": ["test", "production"]},
             "mode": {"type": "string", "enum": ["openvpn"]},
             "remote": {"$ref": "#/$defs/bindingRef"},
             "port": {"type": "integer", "minimum": 1, "maximum": 65535},

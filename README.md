@@ -79,7 +79,7 @@ Real private endpoints belong in gitignored `config/private-endpoints.local.env`
 
 ## Issue #24 manifest/profile matrix and smart routing
 
-Public topology examples live in `config/vpnkit-manifest.example.yaml` and are validated against `config/vpnkit-manifest.schema.json`. The tracked example uses the logical pair `server=steamdeck` and `client=host-machine`; real endpoint values and certificate/key material must be supplied only through local environment bindings and must not be committed.
+Public topology examples live in `config/vpnkit-manifest.example.yaml` and are validated against `config/vpnkit-manifest.schema.json`. The tracked example uses the logical pair `server=steamdeck` and `client=host-machine` with separate `test` and `production` profile intents. The Steam Deck server host is a test/lab target, not production: Deck test runs do not require the production approval gate, but they still remain public-safe, Podman-only on the Deck, and bounded by explicit live-action approval. Real endpoint values and certificate/key material must be supplied only through local environment bindings and must not be committed.
 
 Install the public Python validation dependencies in your local/CI environment before running manifest-positive checks:
 
@@ -92,11 +92,18 @@ Then run the public-safe fixture path:
 ```bash
 python3 scripts/vpnkit-manifest-validate.py \
   --manifest config/vpnkit-manifest.example.yaml \
-  --server steamdeck --client host-machine
+  --server steamdeck --client host-machine \
+  --profile-intent test
+
+python3 scripts/vpnkit-manifest-validate.py \
+  --manifest config/vpnkit-manifest.example.yaml \
+  --server steamdeck --client host-machine \
+  --profile-intent production
 
 scripts/vpnkit-render-profile-for-pair.sh \
   --manifest config/vpnkit-manifest.example.yaml \
   --server steamdeck --client host-machine \
+  --profile-intent test \
   --out-dir generated/openvpn-profiles --fixture
 
 VPNKIT_TEST_MANIFEST=config/vpnkit-manifest.example.yaml \
@@ -106,7 +113,7 @@ VPNKIT_TEST_MANIFEST_RENDER_MODE=fixture \
 test/containers-test.sh
 ```
 
-The fixture mode creates only public-safe dummy profile material under ignored `generated/openvpn-profiles/`. For real mode, source approved local bindings first and expect missing selected-pair prerequisites to be reported as clear `FAIL` diagnostics rather than modeled matrix `SKIP` rows. Do not run real Deck/production mutation without explicit operator approval.
+The fixture mode creates only public-safe dummy profile material under ignored `generated/openvpn-profiles/`. Selected manifest-pair harness runs default to `VPNKIT_TEST_MANIFEST_PROFILE_INTENT=test`; set `VPNKIT_TEST_MANIFEST_PROFILE_INTENT=production` only for an explicit production-profile check. For real mode, source approved local bindings first and expect missing selected-pair prerequisites to be reported as clear `FAIL` diagnostics rather than modeled matrix `SKIP` rows. Do not run real Deck live mutation without an explicit Deck test action, and do not run production mutation without explicit operator approval.
 
 Smart sing-box routing policy is defined by local rule sets under `config/sing-box/rule-sets/` and wired into both sing-box templates. Rule order is: DNS hijack/sniff, adblock -> `block-out`, developer/package infrastructure -> `direct-out`, RU geo/geosite -> `direct-out`, final -> `selected-native-out`. Local proof (not live production acceptance):
 

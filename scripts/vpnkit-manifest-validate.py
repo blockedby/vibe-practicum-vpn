@@ -54,8 +54,13 @@ def semantic_validate(data):
             if section == 'clients' and obj.get('id') != name: errors.append(f'{section}.{name}: id field must match manifest key')
             for cap in obj.get('capabilities', []):
                 if cap not in caps: errors.append(f'{section}.{name}: unknown capability {cap}')
+    pair_intents={}
     for pname, pair in data.get('pairs', {}).items():
         s=pair.get('server'); c=pair.get('client')
+        intent=pair.get('profile', {}).get('intent')
+        key=(s, c, intent)
+        if key in pair_intents: errors.append(f'pairs.{pname}: duplicate profile intent {intent} for server/client already defined by {pair_intents[key]}')
+        else: pair_intents[key]=pname
         if s not in data.get('servers', {}): errors.append(f'pairs.{pname}: unknown server {s}')
         if c not in data.get('clients', {}): errors.append(f'pairs.{pname}: unknown client {c}')
         have=set()
@@ -85,17 +90,18 @@ def sanitize_bindings(bindings):
     return out
 
 
-def resolve_pair(data, server, client):
-    pairs=[(n,p) for n,p in data['pairs'].items() if p['server']==server and p['client']==client]
-    if not pairs: die(f'no pair found for --server {server} --client {client}')
+def resolve_pair(data, server, client, profile_intent):
+    pairs=[(n,p) for n,p in data['pairs'].items() if p['server']==server and p['client']==client and p.get('profile', {}).get('intent')==profile_intent]
+    if not pairs: die(f'no pair found for --server {server} --client {client} --profile-intent {profile_intent}')
+    if len(pairs) > 1: die(f'ambiguous pair for --server {server} --client {client} --profile-intent {profile_intent}')
     name,pair=pairs[0]
     srv=data['servers'][server]; cli=data['clients'][client]
     bindings={}; bindings.update(srv.get('profile_inputs', {})); bindings.update(cli.get('profile_inputs', {}))
     return {
-        'pair': safe_id(name), 'server': safe_id(server), 'client': safe_id(client),
+        'pair': safe_id(name), 'server': safe_id(server), 'client': safe_id(client), 'profileIntent': profile_intent,
         'serverMetadata': {'id': safe_id(server), 'displayName': srv.get('displayName', server)},
         'clientMetadata': {'id': cli.get('id', safe_id(client)), 'displayName': cli.get('displayName', client), 'profileCommonName': cli.get('profileCommonName', safe_id(client)), 'clientCertIdentity': cli.get('clientCertIdentity', cli.get('profileCommonName', safe_id(client)))},
-        'profile': {'mode': pair['profile']['mode'], 'proto': pair['profile']['proto'], 'port': pair['profile']['port'], 'remote_ref': pair['profile']['remote'], 'required_bindings': pair['profile']['required_bindings']},
+        'profile': {'intent': profile_intent, 'mode': pair['profile']['mode'], 'proto': pair['profile']['proto'], 'port': pair['profile']['port'], 'remote_ref': pair['profile']['remote'], 'required_bindings': pair['profile']['required_bindings']},
         'bindings': sanitize_bindings(bindings),
         'capabilities': {'server': srv.get('capabilities', []), 'client': cli.get('capabilities', []), 'required': pair.get('requires_capabilities', [])}
     }
@@ -105,11 +111,12 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--manifest', default='config/vpnkit-manifest.example.yaml')
     ap.add_argument('--server'); ap.add_argument('--client')
+    ap.add_argument('--profile-intent', choices=('test', 'production'), default='test', help='Profile intent to resolve for the selected server/client pair (default: test)')
     args=ap.parse_args()
     data=read_yaml(args.manifest); semantic_validate(data)
     if args.server or args.client:
         if not (args.server and args.client): die('--server and --client must be provided together')
-        print(json.dumps(resolve_pair(data, args.server, args.client), indent=2, sort_keys=True))
+        print(json.dumps(resolve_pair(data, args.server, args.client, args.profile_intent), indent=2, sort_keys=True))
     else:
         print('manifest_valid=true')
 

@@ -122,3 +122,52 @@ Executor:
 - Slice B (AC5-AC6): complete for repo-local scope. Smart route policy is wired into both sing-box templates, rule sets are copied during render, and route-decision proof passes.
 - Docs/runbook (AC7): complete in `README.md` and task package.
 - Verification (AC8): complete for repo-local scope; live/prod acceptance remains unclaimed and requires explicit operator approval/private inputs.
+
+## Follow-up ledger — Deck test policy and production/test profile intents
+
+Status: implementation evidence complete in the existing root worktree; owner/auditor acceptance pending.
+
+### Task F1: Deck test-scope semantics and profile intent split
+
+Goal:
+- Record the user's policy clarification that a Steam Deck server host is a test/lab environment, not production, so production approval gates do not apply to Deck test-host use.
+- Add manifest/profile definitions and CLI/test selection behavior for distinct `test` and `production` profile intents for the same server/client pair, with test as the default harness intent and production explicit.
+
+Scope / do-not-touch boundaries:
+- In scope: public-safe repo docs/runbook, manifest schema/example, manifest validator/resolver, profile renderer, container test harness, task package evidence.
+- Out of scope: live Deck mutation, production mutation, reading/printing `.ovpn` contents, committing generated profiles/logs/private endpoint values. Steam Deck runtime remains Podman-only when a live Deck is intentionally used.
+
+Repo orientation / reuse:
+- Existing tracked public manifest: `config/vpnkit-manifest.example.yaml`.
+- Existing schema: `config/vpnkit-manifest.schema.json`.
+- Existing resolver: `scripts/vpnkit-manifest-validate.py` emits sanitized pair JSON.
+- Existing renderer: `scripts/vpnkit-render-profile-for-pair.sh`, default output `generated/openvpn-profiles`.
+- Existing selected-pair harness: `test/containers-test.sh` with `VPNKIT_TEST_MANIFEST_*` variables.
+- Existing ignored generated profile location: `generated/openvpn-profiles/` from `.gitignore`; real ad-hoc scripts may also use operator-supplied ignored paths, but manifest renderer defaults here and should remain secret-safe.
+
+Missing pieces:
+- Policy docs must distinguish Deck test/lab from production while preserving public-safety and no-live-mutation boundaries.
+- Manifest schema/example need a profile intent dimension (`test` default, `production` explicit) without committing real profiles.
+- Resolver/renderer/harness need intent selection so the same server/client pair can resolve production vs test profile definitions; selected-pair tests default to `test`.
+
+Acceptance criteria:
+- Docs state Deck server host is test/lab, not production; no production approval gate applies to Deck tests, but public-safety, Podman-only Deck runtime, and explicit live-action boundaries remain.
+- Manifest has separate production and test profile definitions for the selected Steam Deck/host-machine pair, or equivalent intent-discriminated entries.
+- Resolver and renderer can select `--profile-intent test` and `--profile-intent production`; ambiguous pair resolution is avoided.
+- `test/containers-test.sh` defaults selected manifest-pair profile intent to `test`; production is only used when explicitly requested by env.
+- No generated `.ovpn`, secrets, endpoints, logs, or profile contents are printed/committed.
+
+Test plan:
+- `bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh`
+- Manifest schema/semantic validation for the example.
+- Resolver positive checks for `--profile-intent test` and `--profile-intent production` returning sanitized JSON with distinct intents.
+- Renderer fixture check for test intent into ignored `generated/openvpn-profiles` with mode `600` and no secret stdout.
+- Harness check with selected manifest pair and default intent proves it chooses `test`; no live endpoint mutation.
+
+Dependencies:
+- Depends on: existing issue #24 root branch state.
+- Blocks: final follow-up report.
+- Executor: `aad-implementer` (single scoped task); owner verifies and reports.
+
+Implementation evidence:
+- 2026-06-09: F1 added `test` and `production` profile intents for the selected `steamdeck`/`host-machine` manifest pair, resolver/renderer `--profile-intent` selection, harness default `VPNKIT_TEST_MANIFEST_PROFILE_INTENT=test`, and Deck test/lab docs semantics. See `verification/profile-intents.md` and `reports/aad-implementer-f1-profile-intents.md`.
