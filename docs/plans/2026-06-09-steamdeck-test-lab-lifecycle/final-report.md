@@ -29,7 +29,7 @@
 - Lifecycle UX / isolation / docs: covered by commits `f789c4b` and `83fd2d4`, shell syntax checks, and placeholder negative harness run. Result: passed for implementation path.
 - Config/profile generation: covered by `scripts/vpnkit-test-lab-setup.sh` smoke and no tracked sensitive artifact check. Result: passed locally.
 - Safe repo checks: covered by `verification/root-final.md`. Result: passed.
-- Live Deck lifecycle: covered by sanitized attempted run plus remediation. Result: blocked, not accepted green.
+- Live Deck lifecycle: covered by sanitized attempted run plus remediation. Result: blocked, not accepted green. Post-attempt cleanup removed the isolated `vpnkit-test-steamdeck-host` lab container via the helper; production/default `vpnkit` was not targeted.
 
 ## System readiness
 - Config / env / secrets: public template and docs updated; real private Deck values are still required outside git.
@@ -58,7 +58,7 @@
 
 ### Issue U-01: Live Deck cycle not green
 - Description: Final intended live `cycle` could not be accepted green because no real non-placeholder private Deck endpoint/target values are available in this worktree. The absolute local private file checked by root contains placeholder/missing Deck lab values.
-- Evidence: `verification/root-final.md`; prior sanitized live attempt timed out before remediation and did not establish a green matrix.
+- Evidence: `verification/root-final.md`; prior sanitized live attempt timed out before remediation and did not establish a green matrix. Afterward, root ran isolated cleanup for `vpnkit-test-steamdeck-host`; production/default `vpnkit` was not targeted.
 - Needed next: operator with real private Deck bindings should source `config/private-endpoints.local.env` containing non-placeholder `VPNKIT_TEST_SSH_TARGET`/`VPNKIT_STEAMDECK_SSH_TARGET`/`VPNKIT_STEAMDECK_SSH_HOST` and `VPNKIT_TEST_ENDPOINT`/`VPNKIT_STEAMDECK_LAN_ENDPOINT`, then run `test/containers-test.sh --scenario steamdeck-host --action cycle`.
 
 ## Verdict
