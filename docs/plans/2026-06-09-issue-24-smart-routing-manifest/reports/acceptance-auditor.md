@@ -6,51 +6,47 @@
 
 ## Acceptance verdict
 - Status: accepted with limitations
-- Summary: Repo-local manifest/profile, smart-routing, and harness acceptance is fresh and passing; live/prod `vpnkit` mutation and live SSH/container smoke remain intentionally unclaimed.
+- Summary: Fresh repo-local evidence supports the manifest/profile split, smart-routing policy, and harness behavior; live Deck/prod runtime smoke was intentionally not claimed.
 
 ## Acceptance coverage
-- AC1: schema/example exists, validates a public example, and keeps private/generated artifacts ignored.
-  - Evidence present: fresh `PATH=/tmp/vpnkit-jsonschema-venv/bin:$PATH python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine` PASS; tracked schema/example/ignore wiring.
+- AC1: Schema/example supports servers, clients, pairs, capabilities, local binding refs, and test/production profile intents.
+  - Evidence present: `python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml` and full schema/example inspection.
   - Result: passed.
   - Gap: none for repo-local scope.
-- AC2: validator/resolver validates schema + semantic pair contracts and emits sanitized pair JSON.
-  - Evidence present: same validator run PASS, emitting sanitized JSON with `[local-only]` placeholders and `clientMetadata` including `id/displayName/profileCommonName/clientCertIdentity`; negative check `no pair found` for unknown client.
+- AC2: Validator/resolver has clear dependency errors, `--server/--client`, `--profile-intent test|production`, default `test`, duplicate intent semantic validation, and sanitized output.
+  - Evidence present: disposable venv with `PyYAML` + `jsonschema`; `--profile-intent test` and `production` resolve to sanitized JSON with `[local-only]` placeholders; `manifest_valid=true` default path works; temp duplicate-intent manifest returns `ERROR: semantic validation failed`.
   - Result: passed.
   - Gap: none for repo-local scope.
-- AC3: renderer writes pair-specific `.ovpn` with safe permissions, fixture mode, and non-secret stdout; real-mode diagnostics are clear.
-  - Evidence present: fresh `PATH=/tmp/vpnkit-jsonschema-venv/bin:$PATH scripts/vpnkit-render-profile-for-pair.sh --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --out-dir generated/openvpn-profiles-final --fixture` PASS; output reported `profile_written`, `mode fixture`, permissions `600`, `secret_material=not_printed`.
+- AC3: Renderer writes ignored pair-specific `.ovpn`, mode 600, no secret stdout; real mode requires private values; fixture/test mode works.
+  - Evidence present: `scripts/vpnkit-render-profile-for-pair.sh ... --fixture` for both intents produced `generated/openvpn-profiles/steamdeck-host-machine-test.ovpn` and `...production.ovpn`, both reported `permissions=600` and `secret_material=not_printed`; `--real` without bindings failed clearly with missing-env diagnostics.
   - Result: passed.
-  - Gap: none for repo-local scope; live/profile import behavior not claimed.
-- AC4: container-test manifest path runs validate -> resolve -> render -> client smoke handoff and distinguishes selected-pair prerequisite failures from planned `SKIP` rows.
-  - Evidence present: fresh `PATH=/tmp/vpnkit-jsonschema-venv/bin:$PATH VPNKIT_TEST_MANIFEST=config/vpnkit-manifest.example.yaml VPNKIT_TEST_MANIFEST_SERVER=steamdeck VPNKIT_TEST_MANIFEST_CLIENT=host-machine VPNKIT_TEST_MANIFEST_RENDER_MODE=fixture VPNKIT_TEST_MANIFEST_OUT_DIR=generated/openvpn-profiles-final-harness VPNKIT_TEST_SSH_TARGET=nonexistent.invalid test/containers-test.sh` PASS overall.
-  - Result: passed with limitation.
-  - Gap: server checks were `SKIP` because the SSH target was an unreachable placeholder; live `vpnkit` smoke is intentionally not claimed in this audit.
-- AC5: sing-box templates add narrow adblock/dev-direct policy while preserving existing full-tunnel/RU/final behavior.
-  - Evidence present: `python3 test/sing-box-smart-routing-proof.py` PASS; dummy `VPNKIT_ROUTING_MODE=tun scripts/vpnkit-render-local-configs.sh` render probe PASS with smart route sets and copied local rule-set files.
+  - Gap: real-mode success was not run because private bindings were intentionally absent.
+- AC4: `test/containers-test.sh` integrates the selected manifest pair and defaults to test profile intent; production is explicit.
+  - Evidence present: two fresh harness runs with `VPNKIT_TEST_SSH_TARGET=nonexistent.invalid`; default run resolved `intent=test`, explicit env run resolved `intent=production`; both passed manifest validate/resolve/render and fixture profile shape checks while server checks were `SKIP`.
   - Result: passed.
-  - Gap: none for repo-local scope.
-- AC6: local route-decision proof covers block/direct/RU/default and remote rule-set handling limits.
+  - Gap: live server/container checks were not available from the unreachable SSH target and were not claimed.
+- AC5: Smart routing policy preserves adblock block-out, dev/package direct-out, RU direct, final selected-native-out, and full-tunnel assumptions in templates.
   - Evidence present: `python3 test/sing-box-smart-routing-proof.py` PASS.
-  - Result: passed with limitation.
-  - Gap: remote download/cache/failure handling is config-level proof only, not a live sing-box runtime probe.
-- AC7: public docs explain the manifest/profile matrix and smart routing using placeholders only.
-  - Evidence present: `README.md`, `config/vpnkit-manifest.example.yaml`, and repo-local placeholder/ignore wiring.
+  - Result: passed.
+  - Gap: none for repo-local config proof.
+- AC6: No secrets/private endpoints/generated OpenVPN profiles/PEM blocks/logs are tracked or printed by tests.
+  - Evidence present: `git ls-files '*.ovpn' '*.pem' '*.key' '*.crt' '*.p12' '*.log'` returned no tracked sensitive artifacts; harness log inspected with `rg` for PEM/secret patterns returned no matches; fixture renderer stdout only printed metadata.
+  - Result: passed.
+  - Gap: none for repo-local scope.
+- AC7: Deck policy docs reflect test/lab semantics and production gating.
+  - Evidence present: `AGENTS.md` and `README.md` state Steam Deck server-host use is test/lab, not production, while public-safety, Podman-only Deck use, and explicit live-action approval remain; production profile intent is explicit.
   - Result: passed.
   - Gap: none.
-- AC8: fresh verification includes syntax/schema/unit/safe local checks; live/prod acceptance remains unclaimed.
-  - Evidence present: `bash -n scripts/*.sh test/*.sh`, `python3 -m py_compile scripts/vpnkit-manifest-validate.py test/sing-box-smart-routing-proof.py`, `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn-issue24 ./cmd/vibe-vpn`.
-  - Result: passed.
-  - Gap: none for repo-local scope.
 
 ## System readiness coverage
-- Routes / registration: covered for sing-box template routing order and proof harness.
+- Routes / registration: covered for sing-box templates and proof script.
 - Services / APIs: not relevant.
-- Config / env / secrets: covered; public manifest/example/ignore wiring is present, and the fresh validator run proves the dependency path with `jsonschema` installed in a disposable venv.
-- Docker / containers: covered at repo-local harness level; live container mutation is out of scope and not claimed.
-- Permissions / access: covered by fixture renderer permissions `600` and no private endpoint access.
+- Config / env / secrets: covered; manifest/example/env placeholders exist and validator/renderer/harness stay sanitized.
+- Docker / containers: covered at repo-local harness level; live container mutation not exercised.
+- Permissions / access: covered by renderer `600` output and real-mode failure on missing local bindings.
 - Database / migrations: not relevant.
 - Frontend-backend integration: not relevant.
-- Runtime / deployment wiring: covered only for repo-local manifest/render/harness flow; live deployment/runtime acceptance remains unclaimed.
+- Runtime / deployment wiring: partially covered; repo-local wiring is good, but live Deck/prod runtime smoke remains unclaimed by design.
 
 ## Check freshness
 - Targeted checks: fresh.
@@ -58,8 +54,8 @@
 - Remote checks / CI: not available before push.
 
 ## Required before done
-- None for repo-local acceptance.
-- If live/prod acceptance is later requested, rerun operator-approved live smoke against a real `vpnkit` target and private endpoint inputs.
+- No repo-local blockers remain for merge readiness.
+- If the owner wants live Deck/prod runtime acceptance, run a separate operator-approved smoke against real hosts/endpoints after loading approved private bindings.
 
 ## Files written
 - docs/plans/2026-06-09-issue-24-smart-routing-manifest/verification/acceptance-plan.md: updated
