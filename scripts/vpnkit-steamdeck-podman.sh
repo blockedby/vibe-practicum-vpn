@@ -180,13 +180,13 @@ verify_container() {
   remote_sh_timeout "$VERIFY_TIMEOUT" "$CONTAINER" "$LOGS_TIMEOUT" "$VERIFY_TIMEOUT" <<'REMOTE' | redact_stream
 set -Eeuo pipefail
 CONTAINER=$1; LOGS_TIMEOUT=$2; VERIFY_TIMEOUT=$3
-podman ps --filter "name=^${CONTAINER}$" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
+timeout --preserve-status "$VERIFY_TIMEOUT" podman ps --filter "name=^${CONTAINER}$" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 timeout --preserve-status "$LOGS_TIMEOUT" podman logs --tail 80 "$CONTAINER" || true
-podman exec "$CONTAINER" pgrep -a openvpn
-podman exec "$CONTAINER" pgrep -a sing-box
+timeout --preserve-status "$VERIFY_TIMEOUT" podman exec "$CONTAINER" pgrep -a openvpn
+timeout --preserve-status "$VERIFY_TIMEOUT" podman exec "$CONTAINER" pgrep -a sing-box
 timeout --preserve-status "$VERIFY_TIMEOUT" podman exec "$CONTAINER" sing-box check -c /var/lib/vpnkit/sing-box/config.json
-if podman exec "$CONTAINER" test -r /etc/vibe-vpn/sub_url; then
-  podman exec "$CONTAINER" /usr/local/bin/vibe-vpn doctor --config /etc/vibe-vpn/config.yaml
+if timeout --preserve-status "$VERIFY_TIMEOUT" podman exec "$CONTAINER" test -r /etc/vibe-vpn/sub_url; then
+  timeout --preserve-status "$VERIFY_TIMEOUT" podman exec "$CONTAINER" /usr/local/bin/vibe-vpn doctor --config /etc/vibe-vpn/config.yaml
 else
   echo "vibe-vpn doctor skipped: no lab subscription file mounted; OpenVPN/sing-box checks remain authoritative for disabled-daemon lab path"
 fi

@@ -139,3 +139,43 @@ Dependencies:
 - Blocks root live acceptance retry.
 - Executor: `aad-implementer` with report `reports/aad-implementer-live-remediation.md`, progress `progress/aad-implementer-live-remediation.md`, verification `verification/live-remediation.md`.
 - 2026-06-09: Root final verification passed safe local checks after remediation; evidence: `verification/root-final.md`. Final root status is partial/blocked: implementation is ready for bounded live retry, but issue #27 is not accepted done because no green live Deck `cycle` result is available with real non-placeholder private Deck bindings. Final report: `final-report.md`.
+- 2026-06-10: Resumed live hang remediation after a previous authorized Deck lab run partially succeeded then hung for ~13h after deploy/log output. Current slice stays whole: one script-hang remediation plus one live lifecycle verification story. New evidence/report paths: `verification/live-hang-remediation.md`, `reports/slice-owner-live-hang-remediation.md`, progress `progress/slice-owner-live-hang-remediation.md`.
+
+### Live hang remediation task: bound verify/doctor/log paths and rerun live lab cycle
+
+Goal:
+- Diagnose and fix the remaining live-cycle hang so `up`, `test`, and `cycle` return bounded results for the isolated `vpnkit-test-steamdeck-host` Deck lab.
+
+Boundary:
+- System area: Steam Deck Podman lifecycle script and unified test harness only.
+- Primary verification: static shell checks, smart-routing proof, and bounded live `down`/`up`/`test`/`cycle` sequence against the isolated lab.
+
+Existing pattern / reuse:
+- `scripts/vpnkit-steamdeck-podman.sh` already provides helper-level timeouts for remote, build, run, logs, and verify operations.
+- `test/containers-test.sh` already wraps lifecycle phases with timeout knobs and redacts emitted output.
+
+Missing change:
+- Make remote verify internals finite where the prior run likely hung: especially `podman exec ... vibe-vpn doctor`, process probes, and any log/exec command inside `verify_container`; avoid any long-running log follow.
+- Preserve disabled-daemon lab behavior and public-safe redacted output.
+- Do not touch default/prod `vpnkit`; only isolated `vpnkit-test-steamdeck-host` is in scope.
+
+Acceptance criteria:
+- Root cause/likely hang point is documented from code behavior and fresh bounded evidence.
+- `verify_container` commands cannot hang indefinitely before the outer deploy timeout; log output remains finite.
+- Live `down`, `up`, `test`, and `cycle` are run with bounded timeouts against only the isolated Deck lab when private env is available.
+- If client smoke fails, script defects are fixed where possible; environment/network/outbound blockers are reported without claiming done.
+- Safe checks pass: `bash -n` touched scripts or scripts/test shell set, `python3 test/sing-box-smart-routing-proof.py`, relevant Go checks if touched/feasible, and no tracked sensitive artifacts.
+- PR #26 and issue #27 receive public-safe status updates after push.
+
+Test plan:
+- Static: `bash -n scripts/vpnkit-steamdeck-podman.sh test/containers-test.sh` (or broader shell set if feasible).
+- Proof: `python3 test/sing-box-smart-routing-proof.py`.
+- Live: source `config/private-endpoints.local.env` locally if present; if endpoint placeholders remain, discover Deck IPv4 via SSH alias `deck` without printing it; run bounded `down`, `up`, `test`, and `cycle` with `VPNKIT_TEST_SSH_TARGET=deck`, nonprinted endpoint env, isolated lab defaults, and short enough helper timeouts to prove finite behavior.
+- Safety: `git status --short`, `git ls-files`/grep checks for accidental tracked secrets/logs.
+
+Dependencies:
+- Depends on current PR #26 branch and authorized local Deck access.
+- Blocks issue #27 done-state.
+- Executor: `aad-implementer` for bounded script fix and local checks; slice owner integrates, runs/records live sequence and GitHub updates.
+- 2026-06-10: Live hang remediation implemented directly because nested subagent delegation was unavailable. `verify_container` now bounds all podman verify/log/exec/doctor operations with existing timeout knobs; explicit Steam Deck `test` skips client smoke when the isolated server container is unavailable. Verification recorded in `verification/live-hang-remediation.md`; report recorded in `reports/slice-owner-live-hang-remediation.md`.
+- 2026-06-10 live matrix: initial `down` PASS; `up` returned bounded FAIL because sing-box exited on remote RU rule-set `.srs` downloads from `raw.githubusercontent.com` with `unexpected EOF`; `test` returned bounded FAIL with server container unavailable and client smoke skipped; final `down` PASS cleanup. `cycle` was not run because `up` failed. Current done-state remains partial/blocked: hang class remediated, issue #27 not accepted done until green cycle or explicit accepted environment/rule-set decision.

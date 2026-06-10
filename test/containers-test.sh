@@ -363,7 +363,9 @@ if [[ -n "$TEST_MANIFEST" || -n "$TEST_MANIFEST_SERVER" || -n "$TEST_MANIFEST_CL
 fi
 
 # Client checks: reuse existing public-safe smoke scripts where inputs allow.
-if [[ $manifest_fixture_profile -eq 1 && -r "$TEST_PROFILE" ]]; then
+if [[ "$SCENARIO" == "steamdeck-host" && $container_ready -ne 1 ]]; then
+  record SKIP "client:steamdeck-profile-smoke" "server container unavailable; skipping bounded client smoke"
+elif [[ $manifest_fixture_profile -eq 1 && -r "$TEST_PROFILE" ]]; then
   perms=$(stat -c '%a' "$TEST_PROFILE" 2>/dev/null || stat -f '%Lp' "$TEST_PROFILE")
   if [[ "$perms" == "600" && -s "$TEST_PROFILE" ]]; then
     record PASS "client:manifest-fixture-profile-shape" "fixture profile exists with mode 600 for OpenVPN client smoke handoff; contents not printed"
