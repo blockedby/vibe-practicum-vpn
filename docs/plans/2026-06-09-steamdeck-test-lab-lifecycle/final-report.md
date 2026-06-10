@@ -1,109 +1,93 @@
 ## Task
-- Mission: Finish issue #27 / PR #26 Steam Deck isolated lab lifecycle after RU rule-set, data-path, DNS, and direct-fixture blockers.
-- Target: `feat/issue-24-smart-routing-manifest`, isolated `steamdeck-host` lab scenario.
-- Boundaries: No default/prod `vpnkit` mutation; no private endpoint/profile/key/cert/rendered config/log disclosure; Steam Deck evidence is test/lab only, not production readiness.
-- Done when: Required isolated lab `down`, `up`, `test`, and `cycle` are green with bounded commands, safe repo checks pass, commits are pushed, and GitHub issue/PR are updated public-safely.
+- Mission: Correct issue #27 / PR #26 Steam Deck lab lifecycle to make nested OpenVPN acceptance part of the existing `steamdeck-host` runner, not a separate testing silo.
+- Target: `feat/issue-24-smart-routing-manifest`, existing `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle` lifecycle.
+- Boundaries: No default/prod `vpnkit` mutation; no private endpoint/profile/key/cert/rendered config/log disclosure; generated nested material remains ignored under the existing Steam Deck lab secret tree.
+- Done when: Nested OpenVPN setup and required acceptance rows are implemented in the unified lifecycle, public docs/GitHub are corrected, safe checks pass, and live Deck cycle is green or honestly blocked.
 
 ## Context
 - GitHub issue: https://github.com/blockedby/vibe-practicum-vpn/issues/27
 - Related PR: https://github.com/blockedby/vibe-practicum-vpn/pull/26
 - Related issue: #24
 - Task package: `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle`
-- Latest verification: `verification/root-final-live-green.md`
+- Slice report: `reports/slice-owner-nested-vpn.md`
+- Root verification: `verification/root-integration.md`
+- Acceptance audit: `reports/acceptance-auditor-nested-vpn.md`
 - Worktree: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/issue-24-smart-routing-manifest`
 - Branch: `feat/issue-24-smart-routing-manifest`
 
 ## Spec compliance
-- AC1 lifecycle command: done. `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle` exists and is documented.
-- AC2 isolated lab/no prod container: done. Live runs targeted `vpnkit-test-steamdeck-host`; default/prod `vpnkit` was not touched.
-- AC3 gitignored generated artifacts: done. Generated lab material remains under ignored paths; tracked docs/templates are public-safe.
-- AC4 production-like smart-routing shape: done. RU/adblock/dev-direct/final policy shape is preserved; lab uses explicit local/direct fixtures only where needed for reproducible isolated acceptance.
-- AC5 lab `tun` mode: done. Live `up`, `test`, and `cycle` verified `tun0`, `sb-tun0`, policy route setup, and runtime `sing-box check`.
-- AC6 disabled `vibe-vpn` daemon/subscription path: done. Lab smoke proceeds without subscription; daemon remains disabled unless explicitly enabled.
-- AC7 missing/placeholder prerequisites: done from prior checks; explicit placeholders fail fast.
-- AC8 honest matrix: done. Required lifecycle checks passed; route-decision/policy-visible scaffold rows remain explicit `SKIP` and are not claimed as required acceptance.
-- AC9 safe repo checks: passed after final live run.
-- AC10 live Deck lifecycle: passed. Required `down`, `up`, `test`, and `cycle` completed boundedly; final cleanup also passed.
-- AC11 PR/issue updates: done. Final public-safe status posted to issue #27 and PR #26 after green live evidence.
+- Requirement: Keep the unified runner/scenario.
+  - Status: done.
+  - Evidence: nested acceptance is wired into `test/containers-test.sh --scenario steamdeck-host --action ...`; no new user-facing scenario/root was introduced.
+- Requirement: Generate nested lab material under existing ignored Steam Deck lab structure.
+  - Status: done.
+  - Evidence: `scripts/vpnkit-test-lab-setup.sh` generates nested OpenVPN server/client material under `secrets/vpnkit-labs/steamdeck-host/nested/openvpn/...`; temp smoke verified generation without printing contents.
+- Requirement: Manage nested target/checks through existing lifecycle.
+  - Status: done.
+  - Evidence: `docker/vpnkit/entrypoint.sh`, `docker/ovpn-client-test/entrypoint.sh`, `scripts/vpnkit-steamdeck-client-test.sh`, and `test/containers-test.sh` integrate nested server/client behavior into the existing lab container/client smoke flow.
+- Requirement: Nested acceptance rows are required.
+  - Status: done for harness behavior.
+  - Evidence: required rows include `client:nested-route-via-tun0`, `client:nested-handshake`, `client:nested-tun1`, and `client:nested-ping-peer`; explicit disable via `VPNKIT_STEAMDECK_NESTED_VPN_ENABLED=0` reports not deploy-ready.
+- Requirement: Public-safe docs/GitHub updates.
+  - Status: done.
+  - Evidence: README/task package updated; slice posted public-safe PR #26 and issue #27 comments.
+- Requirement: Live Deck cycle green including nested rows.
+  - Status: blocked/not run.
+  - Evidence: `config/private-endpoints.local.env` is absent in this worktree, so no authorized non-placeholder Deck binding was available. Do not claim deploy readiness.
 
 ## Acceptance verification
-- RU rule-set reproducibility:
-  - Covered by: local render/proof checks and live `up`.
+- Unified lifecycle:
+  - Covered by: code/docs review plus slice report.
   - Result: passed.
-  - Evidence: `VPNKIT_RULESET_SOURCE_MODE=local-fixture` lab default, generated local source JSON RU fixtures, live `up` with no GitHub RU `.srs` download.
-- Direct selected-outbound lab fixture:
-  - Covered by: render assertions, `sing-box check`, live `server:socks-inbound`.
+  - Evidence: `reports/slice-owner-nested-vpn.md` and `verification/root-integration.md`.
+- Nested generated material public safety:
+  - Covered by: setup smoke and tracked artifact guard.
   - Result: passed.
-  - Evidence: `VPNKIT_SELECTED_OUTBOUND_MODE=direct-fixture` lab default; default/proxy render remains VLESS; live SOCKS check passed.
-- DNS path:
-  - Covered by: `VPNKIT_OPENVPN_PUSH_DNS` lab default and live client smoke.
+  - Evidence: `verification/nested-vpn.md`; `verification/root-integration.md` guard passed.
+- Nested route/handshake/tun/ping live behavior:
+  - Covered by: harness implementation only; live proof missing.
+  - Result: not run.
+  - Evidence: acceptance audit AC7 blocks readiness until live `cycle` runs with nested rows.
+- Repo checks:
+  - Covered by: fresh root verification.
   - Result: passed.
-  - Evidence: client smoke completed TLS/cert validation, pushed DNS query, HTTPS hostname, and HTTPS literal-IP checks.
-- Live lifecycle:
-  - Covered by: `verification/root-final-live-green.md`.
-  - Result: passed.
-  - Evidence: `down` PASS, `up` PASS, `test` PASS with PASS=10 FAIL=0 SKIP=2, `cycle` PASS with PASS=13 FAIL=0 SKIP=2, final cleanup `down` PASS.
-- Public-safety:
-  - Covered by: redacted harness output and tracked-file check.
-  - Result: passed.
-  - Evidence: no tracked `.ovpn`, `.pem`, `.key`, `.crt`, `secrets/`, `rendered/`, or `logs/` paths; endpoint only process-local/redacted.
+  - Evidence: `bash -n`, Python compile/proof, `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, sensitive artifact guard all passed in `verification/root-integration.md`.
 
 ## System readiness
-- Routes / registration: not applicable beyond existing scripts.
+- Routes / registration: not applicable.
 - Services / APIs: not applicable.
-- Config / env / secrets: ready for lab; private bindings remain local/gitignored.
-- Permissions / access: Deck SSH access worked for bounded isolated lab operations.
+- Config / env / secrets: partial; lab nested config is wired and generated under ignored paths, but live private endpoint binding is unavailable here.
+- Permissions / access: blocked for live Deck acceptance in this worktree.
 - Database / migrations: not applicable.
-- Frontend-backend integration: not applicable.
-- Runtime / deployment wiring: ready for issue #27 lab scope. Production readiness is not claimed.
+- Runtime / deployment wiring: implementation is wired for lab lifecycle; deploy readiness remains blocked until live nested cycle passes.
 
 ## Verification run
 - Local / targeted checks:
-  - `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh scripts/vpnkit-steamdeck-podman.sh scripts/vpnkit-steamdeck-client-test.sh test/containers-test.sh`: passed.
+  - `bash -n test/containers-test.sh scripts/vpnkit-test-lab-setup.sh scripts/vpnkit-steamdeck-client-test.sh scripts/vpnkit-steamdeck-podman.sh docker/ovpn-client-test/*.sh docker/vpnkit/entrypoint.sh`: passed.
+  - `python3 -m py_compile scripts/*.py test/*.py`: passed.
   - `python3 test/sing-box-smart-routing-proof.py`: passed.
 - Local / full checks:
   - `go test ./...`: passed.
   - `go vet ./...`: passed.
   - `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`: passed.
-  - `python3 -m py_compile $(find scripts test -name '*.py' -print)`: passed.
-  - Sensitive tracked artifact check: passed/no matches.
-- Remote checks / CI:
-  - Live Deck isolated lab: passed; see `verification/root-final-live-green.md`.
-  - GitHub issue/PR comments: issue #27 https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667998990; PR #26 https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667999186.
-  - PR checks: final `gh pr checks` attempt timed out on GitHub API; previous branch checks had reported no configured checks.
+  - Sensitive tracked artifact guard: passed/no matches.
+- Remote/live checks:
+  - `test/containers-test.sh --scenario steamdeck-host --action cycle`: not run; missing gitignored private endpoint env in this worktree.
+  - Final cleanup `down`: not run for the same reason; no live lab was started by this root integration pass.
 
 ## Issues
-### Issue R-01: Remote RU `.srs` startup dependency
-- Description: Lab sing-box exited when GitHub RU remote binary rule-set download returned `unexpected EOF`.
-- Resolution: Added explicit `VPNKIT_RULESET_SOURCE_MODE=remote|local-fixture`; lab defaults local-fixture and generates local source JSON fixtures.
-- Evidence: commits `53dec3d`, `59b18ee`; live `up` passed with local fixtures.
-
-### Issue R-02: Persisted sing-box config drift
-- Description: Isolated lab state could reuse stale `/var/lib/vpnkit/sing-box/config.json` and mask newly rendered config.
-- Resolution: Isolated Steam Deck run path removes persisted lab sing-box config before start.
-- Evidence: live `up` used refreshed rendered config.
-
-### Issue R-03: Lab selected outbound was an impossible dummy proxy
-- Description: Dummy VLESS `selected-native-out` to `127.0.0.1:443` made default/SOCKS egress fail.
-- Resolution: Added `VPNKIT_SELECTED_OUTBOUND_MODE=proxy|direct-fixture`; lab defaults direct-fixture while keeping final/tag `selected-native-out`.
-- Evidence: commit `4cb45c7`; live `server:socks-inbound` passed.
-
-### Issue R-04: Lab pushed DNS targeted local OpenVPN server address
-- Description: Pushed DNS `10.89.0.1` terminates locally in `tun` mode and did not enter sing-box TUN.
-- Resolution: Added `VPNKIT_OPENVPN_PUSH_DNS`; lab defaults `172.19.0.1`, production/default remains `10.89.0.1`.
-- Evidence: commit `4cb45c7`; live client DNS probe passed.
-
-### Issue R-05: Direct-fixture DNS detour rejected by sing-box
-- Description: DNS TLS servers detoured through empty direct `selected-native-out`; sing-box rejected startup with `detour to an empty direct outbound makes no sense`.
-- Resolution: Renderer omits DNS TLS detour only in direct-fixture mode; default/proxy keeps it.
-- Evidence: commit `f4c389a`; live `up` and `cycle` passed.
+### Issue U-01: Live nested Deck cycle evidence missing
+- Description: The corrected nested acceptance is implemented and statically verified, but the required live isolated Deck `cycle` with nested rows was not run.
+- Evidence: `verification/root-integration.md` reports private env unreadable; acceptance auditor marks AC7 not run.
+- Why unresolved: private/environment access boundary, not a code path the agent can safely invent or print.
+- Needed next: On an authorized machine/worktree with `config/private-endpoints.local.env`, run `test/containers-test.sh --scenario steamdeck-host --action cycle`, verify nested rows pass, then run/confirm final cleanup `down`.
 
 ## Side findings
-- Blocking findings folded into active work: all current blockers resolved.
-- Non-blocking findings tracked separately: route-decision and policy-visible live extensions remain explicit scaffold `SKIP` rows; repo-local smart-routing proof covers required policy semantics for this issue.
+- Blocking findings folded into active work: nested acceptance missing from the unified lifecycle was folded into this implementation.
+- Non-blocking findings tracked separately: none added.
 
 ## Verdict
-- Status: success.
-- Goal state: fully achieved for issue #27 isolated Steam Deck lab lifecycle.
-- Final readiness: ready for PR/issue review in lab scope; production readiness not claimed.
-- Summary: The isolated Steam Deck lab lifecycle is now green with bounded `down`, `up`, `test`, and `cycle`, and final cleanup passed.
+- Status: partial / blocked on live environment.
+- Goal state: implementation and safe local verification achieved; required live deploy-readiness proof not achieved.
+- Final readiness: not deploy-ready until live `steamdeck-host` cycle is green with nested rows.
+- Summary: The PR now encodes nested VPN as required existing-lifecycle acceptance, but root completion is blocked by missing authorized live Deck bindings in this worktree.
