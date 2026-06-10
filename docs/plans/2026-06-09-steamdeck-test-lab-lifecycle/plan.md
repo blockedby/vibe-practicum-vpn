@@ -304,3 +304,7 @@ Dependencies:
 - Depends on runtime data-path/DNS task and current PR #26 branch.
 - Blocks issue #27 live green done-state.
 - Executor: slice owner direct fix because change is small and tightly coupled to current live evidence; report `reports/slice-owner-direct-fixture-dns-detour.md`, verification `verification/direct-fixture-dns-detour-live.md`.
+- 2026-06-10: RU rule-set startup blocker resolved with lab-local fixture mode. Evidence: `verification/ru-ruleset-fixture-live.md`; report: `reports/slice-owner-ru-ruleset-fixture.md`; commits `53dec3d`, `59b18ee`.
+- 2026-06-10: Runtime data-path/DNS blockers resolved with explicit lab direct selected-outbound fixture and lab pushed-DNS override while preserving production/default proxy/DNS behavior. Evidence: `verification/runtime-datapath-dns-live.md`; report: `reports/slice-owner-runtime-datapath-dns.md`; commits `4cb45c7`, `7be33fd`.
+- 2026-06-10: Direct-fixture DNS detour startup blocker resolved by omitting DNS TLS detour only for direct-fixture mode. Evidence: `verification/direct-fixture-dns-detour-live.md`; report: `reports/slice-owner-direct-fixture-dns-detour.md`; commit `f4c389a`.
+- 2026-06-10: Root final verification green. Live isolated `down`, `up`, `test`, `cycle`, and final cleanup passed using `vpnkit-test-steamdeck-host`; final isolated container cleanup completed. Required repo checks passed. Evidence: `verification/root-final-live-green.md`. Final done-state: success for issue #27 lab scope; production readiness not claimed.

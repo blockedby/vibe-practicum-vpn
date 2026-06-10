@@ -86,7 +86,7 @@
 - Code/config result: direct-fixture startup config defect fixed and locally proven; default/proxy behavior preserved.
 - Live matrix from this slice: `down=not-run up=not-run test=not-run cycle=not-run cleanup=not-run` due missing private env.
 - Files changed: `scripts/vpnkit-render-local-configs.sh`, `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle/plan.md`, this report, verification evidence.
-- Commit: `b7e1f18` (`fix(lab): omit dns detour for direct fixture outbound`), pushed to `origin/feat/issue-24-smart-routing-manifest`.
+- Commit: `f4c389a` (`fix(lab): omit dns detour for direct fixture outbound`), pushed to `origin/feat/issue-24-smart-routing-manifest`.
 - GitHub: PR #26 comment https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667957747; issue #27 comment https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667957874.
 
 ## Next-agent brief

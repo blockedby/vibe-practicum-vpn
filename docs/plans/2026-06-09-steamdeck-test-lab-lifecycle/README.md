@@ -1,6 +1,6 @@
 # Issue #27 Steam Deck test-lab lifecycle runner
 
-- Status: partial / blocked on real non-placeholder Deck private env for live cycle acceptance
+- Status: success / live isolated Steam Deck lab lifecycle green
 - Owner / slice: AAD root owner; implementation delegated as one lifecycle-runner slice
 - Branch: `feat/issue-24-smart-routing-manifest`
 - Worktree: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/issue-24-smart-routing-manifest`

@@ -1,107 +1,108 @@
 ## Task
-- Mission: Integrate issue #27 Steam Deck test-lab lifecycle runner and 2026-06-10 live hang remediation results.
-- Target: PR #26 branch `feat/issue-24-smart-routing-manifest`, issue #27 isolated Steam Deck lab scope.
-- Boundaries: No default/prod `vpnkit` mutation; no committed/generated secrets, profiles, PEM/key/cert material, rendered private configs, raw logs, or private endpoints.
-- Done when: lifecycle implementation is present, hang-prone live paths are bounded, safe verification passes, PR/issue are updated, and live Deck cycle is either green or precisely blocked.
+- Mission: Finish issue #27 / PR #26 Steam Deck isolated lab lifecycle after RU rule-set, data-path, DNS, and direct-fixture blockers.
+- Target: `feat/issue-24-smart-routing-manifest`, isolated `steamdeck-host` lab scenario.
+- Boundaries: No default/prod `vpnkit` mutation; no private endpoint/profile/key/cert/rendered config/log disclosure; Steam Deck evidence is test/lab only, not production readiness.
+- Done when: Required isolated lab `down`, `up`, `test`, and `cycle` are green with bounded commands, safe repo checks pass, commits are pushed, and GitHub issue/PR are updated public-safely.
 
 ## Context
 - GitHub issue: https://github.com/blockedby/vibe-practicum-vpn/issues/27
 - Related PR: https://github.com/blockedby/vibe-practicum-vpn/pull/26
 - Related issue: #24
 - Task package: `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle`
-- Latest slice report: `reports/slice-owner-live-hang-remediation.md`
-- Latest verification: `verification/live-hang-remediation.md`
+- Latest verification: `verification/root-final-live-green.md`
 - Worktree: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/issue-24-smart-routing-manifest`
 - Branch: `feat/issue-24-smart-routing-manifest`
 
 ## Spec compliance
 - AC1 lifecycle command: done. `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle` exists and is documented.
-- AC2 isolated lab defaults/no prod container: done. Defaults use `vpnkit-test-steamdeck-host`, `localhost/vpnkit:test-steamdeck-host`, isolated remote lab state, and UDP `21194`; helper refuses default `vpnkit` unless explicitly overridden.
-- AC3 gitignored generated artifacts: done. Lab artifacts remain under ignored `secrets/`/`logs/`; tracked docs/template are public-safe.
-- AC4 isolated test PKI and production-like rendering: done. Lab generation uses throwaway test material and existing sing-box/OpenVPN templates/rule sets.
-- AC5 lab `tun` mode: done. Lab defaults to `tun`; `sb-tun0` checks are mode-aware.
-- AC6 disabled `vibe-vpn` daemon/subscription: done for lab path.
-- AC7 explicit missing/placeholder prerequisites: done; placeholders fail fast with clear diagnostics.
-- AC8 honest matrix: done; unavailable/unaccepted paths are reported as FAIL/SKIP rather than green.
-- AC9 safe repo checks: passed again at root after latest commits.
-- AC10 live Deck cycle: partial/blocked. Latest live `down` passed; `up` returned bounded failure instead of hanging; `test` returned bounded failure with client smoke skipped; `cycle` was not run because `up` failed.
-- AC11 PR #26 / issue #27 updates: done with public-safe comments and pushed commits.
+- AC2 isolated lab/no prod container: done. Live runs targeted `vpnkit-test-steamdeck-host`; default/prod `vpnkit` was not touched.
+- AC3 gitignored generated artifacts: done. Generated lab material remains under ignored paths; tracked docs/templates are public-safe.
+- AC4 production-like smart-routing shape: done. RU/adblock/dev-direct/final policy shape is preserved; lab uses explicit local/direct fixtures only where needed for reproducible isolated acceptance.
+- AC5 lab `tun` mode: done. Live `up`, `test`, and `cycle` verified `tun0`, `sb-tun0`, policy route setup, and runtime `sing-box check`.
+- AC6 disabled `vibe-vpn` daemon/subscription path: done. Lab smoke proceeds without subscription; daemon remains disabled unless explicitly enabled.
+- AC7 missing/placeholder prerequisites: done from prior checks; explicit placeholders fail fast.
+- AC8 honest matrix: done. Required lifecycle checks passed; route-decision/policy-visible scaffold rows remain explicit `SKIP` and are not claimed as required acceptance.
+- AC9 safe repo checks: passed after final live run.
+- AC10 live Deck lifecycle: passed. Required `down`, `up`, `test`, and `cycle` completed boundedly; final cleanup also passed.
+- AC11 PR/issue updates: done by slice updates; final public-safe status update remains to be posted after this report commit.
 
 ## Acceptance verification
-- Hang diagnosis and remediation:
-  - Covered by: code inspection plus fresh bounded live `up`/`test` evidence.
-  - Result: passed for hang class.
-  - Evidence: `verify_container` now bounds `podman ps`, finite logs, process probes, `sing-box check`, subscription probe, and `vibe-vpn doctor`; `test` skips client smoke when the explicit Steam Deck server container is unavailable.
-- Live lab sequence:
-  - Covered by: live commands in `verification/live-hang-remediation.md`.
-  - Result: partial/blocked.
-  - Evidence: `down` PASS; `up` bounded FAIL due sing-box remote RU `.srs` rule-set download `unexpected EOF`; `test` bounded FAIL/server unavailable/client smoke skipped; final cleanup `down` PASS; `cycle` not run after failed `up`.
+- RU rule-set reproducibility:
+  - Covered by: local render/proof checks and live `up`.
+  - Result: passed.
+  - Evidence: `VPNKIT_RULESET_SOURCE_MODE=local-fixture` lab default, generated local source JSON RU fixtures, live `up` with no GitHub RU `.srs` download.
+- Direct selected-outbound lab fixture:
+  - Covered by: render assertions, `sing-box check`, live `server:socks-inbound`.
+  - Result: passed.
+  - Evidence: `VPNKIT_SELECTED_OUTBOUND_MODE=direct-fixture` lab default; default/proxy render remains VLESS; live SOCKS check passed.
+- DNS path:
+  - Covered by: `VPNKIT_OPENVPN_PUSH_DNS` lab default and live client smoke.
+  - Result: passed.
+  - Evidence: client smoke completed TLS/cert validation, pushed DNS query, HTTPS hostname, and HTTPS literal-IP checks.
+- Live lifecycle:
+  - Covered by: `verification/root-final-live-green.md`.
+  - Result: passed.
+  - Evidence: `down` PASS, `up` PASS, `test` PASS with PASS=10 FAIL=0 SKIP=2, `cycle` PASS with PASS=13 FAIL=0 SKIP=2, final cleanup `down` PASS.
 - Public-safety:
-  - Covered by: redacted env handling and tracked-file check.
+  - Covered by: redacted harness output and tracked-file check.
   - Result: passed.
-  - Evidence: no tracked `.ovpn`, PEM/key/cert/log/secrets paths; endpoint was not printed or committed.
-- GitHub updates:
-  - Covered by: pushed commits and public comments.
-  - Result: passed.
-  - Evidence: issue comment https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667492219 and PR comment https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667492399.
+  - Evidence: no tracked `.ovpn`, `.pem`, `.key`, `.crt`, `secrets/`, `rendered/`, or `logs/` paths; endpoint only process-local/redacted.
 
 ## System readiness
-- Config / env / secrets: public-safe; real private Deck values stayed local. No tracked sensitive artifacts.
-- Runtime / deployment wiring: partial. Lifecycle no longer hangs on the previous verify/doctor/client-smoke paths, but live container startup currently depends on successful outbound RU rule-set downloads from GitHub.
-- Production readiness: not claimed; Steam Deck remains isolated test/lab only.
+- Routes / registration: not applicable beyond existing scripts.
+- Services / APIs: not applicable.
+- Config / env / secrets: ready for lab; private bindings remain local/gitignored.
+- Permissions / access: Deck SSH access worked for bounded isolated lab operations.
+- Database / migrations: not applicable.
+- Frontend-backend integration: not applicable.
+- Runtime / deployment wiring: ready for issue #27 lab scope. Production readiness is not claimed.
 
 ## Verification run
-- Slice verification:
-  - `bash -n scripts/vpnkit-steamdeck-podman.sh test/containers-test.sh`: PASS
-  - `bash -n scripts/*.sh test/*.sh`: PASS
-  - `python3 test/sing-box-smart-routing-proof.py`: PASS
-  - `go test ./...`: PASS
-  - `go vet ./...`: PASS
-  - `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`: PASS
-  - tracked sensitive artifact grep: PASS
-  - PR checks: no checks reported on branch.
-- Root re-verification after integration:
-  - `bash -n scripts/vpnkit-steamdeck-podman.sh test/containers-test.sh`: PASS
-  - `python3 test/sing-box-smart-routing-proof.py`: PASS
-  - `go test ./...`: PASS
-  - `go vet ./...`: PASS
-  - `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`: PASS
-  - tracked `.ovpn/.pem/.key/.crt/logs/secrets` path check: PASS
-  - `git status --short --branch`: clean relative to tracked files, branch at `origin/feat/issue-24-smart-routing-manifest` before this final report update.
+- Local / targeted checks:
+  - `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh scripts/vpnkit-steamdeck-podman.sh scripts/vpnkit-steamdeck-client-test.sh test/containers-test.sh`: passed.
+  - `python3 test/sing-box-smart-routing-proof.py`: passed.
+- Local / full checks:
+  - `go test ./...`: passed.
+  - `go vet ./...`: passed.
+  - `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`: passed.
+  - `python3 -m py_compile $(find scripts test -name '*.py' -print)`: passed.
+  - Sensitive tracked artifact check: passed/no matches.
+- Remote checks / CI:
+  - Live Deck isolated lab: passed; see `verification/root-final-live-green.md`.
+  - PR checks: no required checks were reported previously for this branch.
 
 ## Issues
-### Issue R-01: Initial lifecycle implementation
-- Resolution: Added lifecycle runner, lab setup generator, Podman helper safety/config updates, docs/template, and task evidence.
-- Evidence: commit `f789c4b feat: add steamdeck lab lifecycle runner`.
+### Issue R-01: Remote RU `.srs` startup dependency
+- Description: Lab sing-box exited when GitHub RU remote binary rule-set download returned `unexpected EOF`.
+- Resolution: Added explicit `VPNKIT_RULESET_SOURCE_MODE=remote|local-fixture`; lab defaults local-fixture and generates local source JSON fixtures.
+- Evidence: commits `53dec3d`, `59b18ee`; live `up` passed with local fixtures.
 
-### Issue R-02: Placeholder env and first timeout remediation
-- Resolution: Added placeholder rejection, unified SSH/endpoint precedence, and configurable remote timeouts.
-- Evidence: commit `83fd2d4 fix: bound steamdeck lab live prerequisites`.
+### Issue R-02: Persisted sing-box config drift
+- Description: Isolated lab state could reuse stale `/var/lib/vpnkit/sing-box/config.json` and mask newly rendered config.
+- Resolution: Isolated Steam Deck run path removes persisted lab sing-box config before start.
+- Evidence: live `up` used refreshed rendered config.
 
-### Issue R-03: Verify/doctor/client-smoke hang class
-- Description: A previous live run appeared hung after deploy/log output. The most likely script-level hang class was unbounded inner verify/doctor `podman exec` operations plus client smoke running after server startup failure.
-- Resolution: Wrapped the relevant verify/log/exec/doctor operations with finite timeouts and skipped client smoke when the explicit Steam Deck server container is unavailable.
-- Evidence: commit `b723068 fix: bound steamdeck lab verify hangs`; latest `up`/`test` returned boundedly.
+### Issue R-03: Lab selected outbound was an impossible dummy proxy
+- Description: Dummy VLESS `selected-native-out` to `127.0.0.1:443` made default/SOCKS egress fail.
+- Resolution: Added `VPNKIT_SELECTED_OUTBOUND_MODE=proxy|direct-fixture`; lab defaults direct-fixture while keeping final/tag `selected-native-out`.
+- Evidence: commit `4cb45c7`; live `server:socks-inbound` passed.
 
-### Issue U-01: Green live `cycle` is blocked by remote RU rule-set fetch failure
-- Description: The isolated lab now returns boundedly, but sing-box exits during startup while downloading remote RU `.srs` rule sets from GitHub with `unexpected EOF`.
-- Evidence: `verification/live-hang-remediation.md` summarizes the redacted live output and matrix.
-- Why unresolved: Current evidence points to Deck outbound/network/rule-set availability, not the previous lifecycle hang. Changing rule-set sourcing/caching semantics needs a separate scoped acceptance decision.
-- Needed next: Decide whether the lab should vendor/cache RU `.srs` files, make the live lab fail with a documented outbound prerequisite, or add a lab-specific fallback that preserves intended smart-routing acceptance.
+### Issue R-04: Lab pushed DNS targeted local OpenVPN server address
+- Description: Pushed DNS `10.89.0.1` terminates locally in `tun` mode and did not enter sing-box TUN.
+- Resolution: Added `VPNKIT_OPENVPN_PUSH_DNS`; lab defaults `172.19.0.1`, production/default remains `10.89.0.1`.
+- Evidence: commit `4cb45c7`; live client DNS probe passed.
+
+### Issue R-05: Direct-fixture DNS detour rejected by sing-box
+- Description: DNS TLS servers detoured through empty direct `selected-native-out`; sing-box rejected startup with `detour to an empty direct outbound makes no sense`.
+- Resolution: Renderer omits DNS TLS detour only in direct-fixture mode; default/proxy keeps it.
+- Evidence: commit `f4c389a`; live `up` and `cycle` passed.
 
 ## Side findings
-- Blocking findings folded into active work: R-03 resolved; U-01 remains blocking for issue #27 done-state.
-- Non-blocking findings tracked separately: none.
+- Blocking findings folded into active work: all current blockers resolved.
+- Non-blocking findings tracked separately: route-decision and policy-visible live extensions remain explicit scaffold `SKIP` rows; repo-local smart-routing proof covers required policy semantics for this issue.
 
 ## Verdict
-- Status: partial / blocked.
-- Goal state: hang remediation achieved and safely verified; issue #27 live acceptance not achieved.
-- Final readiness: not ready for issue closure because no green `cycle` exists.
-- Summary: The prior 13h hang class is bounded now and isolated cleanup completed; the remaining blocker is a live Deck sing-box startup failure caused by remote RU rule-set download EOF.
-
-## Next-agent brief
-- Objective: Resolve U-01 or record an explicit accepted environment blocker, then rerun the full bounded live `cycle`.
-- Target: `steamdeck-host` sing-box rule-set availability/startup behavior.
-- Settled already: lifecycle command, isolated lab safety, placeholder handling, verify/doctor/log/client-smoke timeouts.
-- Boundaries: isolated `vpnkit-test-steamdeck-host` only; no prod/default `vpnkit`; no private endpoint/log/profile/key/cert disclosure.
-- Verification target: green `test/containers-test.sh --scenario steamdeck-host --action cycle`, or public-safe blocked status with a precise outbound/rule-set prerequisite.
+- Status: success.
+- Goal state: fully achieved for issue #27 isolated Steam Deck lab lifecycle.
+- Final readiness: ready for PR/issue review in lab scope; production readiness not claimed.
+- Summary: The isolated Steam Deck lab lifecycle is now green with bounded `down`, `up`, `test`, and `cycle`, and final cleanup passed.
