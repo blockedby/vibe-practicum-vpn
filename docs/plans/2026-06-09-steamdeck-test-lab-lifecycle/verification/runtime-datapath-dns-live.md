@@ -43,3 +43,9 @@ VPNKIT_TEST_ROUTING_MODE=tun test/containers-test.sh --scenario steamdeck-host -
 - AC DNS wiring changed safely: PASS locally for rendered config semantics; live pushed-DNS behavior still requires Deck run.
 - AC live `down/up/test/cycle`: NOT RUN/BLOCKED by absent private env in this worktree.
 - AC repo checks: PASS locally.
+
+## Push / GitHub update
+
+- Commit pushed: `4cb45c7` (`fix(lab): add direct selected outbound fixture`).
+- Issue #27 update: https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667909127
+- PR #26 update: https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667909311

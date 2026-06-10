@@ -32,9 +32,9 @@
   - Status: done.
   - Evidence: see Verification run.
 - Requirement / AC: Commit/push and GitHub issue/PR update.
-  - Status: missing in this report version.
-  - Evidence: local changes are not yet committed/pushed at report-write time.
-  - Gap if any: requires commit/push and `gh` update after final status.
+  - Status: done.
+  - Evidence: pushed commit `4cb45c7`; issue #27 comment https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667909127; PR #26 comment https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667909311.
+  - Gap if any: live Deck green acceptance still awaits private env.
 
 ## Acceptance verification
 - AC1 Root cause for SOCKS/DNS/client-smoke failure is documented with evidence.
@@ -58,9 +58,9 @@
   - Result: passed.
   - Evidence: Verification run.
 - AC6 Commit/push and issue #27 / PR #26 updated.
-  - Covered by: pending owner finalization.
-  - Result: not yet run.
-  - Evidence: none yet.
+  - Covered by: git push and `gh` comments.
+  - Result: passed.
+  - Evidence: commit `4cb45c7`; issue #27 comment https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667909127; PR #26 comment https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667909311.
 
 ## System readiness
 - Routes / registration: done locally; `route.final` remains `selected-native-out` and policy proof passes.
@@ -84,8 +84,8 @@
   - `python3 -m py_compile $(find scripts test -name '*.py' -print)`: passed.
   - Sensitive tracked artifact check: passed.
 - Remote checks / CI:
-  - Status: not checked before push.
-  - Evidence: local changes not pushed at this report-write point.
+  - Status: pushed; CI not checked in this slice.
+  - Evidence: `git push origin feat/issue-24-smart-routing-manifest` advanced branch to `4cb45c7`.
 
 ## Issues
 ### Issue R-01: Lab SOCKS/default egress used an impossible dummy selected proxy
