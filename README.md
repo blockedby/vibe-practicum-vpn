@@ -180,3 +180,37 @@ report under `reports/` by default. It also traps exit/interrupt and stops all
 tested slots to restore router connectivity. Run it only with an explicit
 operator recovery path because it can temporarily break Internet access for this
 computer.
+
+## Production Docker deploy/rollback helper (tooling only)
+
+Production mutation still requires explicit operator approval and real endpoint
+bindings from the gitignored `config/private-endpoints.local.env`. The tracked
+helper is safe to review locally first and does not embed production hosts or
+paths:
+
+```bash
+# Plan only; no remote mutation.
+scripts/vpnkit-prod-deploy.sh plan --target-ref origin/main your-prod-ssh-alias
+# Equivalent alias.
+scripts/vpnkit-prod-deploy.sh dry-run --target-ref origin/main your-prod-ssh-alias
+
+# After explicit approval only; mutating commands refuse without --yes.
+scripts/vpnkit-prod-deploy.sh deploy --yes --target-ref <commit-or-branch> \
+  your-prod-ssh-alias-a your-prod-ssh-alias-b
+scripts/vpnkit-prod-deploy.sh rollback --yes your-prod-ssh-alias-a your-prod-ssh-alias-b
+scripts/vpnkit-prod-deploy.sh verify your-prod-ssh-alias-a your-prod-ssh-alias-b
+```
+
+The helper discovers the live Compose workdir/service/container from Docker
+Compose labels. Approved overrides for unusual hosts are
+`VPNKIT_PROD_WORKDIR`, `VPNKIT_PROD_SERVICE`, `VPNKIT_PROD_CONTAINER`, and
+`VPNKIT_PROD_PROJECT`; keep their real values local-only. Deploy is sequential
+across hosts and stops on the first failed host after attempting rollback. The
+remote flow is: create `.rollback/vpnkit/<timestamp>/`, fetch/checkout the target
+ref, render/check and refresh persisted sing-box config, rebuild/recreate only
+the `vpnkit` service, smoke the runtime, auto-rollback on failed smoke, and smoke
+after rollback. Smoke checks are bounded and cover container state, UDP 1194,
+OpenVPN/`tun0`, sing-box, `sb-tun0` policy routing for `tun` mode, and
+`sing-box check` when available. Output is redacted; do not paste raw secret
+files, rendered configs, profiles, logs, image exports, or private endpoint
+values into tracked docs.

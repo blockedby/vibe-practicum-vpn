@@ -60,3 +60,12 @@ Report path:
 
 Status:
 - pending delegation
+
+## Execution ledger
+
+2026-06-10 deploy-tooling slice owner update:
+- Implemented `scripts/vpnkit-prod-deploy.sh` with `plan`/`dry-run`, `deploy --yes --target-ref`, `rollback --yes`, and `verify` flows.
+- Added `test/prod-deploy-helper-test.sh` for local refusal/redaction/host-list coverage.
+- Updated `README.md` and `config/private-endpoints.example.env` with public-safe usage and placeholder env knobs.
+- Verification evidence recorded in `verification/local.md`.
+- No production deploy/rollback/verify/probe was run.
