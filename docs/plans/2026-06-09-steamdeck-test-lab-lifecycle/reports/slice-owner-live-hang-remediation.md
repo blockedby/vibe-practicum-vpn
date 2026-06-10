@@ -64,9 +64,9 @@
   - Result: passed.
   - Evidence: commands below.
 - AC7: Commit/push/GitHub updates.
-  - Covered by: pending owner finalization.
-  - Result: not yet run at time of this report write.
-  - Evidence: pending commit/push/comment.
+  - Covered by: commit, push, and public-safe GitHub comments.
+  - Result: passed.
+  - Evidence: commit `b723068`; issue comment https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667492219; PR comment https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667492399.
 
 ## System readiness
 - Routes / registration: not relevant.
@@ -88,8 +88,8 @@
   - `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`: passed.
   - `git ls-files | grep -Ei '(\.ovpn$|\.pem$|\.key$|logs/|secrets/)' || true`: passed/no tracked sensitive artifact paths.
 - Remote checks / CI:
-  - Status: pending push/PR update.
-  - Evidence: to be collected after push.
+  - Status: no checks reported.
+  - Evidence: `gh pr checks 26 --repo blockedby/vibe-practicum-vpn --watch --interval 10` returned `no checks reported on the 'feat/issue-24-smart-routing-manifest' branch`.
 
 ## Issues
 ### Issue R-01: Verify/doctor commands were not individually bounded
@@ -116,6 +116,10 @@
 - Non-blocking findings tracked separately: none created.
 
 ## Verdict
+- Commit / PR update:
+  - `git push origin feat/issue-24-smart-routing-manifest`: passed, pushed `b723068`.
+  - GitHub issue update: https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667492219
+  - GitHub PR update: https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667492399
 - Status: partial / blocked.
 - Goal state: Hang remediation achieved; issue #27 live acceptance not done.
 - Final readiness: not ready for issue closure because green `cycle` is blocked by live sing-box rule-set download failure.

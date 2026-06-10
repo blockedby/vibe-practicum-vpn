@@ -52,7 +52,7 @@ Results:
 - AC4 private endpoint safety: PASS; endpoint only process-local, output redacted.
 - AC5 client smoke failure classification: PASS; client smoke skipped because server unavailable; server unavailable due sing-box outbound rule-set fetch `unexpected EOF`.
 - AC6 repo checks / sensitive artifacts: PASS.
-- AC7 PR/issue updates: pending push/GitHub update after commit.
+- AC7 PR/issue updates: PASS. Commit `b723068` pushed; public-safe issue update https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667492219 and PR update https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667492399 posted. PR checks reported no checks configured for the branch.
 
 ## Cleanup
 
