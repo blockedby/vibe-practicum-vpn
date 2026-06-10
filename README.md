@@ -9,6 +9,25 @@ Public-safe operational tooling for the containerized `vpnkit` VPN/routing setup
 - Private endpoint template: [`config/private-endpoints.example.env`](./config/private-endpoints.example.env)
 - Vercel DNS failover runbook: [`docs/VERCEL_DNS_FAILOVER.md`](./docs/VERCEL_DNS_FAILOVER.md)
 
+## Current iteration quick map
+
+This branch adds three connected pieces of operational tooling:
+
+- **Manifest/profile matrix**: `config/vpnkit-manifest.example.yaml`, `config/vpnkit-manifest.schema.json`, `scripts/vpnkit-manifest-validate.py`, and `scripts/vpnkit-render-profile-for-pair.sh` describe server/client/profile intent and render public-safe fixture or local real profiles.
+- **Unified Steam Deck lab acceptance**: `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle` prepares isolated lab secrets, deploys `vpnkit-test-steamdeck-host`, runs OpenVPN/sing-box checks, outer client smoke, and required nested OpenVPN rows.
+- **Production deploy/rollback tooling**: `scripts/vpnkit-prod-deploy.sh` provides `plan`, `dry-run`, `deploy`, `verify`, and `rollback` for Docker/Compose production endpoints with rollback bundles and smoke checks.
+
+Useful tests added/extended in this branch:
+
+```bash
+python3 test/sing-box-smart-routing-proof.py
+test/manifest-profile-intents-test.sh
+test/prod-deploy-helper-test.sh
+test/containers-test.sh --scenario steamdeck-host --action cycle
+```
+
+Agent/operator rule of thumb: use `devops-runtime-readiness` for deploy/runtime changes, require fresh acceptance evidence before calling work ready, use the unified runner for lab acceptance, use the deploy helper for production rollout, and keep all generated profiles, PKI, rendered configs, logs, and private endpoints in gitignored local paths only.
+
 Read-only backend drift check after sourcing local endpoints or passing SSH aliases:
 
 ```bash
