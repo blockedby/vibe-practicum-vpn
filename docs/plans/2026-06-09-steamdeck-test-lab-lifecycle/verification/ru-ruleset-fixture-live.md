@@ -37,6 +37,6 @@ U-01: Isolated Deck lab is not fully green. The next blocker is no longer remote
 
 ## Commit and public updates
 
-- Commit pushed: `26d6e89` (`fix(lab): use local RU rule fixtures for Steam Deck`).
+- Commit pushed: current branch head (`fix(lab): use local RU rule fixtures for Steam Deck`).
 - Issue #27 update: https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667856262
 - PR #26 update: https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667856378

@@ -52,7 +52,7 @@
   - Evidence: `bash -n scripts/*.sh test/*.sh`, `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, sensitive tracked artifact check all PASS.
 - AC7 commit/push and GitHub updates:
   - Result: passed
-  - Evidence: commit `26d6e89` pushed to `feat/issue-24-smart-routing-manifest`; issue update https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667856262; PR update https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667856378.
+  - Evidence: current branch head pushed to `feat/issue-24-smart-routing-manifest`; issue update https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667856262; PR update https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667856378.
 
 ## System readiness
 - Routes / registration: done for render/lab mode; live server config shape PASS.
