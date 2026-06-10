@@ -123,6 +123,8 @@ ifconfig-pool-persist /tmp/nested-ipp.txt
 keepalive 5 20
 persist-key
 persist-tun
+remote-cert-tls client
+dh none
 verb 3
 ca /etc/openvpn/nested/pki/ca.crt
 cert /etc/openvpn/nested/pki/server.crt
