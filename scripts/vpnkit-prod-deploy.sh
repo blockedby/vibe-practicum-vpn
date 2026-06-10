@@ -129,11 +129,28 @@ make_bundle() {
   rollback_dir="$workdir/.rollback/vpnkit/$stamp"
   mkdir -p "$rollback_dir"
   git rev-parse --verify HEAD >"$rollback_dir/git-ref.txt" 2>/dev/null || true
-  docker inspect "$container" --format "{{.Config.Image}}" >"$rollback_dir/image.txt" 2>/dev/null || true
+  docker inspect "$container" --format "{{.Config.Image}}" >"$rollback_dir/image-ref.txt" 2>/dev/null || true
+  cp "$rollback_dir/image-ref.txt" "$rollback_dir/image.txt" 2>/dev/null || true
+  docker inspect "$container" --format "{{.Image}}" >"$rollback_dir/image-id.txt" 2>/dev/null || true
   docker inspect "$container" >"$rollback_dir/container-inspect.json" 2>/dev/null || true
   docker cp "$container:/var/lib/vpnkit/sing-box/config.json" "$rollback_dir/sing-box-config.json" >/dev/null 2>&1 || true
-  [ -f compose.yaml ] && printf "%s\n" compose.yaml >"$rollback_dir/compose-file.txt" || true
-  [ -f docker-compose.yml ] && printf "%s\n" docker-compose.yml >"$rollback_dir/compose-file.txt" || true
+  : >"$rollback_dir/compose-files.txt"
+  for compose_file in compose.yaml compose.yml docker-compose.yml docker-compose.yaml; do
+    [ -f "$compose_file" ] && printf "%s\n" "$compose_file" >>"$rollback_dir/compose-files.txt"
+  done
+  [ -s "$rollback_dir/compose-files.txt" ] && cp "$rollback_dir/compose-files.txt" "$rollback_dir/compose-file.txt" 2>/dev/null || true
+  {
+    printf "# References only; this file intentionally records names/paths, not env values.\n"
+    for env_name in VPNKIT_PROD_WORKDIR VPNKIT_PROD_SERVICE VPNKIT_PROD_CONTAINER VPNKIT_PROD_PROJECT VPNKIT_PROD_REMOTE_TIMEOUT_BIN VPNKIT_PROD_REMOTE_INNER_TIMEOUT VPNKIT_PROD_POST_RECREATE_SLEEP; do
+      if env | grep -q "^${env_name}="; then printf "%s=<set>\n" "$env_name"; else printf "%s=<unset>\n" "$env_name"; fi
+    done
+    [ -f .env ] && printf "env_file=.env\n"
+    while IFS= read -r compose_file; do
+      if grep -q "^[[:space:]]*env_file:" "$compose_file"; then
+        printf "compose_env_file_section=%s\n" "$compose_file"
+      fi
+    done <"$rollback_dir/compose-files.txt"
+  } >"$rollback_dir/env-references.txt"
   cat >"$rollback_dir/rollback.sh" <<ROLLBACK
 #!/usr/bin/env bash
 set -euo pipefail

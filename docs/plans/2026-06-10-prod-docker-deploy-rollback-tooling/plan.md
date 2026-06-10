@@ -69,3 +69,57 @@ Status:
 - Updated `README.md` and `config/private-endpoints.example.env` with public-safe usage and placeholder env knobs.
 - Verification evidence recorded in `verification/local.md`.
 - No production deploy/rollback/verify/probe was run.
+
+2026-06-10 audit-gap-fix slice update:
+- Mission: close acceptance audit gaps AC3 explicit rollback-bundle metadata/env references and AC8 mocked SSH/Docker/Compose path coverage without production mutation.
+- Scope: `scripts/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, task-package verification/report artifacts only unless a minimal docs note is required.
+- Do-not-touch: do not read or print `config/private-endpoints.local.env`; no live deploy/rollback/verify against real hosts; no real endpoints/secrets/logs in tracked files.
+
+### Task 2: AC3/AC8 audit gap fix
+Goal:
+- Rollback bundles explicitly capture public-safe image tag/name and image ID where available plus compose/env reference artifacts without env values.
+- Add lightweight mocked SSH/timeout path tests that prove deploy/verify/rollback routing/refusal/redaction/host sequencing without contacting production.
+
+Boundary:
+- System area: shell deploy helper and shell tests.
+- Primary verification: syntax check, updated helper test with mocks, `git diff --check`, secret-like addition scan.
+
+Existing pattern / reuse:
+- Reuse existing `make_bundle()`, `run_remote()`, redaction, timeout/ssh override env vars, and `test/prod-deploy-helper-test.sh` style.
+
+Missing change:
+- Add explicit rollback bundle metadata files for image ref/id and env/compose references (names/paths/approved override names only; never values).
+- Extend tests with fake `ssh` and fake `timeout` commands that execute the embedded remote script locally with mocked `docker`, `docker compose`, `git`, `date`, and shell helpers.
+
+Acceptance criteria:
+- AC3: bundle writes explicit artifacts for image tag/name, image ID when inspect can provide it, compose file refs, env file refs / approved env override names or refs without values, current runtime sing-box config, container inspect metadata, and executable rollback payload.
+- AC8: mocked path coverage exercises/refuses mutating actions without `--yes`, and for approved mocked paths proves deploy/verify/rollback remote command routing, redaction, and sequential host handling without real SSH/production contact.
+
+Evidence route:
+- Existing automated checks: `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`; `test/prod-deploy-helper-test.sh`; `git diff --check`.
+- Add/extend test: update `test/prod-deploy-helper-test.sh` with fake ssh/timeout path tests.
+- Bounded acceptance probe: local mock-only shell test; no real endpoints, no private env file.
+- Access/runtime needed: local shell only.
+- Outcome boundary: PASS proves repo-safe command construction/routing and bundle artifact writes in a mocked remote path; does not prove live production host readiness.
+
+Test plan:
+- Positive: mocked `deploy --yes --target-ref main host-a host-b` sequences hosts and creates bundle metadata; mocked `verify host-a`; mocked `rollback --yes host-a` routes to rollback.
+- Negative: existing deploy/rollback refusal without `--yes`; redaction catches secret-like mocked output.
+- Edge cases: no env values are emitted in bundle reference artifact; output hosts are redacted as `<host>`.
+
+Dependencies:
+- Depends on: initial deploy-tooling slice implementation.
+- Blocks: final report for audit-gap-fix.
+- Can run parallel with: none (single coherent helper/test update).
+
+Executor:
+- aad-implementer
+
+Task 2 status: ready for implementation dispatch.
+
+2026-06-10 audit-gap-fix completion update:
+- Task 2 status: done.
+- AC3 evidence: `scripts/vpnkit-prod-deploy.sh` `make_bundle()` now writes explicit `image-ref.txt`, `image-id.txt`, `compose-files.txt`, `env-references.txt`, plus legacy compatibility refs and prior rollback artifacts without env values.
+- AC8 evidence: `test/prod-deploy-helper-test.sh` now includes fake `timeout`/`ssh` and mocked remote `docker`/Compose/`git`/`date` paths for `verify`, `rollback`, and two-host `deploy` sequencing; redaction of mocked token-like output is asserted.
+- Fresh verification: `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh` PASS; `test/prod-deploy-helper-test.sh` PASS; `git diff --check` PASS; audit-gap-fix secret-like diff scan PASS.
+- Remaining limitation: no live production deploy/rollback/verify was run by scope; mock tests do not prove real host runtime readiness.
