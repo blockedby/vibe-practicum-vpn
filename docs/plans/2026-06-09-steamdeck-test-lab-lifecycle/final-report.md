@@ -24,7 +24,7 @@
 - AC8 honest matrix: done. Required lifecycle checks passed; route-decision/policy-visible scaffold rows remain explicit `SKIP` and are not claimed as required acceptance.
 - AC9 safe repo checks: passed after final live run.
 - AC10 live Deck lifecycle: passed. Required `down`, `up`, `test`, and `cycle` completed boundedly; final cleanup also passed.
-- AC11 PR/issue updates: done by slice updates; final public-safe status update remains to be posted after this report commit.
+- AC11 PR/issue updates: done. Final public-safe status posted to issue #27 and PR #26 after green live evidence.
 
 ## Acceptance verification
 - RU rule-set reproducibility:
@@ -69,7 +69,8 @@
   - Sensitive tracked artifact check: passed/no matches.
 - Remote checks / CI:
   - Live Deck isolated lab: passed; see `verification/root-final-live-green.md`.
-  - PR checks: no required checks were reported previously for this branch.
+  - GitHub issue/PR comments: issue #27 https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667998990; PR #26 https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667999186.
+  - PR checks: final `gh pr checks` attempt timed out on GitHub API; previous branch checks had reported no configured checks.
 
 ## Issues
 ### Issue R-01: Remote RU `.srs` startup dependency
