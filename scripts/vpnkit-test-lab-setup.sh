@@ -21,6 +21,7 @@ Environment:
   VPNKIT_TEST_LAB_ENDPOINT      Client profile remote host (default: 127.0.0.1)
   VPNKIT_TEST_LAB_PORT          Client profile remote port (default: 1194)
   VPNKIT_ROUTING_MODE           Render routing mode (default: tun)
+  VPNKIT_RULESET_SOURCE_MODE    RU rule-set source mode (default: local-fixture for labs; renderer default is remote)
 EOF
 }
 
@@ -51,7 +52,10 @@ make_ca() {
 }
 make_cert() {
   local name=$1 ext=$2
-  [[ -s "$PKI/$name.crt" && -s "$PKI/$name.key" ]] && return 0
+  if [[ -s "$PKI/$name.crt" && -s "$PKI/$name.key" ]] && openssl x509 -in "$PKI/$name.crt" -noout -text 2>/dev/null | grep -q 'X509v3 Key Usage'; then
+    return 0
+  fi
+  rm -f "$PKI/$name.crt" "$PKI/$name.key" "$PKI/$name.csr"
   openssl req -newkey rsa:2048 -nodes -subj "/CN=vpnkit-test-lab-$name" \
     -keyout "$PKI/$name.key" -out "$PKI/$name.csr" >/dev/null 2>&1
   openssl x509 -req -in "$PKI/$name.csr" -CA "$PKI/ca.crt" -CAkey "$PKI/ca.key" -CAcreateserial \
@@ -59,8 +63,8 @@ make_cert() {
   rm -f "$PKI/$name.csr"
 }
 make_ca
-make_cert "$SERVER_NAME" 'extendedKeyUsage=serverAuth'
-make_cert ignat 'extendedKeyUsage=clientAuth'
+make_cert "$SERVER_NAME" $'keyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth'
+make_cert ignat $'keyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth'
 if [[ ! -s "$PKI/ta.key" ]]; then
   if command -v openvpn >/dev/null 2>&1; then
     openvpn --genkey secret "$PKI/ta.key" >/dev/null 2>&1
@@ -86,7 +90,7 @@ chmod 600 "$BASE/sing-box/tproxy-canary.json"
 printf '[]\n' > "$BASE/vibe-vpn/extra-nodes.json"
 chmod 600 "$BASE/vibe-vpn/extra-nodes.json"
 
-VPNKIT_SECRETS_DIR="$BASE" VPNKIT_ROUTING_MODE="$ROUTING_MODE" scripts/vpnkit-render-local-configs.sh >/dev/null
+VPNKIT_SECRETS_DIR="$BASE" VPNKIT_ROUTING_MODE="$ROUTING_MODE" VPNKIT_RULESET_SOURCE_MODE="${VPNKIT_RULESET_SOURCE_MODE:-local-fixture}" scripts/vpnkit-render-local-configs.sh >/dev/null
 
 python3 - "$CLIENT_DIR/test-client.ovpn" "$ENDPOINT" "$PORT" <<'PY'
 import pathlib, sys

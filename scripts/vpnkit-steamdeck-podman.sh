@@ -155,6 +155,8 @@ run_container() {
 set -Eeuo pipefail
 REMOTE_DIR=$1; CONTAINER=$2; IMAGE=$3; OPENVPN_PORT=$4; ROUTING_MODE=$5
 podman rm -f "$CONTAINER" >/dev/null 2>&1 || true
+mkdir -p "$REMOTE_DIR/state/sing-box"
+rm -f "$REMOTE_DIR/state/sing-box/config.json"
 podman run -d --name "$CONTAINER" --replace \
   --privileged \
   --cap-add NET_ADMIN --cap-add NET_RAW \

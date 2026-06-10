@@ -93,7 +93,7 @@ test/containers-test.sh --scenario steamdeck-host --action down
 
 Defaults are intentionally distinct from production: container `vpnkit-test-steamdeck-host`, image `localhost/vpnkit:test-steamdeck-host`, remote state `~/.local/state/vpnkit-labs/steamdeck-host`, and host UDP `21194 -> 1194/udp`. `down` refuses the default/prod `vpnkit` container and only removes the isolated lab container unless `VPNKIT_TEST_LAB_REMOVE_REMOTE_STATE=1` is explicitly set for the isolated remote lab directory.
 
-Generated lab PKI, rendered configs, and client profiles live under the gitignored layout `secrets/vpnkit-labs/steamdeck-host/` (for example `rendered/`, `openvpn/pki/`, and `openvpn/client/test-client.ovpn`). Tracked templates and rule sets remain public-safe; never commit `.ovpn`, PEM/key/cert, rendered private configs, or logs.
+Generated lab PKI, rendered configs, and client profiles live under the gitignored layout `secrets/vpnkit-labs/steamdeck-host/` (for example `rendered/`, `openvpn/pki/`, and `openvpn/client/test-client.ovpn`). Tracked templates and rule sets remain public-safe; never commit `.ovpn`, PEM/key/cert, rendered private configs, or logs. Lab setup defaults `VPNKIT_RULESET_SOURCE_MODE=local-fixture`, which renders minimal local source JSON fixtures for the RU rule-set tags under `rendered/sing-box/rule-sets/` so the isolated lab does not depend on GitHub `.srs` downloads at startup; normal renderer defaults remain remote binary RU rule sets unless explicitly overridden.
 
 Useful overrides:
 

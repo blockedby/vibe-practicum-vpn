@@ -20,6 +20,36 @@ DUMMY_OUTBOUND = {
     "server_port": 443,
     "uuid": "00000000-0000-0000-0000-000000000000",
 }
+REMOTE_RU_RULE_SETS = [
+    {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
+        "download_detour": "direct-out",
+    },
+    {
+        "type": "remote",
+        "tag": "geosite-category-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs",
+        "download_detour": "direct-out",
+    },
+]
+LOCAL_FIXTURE_RU_RULE_SETS = [
+    {
+        "type": "local",
+        "tag": "geoip-ru",
+        "format": "source",
+        "path": "/etc/sing-box/rule-sets/geoip-ru.json",
+    },
+    {
+        "type": "local",
+        "tag": "geosite-category-ru",
+        "format": "source",
+        "path": "/etc/sing-box/rule-sets/geosite-category-ru.json",
+    },
+]
 TEMPLATES = [
     ROOT / "config/sing-box/config.json.template",
     ROOT / "config/sing-box/config.tun.json.template",
@@ -44,9 +74,11 @@ SAMPLES = {
 }
 
 
-def load_template(path: pathlib.Path) -> dict[str, Any]:
-    text = path.read_text().replace(
-        "{{SELECTED_NATIVE_OUT_JSON}}", json.dumps(DUMMY_OUTBOUND)
+def load_template(path: pathlib.Path, ru_rule_sets: list[dict[str, Any]]) -> dict[str, Any]:
+    text = (
+        path.read_text()
+        .replace("{{SELECTED_NATIVE_OUT_JSON}}", json.dumps(DUMMY_OUTBOUND))
+        .replace("{{RU_RULE_SETS_JSON}}", ",".join(json.dumps(rule_set) for rule_set in ru_rule_sets))
     )
     return json.loads(text)
 
@@ -75,8 +107,8 @@ def simulated_decision(domain: str, route: dict[str, Any], suffixes: dict[str, l
     return route["final"]
 
 
-def assert_template(path: pathlib.Path) -> None:
-    config = load_template(path)
+def assert_template(path: pathlib.Path, *, local_fixture: bool = False) -> None:
+    config = load_template(path, LOCAL_FIXTURE_RU_RULE_SETS if local_fixture else REMOTE_RU_RULE_SETS)
     outbounds = {outbound["tag"] for outbound in config["outbounds"]}
     assert {"selected-native-out", "direct-out", "block-out"} <= outbounds
 
@@ -109,10 +141,16 @@ def assert_template(path: pathlib.Path) -> None:
 
     for tag in ("geoip-ru", "geosite-category-ru"):
         entry = rule_sets[tag]
-        assert entry["type"] == "remote"
-        assert entry["format"] == "binary"
-        assert entry["download_detour"] == "direct-out"
-        assert entry["url"].startswith("https://")
+        if local_fixture:
+            assert entry["type"] == "local"
+            assert entry["format"] == "source"
+            assert entry["path"] == f"/etc/sing-box/rule-sets/{tag}.json"
+            assert "url" not in entry
+        else:
+            assert entry["type"] == "remote"
+            assert entry["format"] == "binary"
+            assert entry["download_detour"] == "direct-out"
+            assert entry["url"].startswith("https://")
 
     suffixes = {tag: load_suffixes(path) for tag, path in LOCAL_RULESETS.items()}
     for domain, expected in SAMPLES.items():
@@ -129,8 +167,9 @@ def assert_openvpn_preserved() -> None:
 def main() -> int:
     for template in TEMPLATES:
         assert_template(template)
+        assert_template(template, local_fixture=True)
     assert_openvpn_preserved()
-    print("PASS sing-box smart routing proof: adblock/dev-direct/RU/default decisions and template invariants")
+    print("PASS sing-box smart routing proof: adblock/dev-direct/RU/default decisions and remote/local-fixture template invariants")
     return 0
 
 

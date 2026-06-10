@@ -13,9 +13,15 @@ case "$routing_mode" in
   tun) singbox_template=config/sing-box/config.tun.json.template ;;
   *) echo "unsupported VPNKIT_ROUTING_MODE=$VPNKIT_ROUTING_MODE (expected redirect, tproxy, or tun)" >&2; exit 2 ;;
 esac
-python3 - "$BASE/sing-box/tproxy-canary.json" "$singbox_template" "$RENDERED/sing-box/config.json" <<'PY'
+ruleset_source_mode=${VPNKIT_RULESET_SOURCE_MODE:-remote}
+ruleset_source_mode=${ruleset_source_mode,,}
+case "$ruleset_source_mode" in
+  remote|local-fixture) ;;
+  *) echo "unsupported VPNKIT_RULESET_SOURCE_MODE=$VPNKIT_RULESET_SOURCE_MODE (expected remote or local-fixture)" >&2; exit 2 ;;
+esac
+python3 - "$BASE/sing-box/tproxy-canary.json" "$singbox_template" "$RENDERED/sing-box/config.json" "$ruleset_source_mode" <<'PY'
 import ipaddress, json, socket, sys
-src, tmpl, out = sys.argv[1:]
+src, tmpl, out, ruleset_source_mode = sys.argv[1:]
 data=json.load(open(src))
 vless=[o for o in data.get('outbounds',[]) if o.get('tag')=='selected-native-out' and o.get('type')=='vless']
 if not vless:
@@ -31,10 +37,64 @@ if server:
         # TLS/SNI settings untouched; only the dial address is pre-resolved during
         # local secret rendering, and the rendered file remains gitignored.
         selected['server']=socket.getaddrinfo(server, selected.get('server_port', 443), socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
-text=open(tmpl).read().replace('{{SELECTED_NATIVE_OUT_JSON}}', json.dumps(selected, indent=4))
+remote_ru_rule_sets = [
+    {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
+        "download_detour": "direct-out",
+    },
+    {
+        "type": "remote",
+        "tag": "geosite-category-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs",
+        "download_detour": "direct-out",
+    },
+]
+local_fixture_ru_rule_sets = [
+    {
+        "type": "local",
+        "tag": "geoip-ru",
+        "format": "source",
+        "path": "/etc/sing-box/rule-sets/geoip-ru.json",
+    },
+    {
+        "type": "local",
+        "tag": "geosite-category-ru",
+        "format": "source",
+        "path": "/etc/sing-box/rule-sets/geosite-category-ru.json",
+    },
+]
+ru_rule_sets = local_fixture_ru_rule_sets if ruleset_source_mode == "local-fixture" else remote_ru_rule_sets
+ru_rule_sets_json = ",\n".join(json.dumps(rule_set, indent=8) for rule_set in ru_rule_sets)
+text=(
+    open(tmpl).read()
+    .replace('{{SELECTED_NATIVE_OUT_JSON}}', json.dumps(selected, indent=4))
+    .replace('{{RU_RULE_SETS_JSON}}', ru_rule_sets_json)
+)
 open(out,'w').write(text)
 PY
 cp config/sing-box/rule-sets/*.json "$RENDERED/sing-box/rule-sets/"
+if [[ "$ruleset_source_mode" == "local-fixture" ]]; then
+  cat > "$RENDERED/sing-box/rule-sets/geoip-ru.json" <<'EOF'
+{
+  "version": 1,
+  "rules": [
+    { "ip_cidr": ["5.0.0.0/8"] }
+  ]
+}
+EOF
+  cat > "$RENDERED/sing-box/rule-sets/geosite-category-ru.json" <<'EOF'
+{
+  "version": 1,
+  "rules": [
+    { "domain_suffix": ["ru"] }
+  ]
+}
+EOF
+fi
 python3 - "$BASE/openvpn/pki" config/openvpn/test-client.ovpn.template "$BASE/openvpn/client/test-client.ovpn" <<'PY'
 import pathlib, sys
 p=pathlib.Path(sys.argv[1]); text=pathlib.Path(sys.argv[2]).read_text()

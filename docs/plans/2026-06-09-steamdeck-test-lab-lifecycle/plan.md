@@ -179,3 +179,47 @@ Dependencies:
 - Executor: `aad-implementer` for bounded script fix and local checks; slice owner integrates, runs/records live sequence and GitHub updates.
 - 2026-06-10: Live hang remediation implemented directly because nested subagent delegation was unavailable. `verify_container` now bounds all podman verify/log/exec/doctor operations with existing timeout knobs; explicit Steam Deck `test` skips client smoke when the isolated server container is unavailable. Verification recorded in `verification/live-hang-remediation.md`; report recorded in `reports/slice-owner-live-hang-remediation.md`.
 - 2026-06-10 live matrix: initial `down` PASS; `up` returned bounded FAIL because sing-box exited on remote RU rule-set `.srs` downloads from `raw.githubusercontent.com` with `unexpected EOF`; `test` returned bounded FAIL with server container unavailable and client smoke skipped; final `down` PASS cleanup. `cycle` was not run because `up` failed. Current done-state remains partial/blocked: hang class remediated, issue #27 not accepted done until green cycle or explicit accepted environment/rule-set decision.
+
+### RU ruleset fixture task: lab-safe local RU rule-set source mode
+
+Goal:
+- Resolve the current live blocker where isolated Steam Deck lab sing-box exits while downloading remote RU `.srs` rule sets from GitHub, by adding an explicit render mode that uses local source JSON fixtures for lab runs while preserving remote binary RU rule sets by default.
+
+Boundary:
+- System area: sing-box render templates/scripts, lab setup defaults, smart-routing proof/tests, task evidence, and bounded isolated Deck lifecycle verification.
+- Primary verification: targeted render/proof checks plus bounded live `down`/`up`/`test`/`cycle` if authorized private Deck access is available.
+
+Existing pattern / reuse:
+- `scripts/vpnkit-render-local-configs.sh` renders tracked sing-box templates into gitignored `rendered/sing-box/config.json` and copies local rule sets.
+- `scripts/vpnkit-test-lab-setup.sh` creates isolated lab secrets/rendered tree and calls the renderer.
+- `config/sing-box/config*.json.template` define the production-like routing shape.
+- `test/sing-box-smart-routing-proof.py` asserts smart-routing policy order and default remote RU rule-set shape.
+
+Missing change:
+- Add explicit mode such as `VPNKIT_RULESET_SOURCE_MODE=remote|local-fixture`; default must remain `remote`.
+- In lab setup, default the mode to `local-fixture` and generate minimal source JSON fixtures for `geoip-ru` and `geosite-category-ru` under the rendered lab rule-set directory.
+- Render RU `rule_set` entries as local/source paths in fixture mode, while preserving tags, rule order, direct-out routing, adblock/dev-direct behavior, and final selected-native-out.
+- Extend proof/tests/docs/evidence to cover both default remote and lab local-fixture behavior.
+
+Acceptance criteria:
+- Default render/template proof still shows remote binary RU `.srs` rule sets unless local-fixture is intentionally selected.
+- Lab setup defaults to local-fixture and emits local RU source JSON fixtures in the generated lab rendered rule-set directory.
+- Local-fixture rendered config retains `geoip-ru` and `geosite-category-ru` tags/rules routed to `direct-out`, final `selected-native-out`, and no remote GitHub rule-set download dependency.
+- `sing-box check` passes for lab local-fixture mode if `sing-box` is available.
+- Safe local checks pass or are explicitly justified; live isolated Deck lifecycle is green if feasible, otherwise next blocker is classified precisely.
+- Commit(s) are pushed and issue #27 / PR #26 are updated public-safely.
+
+Test plan:
+- `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh` (or broader shell set if feasible).
+- `python3 test/sing-box-smart-routing-proof.py` covering default remote and rendered local-fixture shape.
+- Render a disposable lab fixture under a gitignored/temp path and inspect generated config/rule-set files without printing secrets.
+- Run `sing-box check -c <lab rendered config>` if the binary is installed; otherwise record unavailable.
+- Run Go checks (`go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`) as feasible because runtime script/container behavior is in scope.
+- Sensitive artifact check: verify no tracked profiles, keys, certs, rendered private configs, raw logs, tokens/secrets were added.
+- Live: source private endpoints if present without printing; discover endpoint via Deck SSH if needed without printing; run isolated `down`, `up`, `test`, `cycle`, cleanup only if needed; record redacted matrix.
+
+Dependencies:
+- Depends on current PR #26 branch and available private Deck access for live verification.
+- Blocks issue #27 green lifecycle acceptance.
+- Executor: `aad-implementer` for code/tests/docs/local checks with report `reports/aad-implementer-ru-ruleset-fixture.md`; slice owner integrates, runs/records live sequence, commits/pushes if needed, and updates GitHub.
+- 2026-06-10: RU ruleset fixture slice implemented directly because nested `aad-implementer` dispatch was blocked by subagent depth. Evidence: `verification/ru-ruleset-fixture-live.md`; report: `reports/slice-owner-ru-ruleset-fixture.md`. Result: current RU `.srs` GitHub startup blocker resolved; live isolated `up` is green with local fixtures and refreshed persisted sing-box config. Full lifecycle remains partial: `test` fails boundedly on later runtime data-path/DNS/SOCKS issues after server-up; final cleanup `down` passed.

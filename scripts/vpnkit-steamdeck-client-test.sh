@@ -7,7 +7,9 @@ PROFILE=${VPNKIT_STEAMDECK_CLIENT_PROFILE:-secrets/vps/openvpn/client/test-clien
 IMAGE=${VPNKIT_STEAMDECK_CLIENT_IMAGE:-vpnkit-ovpn-client-test:steamdeck}
 RUNTIME=${VPNKIT_CONTAINER_RUNTIME:-docker}
 LOG_FILE=${VPNKIT_STEAMDECK_CLIENT_LOG_FILE:-}
+CLIENT_TIMEOUT=${VPNKIT_STEAMDECK_CLIENT_TIMEOUT:-180}
 KEEP_TEMP=0
+CONTAINER_NAME=""
 
 usage() {
   cat <<'EOF'
@@ -24,6 +26,7 @@ Options:
   --runtime docker|podman  Local container runtime for the client test (default: docker)
   --image IMAGE         Local client-test image tag (default: vpnkit-ovpn-client-test:steamdeck)
   --log-file PATH       Write redacted output to PATH as well as stdout
+  --timeout SECONDS     Bound client container run (default: 180 or VPNKIT_STEAMDECK_CLIENT_TIMEOUT)
   --keep-temp           Keep generated temp profile directory for debugging
   -h, --help            Show help
 EOF
@@ -37,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --runtime) RUNTIME=${2:?missing value}; shift 2 ;;
     --image) IMAGE=${2:?missing value}; shift 2 ;;
     --log-file) LOG_FILE=${2:?missing value}; shift 2 ;;
+    --timeout) CLIENT_TIMEOUT=${2:?missing value}; shift 2 ;;
     --keep-temp) KEEP_TEMP=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -45,6 +49,7 @@ done
 
 if [[ -z "$ENDPOINT" ]]; then echo "missing --endpoint" >&2; usage >&2; exit 2; fi
 if [[ ! "$PORT" =~ ^[0-9]+$ ]]; then echo "invalid --port: $PORT" >&2; exit 2; fi
+if [[ ! "$CLIENT_TIMEOUT" =~ ^[0-9]+$ || "$CLIENT_TIMEOUT" -lt 1 ]]; then echo "invalid --timeout: $CLIENT_TIMEOUT" >&2; exit 2; fi
 if [[ ! -r "$PROFILE" ]]; then echo "missing client profile: $PROFILE" >&2; exit 1; fi
 case "$RUNTIME" in docker|podman) ;; *) echo "unsupported --runtime: $RUNTIME" >&2; exit 2 ;; esac
 
@@ -63,8 +68,11 @@ if [[ -n "$LOG_FILE" ]]; then
 fi
 
 tmp=$(mktemp -d -t vpnkit-steamdeck-client.XXXXXX)
-cleanup() { [[ $KEEP_TEMP -eq 1 ]] || rm -rf "$tmp"; }
-trap cleanup EXIT
+cleanup() {
+  if [[ -n "$CONTAINER_NAME" ]]; then "$RUNTIME" rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true; fi
+  [[ $KEEP_TEMP -eq 1 ]] || rm -rf "$tmp"
+}
+trap cleanup EXIT INT TERM
 
 mkdir -p "$tmp/client"
 sed "s/^remote .*/remote $ENDPOINT $PORT/" "$PROFILE" > "$tmp/client/test-client.ovpn"
@@ -72,9 +80,11 @@ chmod 600 "$tmp/client/test-client.ovpn"
 
 printf '[%s] endpoint: %s:%s\n' "$(date -u +%FT%TZ)" "$ENDPOINT" "$PORT"
 printf '[%s] runtime: %s image: %s\n' "$(date -u +%FT%TZ)" "$RUNTIME" "$IMAGE"
+printf '[%s] timeout: %ss\n' "$(date -u +%FT%TZ)" "$CLIENT_TIMEOUT"
 "$RUNTIME" build -t "$IMAGE" docker/ovpn-client-test >/dev/null
-"$RUNTIME" run --rm \
-  --name "vpnkit-client-${ENDPOINT//[^A-Za-z0-9_.-]/-}-$$" \
+CONTAINER_NAME="vpnkit-client-${ENDPOINT//[^A-Za-z0-9_.-]/-}-$$"
+timeout -k 5s "$CLIENT_TIMEOUT" "$RUNTIME" run --rm \
+  --name "$CONTAINER_NAME" \
   --cap-add NET_ADMIN --cap-add NET_RAW \
   --device /dev/net/tun \
   -v "$tmp/client:/etc/openvpn/client:ro" \

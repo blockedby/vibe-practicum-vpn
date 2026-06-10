@@ -54,20 +54,7 @@
         "format": "source",
         "path": "/etc/sing-box/rule-sets/vpnkit-dev-direct.json"
       },
-      {
-        "type": "remote",
-        "tag": "geoip-ru",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
-        "download_detour": "direct-out"
-      },
-      {
-        "type": "remote",
-        "tag": "geosite-category-ru",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs",
-        "download_detour": "direct-out"
-      }
+{{RU_RULE_SETS_JSON}}
     ],
     "final": "selected-native-out"
   }

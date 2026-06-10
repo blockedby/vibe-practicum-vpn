@@ -114,6 +114,7 @@ elif [[ -n "${VPNKIT_STEAMDECK_LAN_ENDPOINT:-}" ]]; then selected_endpoint_sourc
 fi
 
 if [[ "$SCENARIO" == "steamdeck-host" ]]; then
+  export VPNKIT_RULESET_SOURCE_MODE=${VPNKIT_RULESET_SOURCE_MODE:-local-fixture}
   LAB_SCENARIO_DIR=${VPNKIT_TEST_LAB_SECRETS_DIR:-secrets/vpnkit-labs/steamdeck-host}
   LAB_CONTAINER=${VPNKIT_TEST_SERVER_CONTAINER:-vpnkit-test-steamdeck-host}
   LAB_IMAGE=${VPNKIT_STEAMDECK_IMAGE:-localhost/vpnkit:test-steamdeck-host}
@@ -142,7 +143,7 @@ record() {
 }
 
 run_capture() { local out rc; out=$("$@" 2>&1); rc=$?; printf '%s' "$out"; return "$rc"; }
-run_capture_timeout() { local seconds=$1; shift; local out rc; out=$(timeout --preserve-status "$seconds" "$@" 2>&1); rc=$?; printf '%s' "$out"; return "$rc"; }
+run_capture_timeout() { local seconds=$1; shift; local out rc; out=$(timeout -k 5s "$seconds" "$@" 2>&1); rc=$?; printf '%s' "$out"; return "$rc"; }
 ssh_run() { timeout --preserve-status "$REMOTE_CMD_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$SSH_TIMEOUT" "$SSH_TARGET" "$@"; }
 container_exec() { ssh_run "$REMOTE_RUNTIME exec $SERVER_CONTAINER sh -lc $(printf '%q' "$1")"; }
 
@@ -375,7 +376,7 @@ elif [[ $manifest_fixture_profile -eq 1 && -r "$TEST_PROFILE" ]]; then
 elif [[ -r "$TEST_PROFILE" ]]; then
   if [[ -n "$TEST_ENDPOINT" ]]; then
     if [[ -x scripts/vpnkit-steamdeck-client-test.sh ]]; then
-      if out=$(run_capture_timeout "$CLIENT_TIMEOUT" env VPNKIT_STEAMDECK_CLIENT_ENDPOINT="$TEST_ENDPOINT" VPNKIT_STEAMDECK_CLIENT_PROFILE="$TEST_PROFILE" VPNKIT_STEAMDECK_CLIENT_LOG_FILE= scripts/vpnkit-steamdeck-client-test.sh --endpoint "$TEST_ENDPOINT" --profile "$TEST_PROFILE"); then
+      if out=$(run_capture_timeout "$CLIENT_TIMEOUT" env VPNKIT_STEAMDECK_CLIENT_ENDPOINT="$TEST_ENDPOINT" VPNKIT_STEAMDECK_CLIENT_PROFILE="$TEST_PROFILE" VPNKIT_STEAMDECK_CLIENT_LOG_FILE= VPNKIT_STEAMDECK_CLIENT_TIMEOUT="$CLIENT_TIMEOUT" scripts/vpnkit-steamdeck-client-test.sh --endpoint "$TEST_ENDPOINT" --profile "$TEST_PROFILE" --timeout "$CLIENT_TIMEOUT"); then
         printf '%s\n' "$out"
         record PASS "client:steamdeck-profile-smoke" "existing endpoint replacement smoke passed"
       else

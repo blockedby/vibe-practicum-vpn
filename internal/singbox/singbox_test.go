@@ -16,8 +16,10 @@ func TestDockerTemplateRoutingInvariants(t *testing.T) {
 		t.Fatal(err)
 	}
 	selectedOutbound := `{"type":"vless","tag":"selected-native-out","server":"203.0.113.10","server_port":443}`
+	ruRuleSets := `{"type":"remote","tag":"geoip-ru","format":"binary","url":"https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs","download_detour":"direct-out"},{"type":"remote","tag":"geosite-category-ru","format":"binary","url":"https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs","download_detour":"direct-out"}`
 	text := strings.ReplaceAll(string(b), "{{SELECTED_NATIVE_OUT_JSON}}", selectedOutbound)
-	if strings.Contains(text, "{{SELECTED_NATIVE_OUT_JSON}}") {
+	text = strings.ReplaceAll(text, "{{RU_RULE_SETS_JSON}}", ruRuleSets)
+	if strings.Contains(text, "{{SELECTED_NATIVE_OUT_JSON}}") || strings.Contains(text, "{{RU_RULE_SETS_JSON}}") {
 		t.Fatal("template placeholder was not replaced")
 	}
 
