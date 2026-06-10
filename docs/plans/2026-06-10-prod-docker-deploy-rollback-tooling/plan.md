@@ -123,3 +123,7 @@ Task 2 status: ready for implementation dispatch.
 - AC8 evidence: `test/prod-deploy-helper-test.sh` now includes fake `timeout`/`ssh` and mocked remote `docker`/Compose/`git`/`date` paths for `verify`, `rollback`, and two-host `deploy` sequencing; redaction of mocked token-like output is asserted.
 - Fresh verification: `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh` PASS; `test/prod-deploy-helper-test.sh` PASS; `git diff --check` PASS; audit-gap-fix secret-like diff scan PASS.
 - Remaining limitation: no live production deploy/rollback/verify was run by scope; mock tests do not prove real host runtime readiness.
+
+## Root integration status
+
+Final status: done for repo-safe tooling. Slice implementation and audit-gap fix reports are integrated. Final audit (`reports/acceptance-auditor-final.md`) accepts AC1-AC9 for tooling-only readiness. Live production deployment remains out of scope pending explicit operator approval and private endpoint env.
