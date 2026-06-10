@@ -16,7 +16,7 @@
 - Nested lab material generated under existing ignored tree: done; setup emits only paths/metadata for `secrets/vpnkit-labs/steamdeck-host/nested/openvpn/...`.
 - Nested target/server managed by lifecycle: done; rendered lab config includes `/etc/openvpn/nested/server.conf`, and the lab-only `vpnkit` entrypoint starts it only when mounted.
 - Required nested rows: done; runner records `client:nested-route-via-tun0`, `client:nested-handshake`, `client:nested-tun1`, and `client:nested-ping-peer` as FAIL-on-missing/FAIL-on-client-failure rows. `VPNKIT_STEAMDECK_NESTED_VPN_ENABLED=0` records not deploy-ready.
-- Public docs/GitHub: README updated locally; PR/issue comments pending push/comment step.
+- Public docs/GitHub: README updated; PR #26 comment https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4668888017 and issue #27 comment https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4668888168 posted after push.
 
 ## Acceptance verification
 - Static/safe checks: passed.
@@ -50,6 +50,13 @@
 - `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle/plan.md`
 - `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle/progress/slice-owner.md`
 - `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle/verification/nested-vpn.md`
+
+## Commits pushed
+- `78f2d1b` — `test: add nested OpenVPN lab acceptance` pushed to `origin/feat/issue-24-smart-routing-manifest`.
+
+## GitHub updates
+- PR #26: https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4668888017
+- Issue #27: https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4668888168
 
 ## Verdict
 - Status: partial/blocked on live private environment.
