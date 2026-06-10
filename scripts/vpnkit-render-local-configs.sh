@@ -91,7 +91,17 @@ text=(
     .replace('{{SELECTED_NATIVE_OUT_JSON}}', json.dumps(selected, indent=4))
     .replace('{{RU_RULE_SETS_JSON}}', ru_rule_sets_json)
 )
-open(out,'w').write(text)
+rendered = json.loads(text)
+if selected_outbound_mode == 'direct-fixture':
+    # A direct outbound with no dial fields is intentionally empty for lab use.
+    # sing-box rejects DNS TLS servers that detour through such an empty direct
+    # outbound ("detour to an empty direct outbound makes no sense"), so lab
+    # fixture DNS dials directly while preserving the selected-native-out final
+    # route tag. Proxy/default renders keep the explicit DNS detour below.
+    for server_entry in rendered.get('dns', {}).get('servers', []):
+        if server_entry.get('detour') == 'selected-native-out':
+            server_entry.pop('detour', None)
+open(out,'w').write(json.dumps(rendered, indent=2) + '\n')
 PY
 cp config/sing-box/rule-sets/*.json "$RENDERED/sing-box/rule-sets/"
 if [[ "$ruleset_source_mode" == "local-fixture" ]]; then

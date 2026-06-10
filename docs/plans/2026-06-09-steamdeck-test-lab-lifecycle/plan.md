@@ -265,3 +265,42 @@ Dependencies:
 
 Execution ledger:
 - 2026-06-10: Implemented explicit selected outbound mode and OpenVPN pushed DNS rendering. Local/static/proof/Go checks passed; live Deck sequence was not run because `config/private-endpoints.local.env` is absent in this worktree. Evidence: `verification/runtime-datapath-dns-live.md`.
+
+### Direct-fixture DNS detour task: lab TLS DNS startup validity
+
+Goal:
+- Resolve the live isolated Steam Deck lab `up` failure where sing-box rejects DNS TLS servers detouring through an empty direct `selected-native-out` outbound in `VPNKIT_SELECTED_OUTBOUND_MODE=direct-fixture`.
+
+Boundary:
+- System area: local config renderer/template semantics, direct-fixture lab render proof, live isolated Deck lifecycle verification.
+- Primary verification: direct-fixture render plus `sing-box check`, proxy/default render assertion, and live isolated `down`/`up`/`test`/`cycle` if private Deck access is available.
+
+Existing pattern / reuse:
+- `scripts/vpnkit-render-local-configs.sh` centralizes selected outbound mode rendering and already distinguishes `proxy` vs `direct-fixture`.
+- `scripts/vpnkit-test-lab-setup.sh` defaults labs to local RU fixtures and direct selected outbound.
+- `test/sing-box-smart-routing-proof.py` preserves smart-routing policy shape and default/fixture rule-set invariants.
+
+Missing change:
+- In direct-fixture render only, remove DNS TLS `detour: selected-native-out` from rendered DNS servers so sing-box does not detour through an intentionally empty direct outbound.
+- Preserve default/proxy render semantics: DNS TLS servers still detour through `selected-native-out`, and the VLESS/proxy selected outbound remains unchanged.
+
+Acceptance criteria:
+- Direct-fixture lab render passes `sing-box check` and has no DNS TLS detour through empty direct `selected-native-out`.
+- Default/proxy render remains remote/proxy with DNS detour via `selected-native-out`.
+- Smart-routing final/tag shape remains: `selected-native-out`, `direct-out`, `block-out`, RU and dev/adblock routing unchanged.
+- Live isolated Deck `up`, then `test` and `cycle`, are run if private access is available; any new blocker is classified precisely and cleanup attempted.
+- Commit/push and public-safe issue #27 / PR #26 updates completed.
+
+Test plan:
+- `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh`.
+- `python3 test/sing-box-smart-routing-proof.py`.
+- Render direct-fixture lab and assert DNS server detours are absent, then run `sing-box check -c <rendered config>`.
+- Render explicit proxy/default config and assert DNS server detours remain `selected-native-out` and selected outbound remains proxy/VLESS.
+- Go checks as feasible: `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`.
+- Sensitive artifact check before commit.
+- Live isolated sequence with private bindings if available: `down`, `up`, `test`, `cycle` only if prior phases are green, final cleanup if needed.
+
+Dependencies:
+- Depends on runtime data-path/DNS task and current PR #26 branch.
+- Blocks issue #27 live green done-state.
+- Executor: slice owner direct fix because change is small and tightly coupled to current live evidence; report `reports/slice-owner-direct-fixture-dns-detour.md`, verification `verification/direct-fixture-dns-detour-live.md`.
