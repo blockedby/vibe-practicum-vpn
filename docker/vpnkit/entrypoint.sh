@@ -25,6 +25,7 @@ fi
 sing-box check -c "$SINGBOX_CONFIG"
 SINGBOX_PID=""
 OVPN_PID=""
+NESTED_OVPN_PID=""
 VIBE_VPN_PID=""
 WATCH_PID=""
 
@@ -101,7 +102,7 @@ restart_singbox() {
 }
 
 cleanup() {
-  kill "${WATCH_PID:-}" "${SINGBOX_PID:-}" "${OVPN_PID:-}" "${VIBE_VPN_PID:-}" 2>/dev/null || true
+  kill "${WATCH_PID:-}" "${SINGBOX_PID:-}" "${OVPN_PID:-}" "${NESTED_OVPN_PID:-}" "${VIBE_VPN_PID:-}" 2>/dev/null || true
 }
 trap cleanup INT TERM EXIT
 
@@ -110,6 +111,12 @@ wait_for_singbox_inbounds
 
 openvpn --config "$OPENVPN_CONFIG" &
 OVPN_PID=$!
+
+if [[ -r /etc/openvpn/nested/server.conf ]]; then
+  openvpn --config /etc/openvpn/nested/server.conf &
+  NESTED_OVPN_PID=$!
+  echo "started lab nested OpenVPN server pid=$NESTED_OVPN_PID config=/etc/openvpn/nested/server.conf"
+fi
 
 until ip link show tun0 >/dev/null 2>&1; do
   if ! kill -0 "$OVPN_PID" 2>/dev/null; then
@@ -154,6 +161,11 @@ while true; do
   if ! kill -0 "$OVPN_PID" 2>/dev/null; then
     echo "openvpn exited" >&2
     wait "$OVPN_PID"
+    exit 1
+  fi
+  if [[ -n "${NESTED_OVPN_PID:-}" ]] && ! kill -0 "$NESTED_OVPN_PID" 2>/dev/null; then
+    echo "nested openvpn exited" >&2
+    wait "$NESTED_OVPN_PID"
     exit 1
   fi
   if [[ -n "${VIBE_VPN_PID:-}" ]] && ! kill -0 "$VIBE_VPN_PID" 2>/dev/null; then

@@ -95,6 +95,8 @@ Defaults are intentionally distinct from production: container `vpnkit-test-stea
 
 Generated lab PKI, rendered configs, and client profiles live under the gitignored layout `secrets/vpnkit-labs/steamdeck-host/` (for example `rendered/`, `openvpn/pki/`, and `openvpn/client/test-client.ovpn`). Tracked templates and rule sets remain public-safe; never commit `.ovpn`, PEM/key/cert, rendered private configs, or logs. Lab setup defaults `VPNKIT_RULESET_SOURCE_MODE=local-fixture`, which renders minimal local source JSON fixtures for the RU rule-set tags under `rendered/sing-box/rule-sets/` so the isolated lab does not depend on GitHub `.srs` downloads at startup. It also defaults `VPNKIT_SELECTED_OUTBOUND_MODE=direct-fixture` so the lab keeps the `selected-native-out` final/tag policy shape without requiring a real VLESS proxy, and `VPNKIT_OPENVPN_PUSH_DNS=172.19.0.1` so pushed client DNS enters sing-box TUN instead of the server's local OpenVPN `tun0` address. Normal renderer defaults remain remote binary RU rule sets, proxy/VLESS selected outbound, and OpenVPN DNS `10.89.0.1` unless explicitly overridden.
 
+Nested OpenVPN acceptance is part of the same `steamdeck-host` lifecycle, not a separate scenario. Lab setup also creates throwaway nested server/client material under `secrets/vpnkit-labs/steamdeck-host/nested/openvpn/`; `test`/`cycle` require the client smoke to prove the pre-nested route to the nested target uses outer `tun0`, nested OpenVPN handshakes, `tun1` exists, and the nested tunnel peer pings. `VPNKIT_STEAMDECK_NESTED_VPN_ENABLED=0` is only a diagnostic escape hatch and makes the run not deploy-ready.
+
 Useful overrides:
 
 ```bash

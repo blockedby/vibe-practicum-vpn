@@ -123,8 +123,10 @@ if [[ "$SCENARIO" == "steamdeck-host" ]]; then
   LAB_ROUTING_MODE=${VPNKIT_TEST_ROUTING_MODE:-${VPNKIT_ROUTING_MODE:-tun}}
   SERVER_CONTAINER=$LAB_CONTAINER
   TEST_PROFILE=${VPNKIT_TEST_PROFILE:-$LAB_SCENARIO_DIR/openvpn/client/test-client.ovpn}
+  LAB_NESTED_PROFILE=${VPNKIT_STEAMDECK_NESTED_CLIENT_PROFILE:-$LAB_SCENARIO_DIR/nested/openvpn/client/test-client.ovpn}
   TEST_ROUTING_MODE=$LAB_ROUTING_MODE
   export VPNKIT_TEST_SERVER_CONTAINER=$LAB_CONTAINER VPNKIT_TEST_PROFILE=$TEST_PROFILE VPNKIT_TEST_ROUTING_MODE=$TEST_ROUTING_MODE
+  export VPNKIT_STEAMDECK_NESTED_CLIENT_PROFILE=$LAB_NESTED_PROFILE
   export VPNKIT_STEAMDECK_CONTAINER=$LAB_CONTAINER VPNKIT_STEAMDECK_IMAGE=$LAB_IMAGE VPNKIT_OPENVPN_PORT=$LAB_PORT VPNKIT_STEAMDECK_REMOTE_DIR=$LAB_REMOTE_DIR VPNKIT_ROUTING_MODE=$LAB_ROUTING_MODE
   export VPNKIT_STEAMDECK_SSH_TARGET=$SSH_TARGET
   export VPNKIT_STEAMDECK_CONFIG_SOURCE="$LAB_SCENARIO_DIR/rendered"
@@ -376,11 +378,31 @@ elif [[ $manifest_fixture_profile -eq 1 && -r "$TEST_PROFILE" ]]; then
 elif [[ -r "$TEST_PROFILE" ]]; then
   if [[ -n "$TEST_ENDPOINT" ]]; then
     if [[ -x scripts/vpnkit-steamdeck-client-test.sh ]]; then
-      if out=$(run_capture_timeout "$CLIENT_TIMEOUT" env VPNKIT_STEAMDECK_CLIENT_ENDPOINT="$TEST_ENDPOINT" VPNKIT_STEAMDECK_CLIENT_PROFILE="$TEST_PROFILE" VPNKIT_STEAMDECK_CLIENT_LOG_FILE= VPNKIT_STEAMDECK_CLIENT_TIMEOUT="$CLIENT_TIMEOUT" scripts/vpnkit-steamdeck-client-test.sh --endpoint "$TEST_ENDPOINT" --profile "$TEST_PROFILE" --timeout "$CLIENT_TIMEOUT"); then
+      nested_args=()
+      if [[ "$SCENARIO" == "steamdeck-host" ]]; then
+        if [[ "${VPNKIT_STEAMDECK_NESTED_VPN_ENABLED:-1}" == "0" ]]; then
+          record FAIL "client:nested-vpn-required" "nested VPN acceptance explicitly disabled; not deploy-ready"
+        else
+          nested_args+=(--nested-profile "${VPNKIT_STEAMDECK_NESTED_CLIENT_PROFILE:-}")
+        fi
+      fi
+      if out=$(run_capture_timeout "$CLIENT_TIMEOUT" env VPNKIT_STEAMDECK_CLIENT_ENDPOINT="$TEST_ENDPOINT" VPNKIT_STEAMDECK_CLIENT_PROFILE="$TEST_PROFILE" VPNKIT_STEAMDECK_CLIENT_LOG_FILE= VPNKIT_STEAMDECK_CLIENT_TIMEOUT="$CLIENT_TIMEOUT" VPNKIT_STEAMDECK_NESTED_VPN_ENABLED="${VPNKIT_STEAMDECK_NESTED_VPN_ENABLED:-1}" scripts/vpnkit-steamdeck-client-test.sh --endpoint "$TEST_ENDPOINT" --profile "$TEST_PROFILE" --timeout "$CLIENT_TIMEOUT" "${nested_args[@]}"); then
         printf '%s\n' "$out"
+        if [[ "$SCENARIO" == "steamdeck-host" && "${VPNKIT_STEAMDECK_NESTED_VPN_ENABLED:-1}" != "0" ]]; then
+          for pair in "client:nested-route-via-tun0=nested_route_via_tun0=ok" "client:nested-handshake=nested_openvpn_handshake=ok" "client:nested-tun1=nested_tun1=ok" "client:nested-ping-peer=nested_ping_peer=ok"; do
+            name=${pair%%=*}; needle=${pair#*=}
+            if [[ "$out" == *"$needle"* ]]; then record PASS "$name" "$needle"; else record FAIL "$name" "missing nested evidence marker: $needle"; fi
+          done
+        fi
         record PASS "client:steamdeck-profile-smoke" "existing endpoint replacement smoke passed"
       else
         printf '%s\n' "$out"
+        if [[ "$SCENARIO" == "steamdeck-host" && "${VPNKIT_STEAMDECK_NESTED_VPN_ENABLED:-1}" != "0" ]]; then
+          for pair in "client:nested-route-via-tun0=nested_route_via_tun0=ok" "client:nested-handshake=nested_openvpn_handshake=ok" "client:nested-tun1=nested_tun1=ok" "client:nested-ping-peer=nested_ping_peer=ok"; do
+            name=${pair%%=*}; needle=${pair#*=}
+            [[ "$out" == *"$needle"* ]] && record PASS "$name" "$needle" || record FAIL "$name" "nested client smoke failed before marker: $needle"
+          done
+        fi
         record FAIL "client:steamdeck-profile-smoke" "existing client smoke failed or timed out after ${CLIENT_TIMEOUT}s"
       fi
     else

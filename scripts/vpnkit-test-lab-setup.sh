@@ -43,9 +43,15 @@ need python3
 PKI="$BASE/openvpn/pki"
 SERVER_DIR="$BASE/openvpn/server"
 CLIENT_DIR="$BASE/openvpn/client"
+NESTED_DIR="$BASE/nested/openvpn"
+NESTED_PKI="$NESTED_DIR/pki"
+NESTED_SERVER_DIR="$NESTED_DIR/server"
+NESTED_CLIENT_DIR="$NESTED_DIR/client"
+NESTED_PORT=${VPNKIT_TEST_LAB_NESTED_PORT:-21195}
+NESTED_ENDPOINT=${VPNKIT_TEST_LAB_NESTED_ENDPOINT:-10.89.0.1}
 RENDERED="$BASE/rendered"
-mkdir -p "$PKI" "$SERVER_DIR" "$CLIENT_DIR" "$BASE/sing-box" "$BASE/vibe-vpn"
-chmod 700 "$BASE" "$BASE/openvpn" "$PKI" "$CLIENT_DIR" "$BASE/sing-box" "$BASE/vibe-vpn"
+mkdir -p "$PKI" "$SERVER_DIR" "$CLIENT_DIR" "$NESTED_PKI" "$NESTED_SERVER_DIR" "$NESTED_CLIENT_DIR" "$BASE/sing-box" "$BASE/vibe-vpn"
+chmod 700 "$BASE" "$BASE/openvpn" "$PKI" "$CLIENT_DIR" "$NESTED_DIR" "$NESTED_PKI" "$NESTED_SERVER_DIR" "$NESTED_CLIENT_DIR" "$BASE/sing-box" "$BASE/vibe-vpn"
 
 make_ca() {
   [[ -s "$PKI/ca.crt" && -s "$PKI/ca.key" ]] && return 0
@@ -81,6 +87,82 @@ cat > "$SERVER_DIR/ccd-ignat" <<'EOF'
 EOF
 chmod 600 "$SERVER_DIR/ccd-ignat"
 
+
+# Nested OpenVPN acceptance material. This is lab-only throwaway PKI/profile data
+# under the existing gitignored Steam Deck lab tree; contents are never printed.
+make_nested_ca() {
+  [[ -s "$NESTED_PKI/ca.crt" && -s "$NESTED_PKI/ca.key" ]] && return 0
+  openssl req -x509 -newkey rsa:2048 -days 7 -nodes -sha256 \
+    -subj '/CN=vpnkit-nested-test-lab-ca' -keyout "$NESTED_PKI/ca.key" -out "$NESTED_PKI/ca.crt" >/dev/null 2>&1
+}
+make_nested_cert() {
+  local name=$1 ext=$2
+  [[ -s "$NESTED_PKI/$name.crt" && -s "$NESTED_PKI/$name.key" ]] && return 0
+  rm -f "$NESTED_PKI/$name.crt" "$NESTED_PKI/$name.key" "$NESTED_PKI/$name.csr"
+  openssl req -newkey rsa:2048 -nodes -subj "/CN=vpnkit-nested-test-$name" \
+    -keyout "$NESTED_PKI/$name.key" -out "$NESTED_PKI/$name.csr" >/dev/null 2>&1
+  openssl x509 -req -in "$NESTED_PKI/$name.csr" -CA "$NESTED_PKI/ca.crt" -CAkey "$NESTED_PKI/ca.key" -CAcreateserial \
+    -days 7 -sha256 -extfile <(printf '%s\n' "$ext") -out "$NESTED_PKI/$name.crt" >/dev/null 2>&1
+  rm -f "$NESTED_PKI/$name.csr"
+}
+make_nested_ca
+make_nested_cert server $'keyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth'
+make_nested_cert client $'keyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth'
+if [[ ! -s "$NESTED_PKI/ta.key" ]]; then
+  if command -v openvpn >/dev/null 2>&1; then openvpn --genkey secret "$NESTED_PKI/ta.key" >/dev/null 2>&1
+  else openssl rand -hex 256 > "$NESTED_PKI/ta.key"; fi
+fi
+chmod 600 "$NESTED_PKI"/*
+cat > "$NESTED_SERVER_DIR/server.conf" <<EOF
+port $NESTED_PORT
+proto udp
+dev tun1
+topology subnet
+server 10.90.0.0 255.255.255.0
+ifconfig-pool-persist /tmp/nested-ipp.txt
+keepalive 5 20
+persist-key
+persist-tun
+verb 3
+ca /etc/openvpn/nested/pki/ca.crt
+cert /etc/openvpn/nested/pki/server.crt
+key /etc/openvpn/nested/pki/server.key
+tls-auth /etc/openvpn/nested/pki/ta.key 0
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+data-ciphers-fallback AES-256-CBC
+user nobody
+group nogroup
+EOF
+chmod 600 "$NESTED_SERVER_DIR/server.conf"
+cat > "$NESTED_CLIENT_DIR/test-client.ovpn" <<EOF
+client
+dev tun
+proto udp
+remote $NESTED_ENDPOINT $NESTED_PORT
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+verb 3
+auth-nocache
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+data-ciphers-fallback AES-256-CBC
+<ca>
+$(cat "$NESTED_PKI/ca.crt")
+</ca>
+<cert>
+$(cat "$NESTED_PKI/client.crt")
+</cert>
+<key>
+$(cat "$NESTED_PKI/client.key")
+</key>
+key-direction 1
+<tls-auth>
+$(cat "$NESTED_PKI/ta.key")
+</tls-auth>
+EOF
+chmod 600 "$NESTED_CLIENT_DIR/test-client.ovpn"
+
 cat > "$BASE/sing-box/tproxy-canary.json" <<'EOF'
 {
   "outbounds": [
@@ -93,6 +175,10 @@ printf '[]\n' > "$BASE/vibe-vpn/extra-nodes.json"
 chmod 600 "$BASE/vibe-vpn/extra-nodes.json"
 
 VPNKIT_SECRETS_DIR="$BASE" VPNKIT_ROUTING_MODE="$ROUTING_MODE" VPNKIT_RULESET_SOURCE_MODE="${VPNKIT_RULESET_SOURCE_MODE:-local-fixture}" VPNKIT_SELECTED_OUTBOUND_MODE="${VPNKIT_SELECTED_OUTBOUND_MODE:-direct-fixture}" VPNKIT_OPENVPN_PUSH_DNS="${VPNKIT_OPENVPN_PUSH_DNS:-172.19.0.1}" scripts/vpnkit-render-local-configs.sh >/dev/null
+mkdir -p "$RENDERED/openvpn/nested/pki"
+cp "$NESTED_SERVER_DIR/server.conf" "$RENDERED/openvpn/nested/server.conf"
+cp "$NESTED_PKI/ca.crt" "$NESTED_PKI/server.crt" "$NESTED_PKI/server.key" "$NESTED_PKI/ta.key" "$RENDERED/openvpn/nested/pki/"
+chmod 600 "$RENDERED/openvpn/nested/server.conf" "$RENDERED/openvpn/nested/pki"/* 2>/dev/null || true
 
 python3 - "$CLIENT_DIR/test-client.ovpn" "$ENDPOINT" "$PORT" <<'PY'
 import pathlib, sys
@@ -116,6 +202,8 @@ chmod 600 "$CLIENT_DIR/test-client.ovpn" "$RENDERED"/openvpn/pki/* "$RENDERED/si
 printf 'test_lab_base=%s\n' "$BASE"
 printf 'rendered_config_dir=%s\n' "$RENDERED"
 printf 'client_profile=%s\n' "$CLIENT_DIR/test-client.ovpn"
+printf 'nested_client_profile=%s\n' "$NESTED_CLIENT_DIR/test-client.ovpn"
+printf 'nested_server_config=%s\n' "$NESTED_SERVER_DIR/server.conf"
 printf 'routing_mode=%s\n' "$ROUTING_MODE"
 printf 'endpoint_set=%s\n' "$([[ -n "$ENDPOINT" ]] && echo yes || echo no)"
 printf 'generated=ok (contents not printed)\n'

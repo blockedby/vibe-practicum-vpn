@@ -308,3 +308,41 @@ Dependencies:
 - 2026-06-10: Runtime data-path/DNS blockers resolved with explicit lab direct selected-outbound fixture and lab pushed-DNS override while preserving production/default proxy/DNS behavior. Evidence: `verification/runtime-datapath-dns-live.md`; report: `reports/slice-owner-runtime-datapath-dns.md`; commits `4cb45c7`, `7be33fd`.
 - 2026-06-10: Direct-fixture DNS detour startup blocker resolved by omitting DNS TLS detour only for direct-fixture mode. Evidence: `verification/direct-fixture-dns-detour-live.md`; report: `reports/slice-owner-direct-fixture-dns-detour.md`; commit `f4c389a`.
 - 2026-06-10: Root final verification green. Live isolated `down`, `up`, `test`, `cycle`, and final cleanup passed using `vpnkit-test-steamdeck-host`; final isolated container cleanup completed. Required repo checks passed. Evidence: `verification/root-final-live-green.md`. Final done-state: success for issue #27 lab scope; production readiness not claimed.
+
+### Nested VPN acceptance task: unified Steam Deck lab nested OpenVPN checks
+
+Goal:
+- Add required nested OpenVPN acceptance inside the existing `steamdeck-host` lifecycle without creating a separate user-facing test scenario/root.
+
+Boundary:
+- System area: existing lab setup, `docker/ovpn-client-test` client smoke flow, `test/containers-test.sh`, docs/task evidence.
+- Primary verification: shell/static checks plus live `test/containers-test.sh --scenario steamdeck-host --action cycle` with nested acceptance rows when private Deck env is available.
+
+Existing pattern / reuse:
+- `scripts/vpnkit-test-lab-setup.sh` already generates ignored lab PKI/profile under `secrets/vpnkit-labs/steamdeck-host/`.
+- `scripts/vpnkit-steamdeck-client-test.sh` already builds/runs `docker/ovpn-client-test` with NET_ADMIN and `/dev/net/tun`.
+- `test/containers-test.sh` records acceptance rows and manages `up/test/down/cycle` for the same scenario.
+
+Missing change:
+- Generate nested target/server/client material under `secrets/vpnkit-labs/steamdeck-host/nested/openvpn/...` using test PKI without printing contents.
+- Extend the client test container to optionally start a nested OpenVPN client after outer `tun0`, verify pre-nested route to nested target uses outer `tun0`, nested handshake/tun1, and ping nested peer.
+- Wire `test/containers-test.sh` so nested checks run as required acceptance rows during Steam Deck `test/cycle`, unless explicit env disables them and marks the run not deploy-ready.
+- Update public-safe README/docs and GitHub issue/PR comments.
+
+Acceptance criteria:
+- Unified entry remains `test/containers-test.sh --scenario steamdeck-host --action {up,test,down,cycle}`.
+- Generated nested artifacts stay under ignored `secrets/vpnkit-labs/steamdeck-host/nested/...` and are not printed/tracked.
+- `docker/ovpn-client-test` nested checks record route via `tun0`, nested handshake, `tun1`, and nested peer ping; failure fails acceptance unless explicitly disabled.
+- Docs/GitHub comments describe nested VPN as required acceptance in the existing scenario.
+- Safe repo checks and sensitive artifact guards pass; live cycle is green or a concrete environment blocker is reported without readiness claim.
+
+Evidence route:
+- Static: `bash -n test/containers-test.sh scripts/vpnkit-test-lab-setup.sh scripts/vpnkit-steamdeck-client-test.sh docker/ovpn-client-test/*.sh`; Python/Go checks as listed by root task.
+- Runtime: if authorized private Deck bindings exist, run bounded `down`, `cycle`, and final `down`; capture public-safe nested row summaries in `verification/nested-vpn.md`.
+- Safety: `git status --short --ignored` review and `git ls-files` guards for `.ovpn`, `.pem`, private secrets/log artifacts under generated/secrets/logs.
+
+Dependencies:
+- Depends on current PR #26 branch and existing isolated lab lifecycle.
+- Blocks final issue #27 acceptance/readiness.
+- Executor: `aad-implementer` for code/docs changes and initial checks; slice owner integrates, runs live checks, updates issue/PR, commits/pushes if needed.
+- 2026-06-10: Nested VPN acceptance implementation added in-place to the existing `steamdeck-host` lifecycle. Lab setup now creates nested OpenVPN server/client material under `secrets/vpnkit-labs/steamdeck-host/nested/openvpn/`; lab `vpnkit` starts nested server only when mounted; client smoke requires route via outer `tun0`, nested handshake, `tun1`, and nested peer ping rows. Safe checks passed in `verification/nested-vpn.md`. Live cycle remains U-01 because `config/private-endpoints.local.env` is absent in this worktree.
