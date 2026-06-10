@@ -8,7 +8,7 @@ server 10.89.0.0 255.255.255.0
 tun-mtu 1400
 mssfix 1360
 push "redirect-gateway def1 bypass-dhcp"
-push "dhcp-option DNS 10.89.0.1"
+push "dhcp-option DNS {{OPENVPN_PUSH_DNS}}"
 keepalive 10 120
 persist-key
 persist-tun

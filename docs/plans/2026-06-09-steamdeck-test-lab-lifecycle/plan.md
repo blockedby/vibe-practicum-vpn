@@ -223,3 +223,45 @@ Dependencies:
 - Blocks issue #27 green lifecycle acceptance.
 - Executor: `aad-implementer` for code/tests/docs/local checks with report `reports/aad-implementer-ru-ruleset-fixture.md`; slice owner integrates, runs/records live sequence, commits/pushes if needed, and updates GitHub.
 - 2026-06-10: RU ruleset fixture slice implemented directly because nested `aad-implementer` dispatch was blocked by subagent depth. Evidence: `verification/ru-ruleset-fixture-live.md`; report: `reports/slice-owner-ru-ruleset-fixture.md`. Result: current RU `.srs` GitHub startup blocker resolved; live isolated `up` is green with local fixtures and refreshed persisted sing-box config. Full lifecycle remains partial: `test` fails boundedly on later runtime data-path/DNS/SOCKS issues after server-up; final cleanup `down` passed.
+
+### Runtime data-path/DNS task: lab selected outbound fixture and tunneled pushed DNS
+
+Goal:
+- Resolve the current isolated Steam Deck lab post-startup data-path blockers where SOCKS/default egress used an impossible dummy VLESS proxy and OpenVPN clients were pushed a DNS address that did not enter sing-box TUN.
+
+Boundary:
+- System area: lab render semantics, OpenVPN pushed DNS rendering, Steam Deck lab defaults, smart-routing proof/docs, and live evidence.
+- Primary verification: renderer/proof checks plus live isolated `down`/`up`/`test`/`cycle` when private Deck bindings are available.
+
+Existing pattern / reuse:
+- `scripts/vpnkit-render-local-configs.sh` already centralizes rendered sing-box/OpenVPN config.
+- `scripts/vpnkit-test-lab-setup.sh` already sets lab-only fixture defaults.
+- `test/sing-box-smart-routing-proof.py` already checks smart-routing/final/tag invariants.
+
+Missing change:
+- Add explicit `VPNKIT_SELECTED_OUTBOUND_MODE=proxy|direct-fixture` with renderer default `proxy`; lab setup defaults `direct-fixture` while keeping tag/final `selected-native-out`.
+- Make OpenVPN pushed DNS renderable via `VPNKIT_OPENVPN_PUSH_DNS`, preserving default `10.89.0.1`; lab setup defaults `172.19.0.1` so DNS packets traverse sing-box TUN.
+- Update docs and proof/evidence.
+
+Acceptance criteria:
+- Production/default render remains remote RU + VLESS/proxy selected outbound + pushed DNS `10.89.0.1`.
+- Lab render defaults local RU fixture + direct selected outbound preserving `selected-native-out` + pushed DNS `172.19.0.1`.
+- Smart-routing final/tag shape and route policy order remain intact.
+- Safe repo checks pass.
+- Live Deck lifecycle is green if private bindings are available; otherwise blocker is precise.
+
+Test plan:
+- `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh`.
+- `python3 test/sing-box-smart-routing-proof.py`.
+- Disposable lab render assertions for direct-fixture/DNS/local RU.
+- Disposable explicit proxy/remote render assertions for production-compatible defaults.
+- `go test ./...`, `go vet ./...`, `go build -o /tmp/vibe-vpn ./cmd/vibe-vpn`, Python compile, sensitive artifact check.
+- Live `down`/`up`/`test`/`cycle` when `config/private-endpoints.local.env` is present.
+
+Dependencies:
+- Depends on RU ruleset fixture task and current PR #26 branch.
+- Blocks issue #27 live green done-state.
+- Executor: slice owner implemented directly in the active worktree because the fix was small and tightly coupled to current evidence; report `reports/slice-owner-runtime-datapath-dns.md`, verification `verification/runtime-datapath-dns-live.md`.
+
+Execution ledger:
+- 2026-06-10: Implemented explicit selected outbound mode and OpenVPN pushed DNS rendering. Local/static/proof/Go checks passed; live Deck sequence was not run because `config/private-endpoints.local.env` is absent in this worktree. Evidence: `verification/runtime-datapath-dns-live.md`.

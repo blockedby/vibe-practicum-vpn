@@ -22,6 +22,8 @@ Environment:
   VPNKIT_TEST_LAB_PORT          Client profile remote port (default: 1194)
   VPNKIT_ROUTING_MODE           Render routing mode (default: tun)
   VPNKIT_RULESET_SOURCE_MODE    RU rule-set source mode (default: local-fixture for labs; renderer default is remote)
+  VPNKIT_SELECTED_OUTBOUND_MODE  Selected outbound mode (default: direct-fixture for labs; renderer default is proxy)
+  VPNKIT_OPENVPN_PUSH_DNS        Pushed VPN DNS (default: 172.19.0.1 for tun lab)
 EOF
 }
 
@@ -90,7 +92,7 @@ chmod 600 "$BASE/sing-box/tproxy-canary.json"
 printf '[]\n' > "$BASE/vibe-vpn/extra-nodes.json"
 chmod 600 "$BASE/vibe-vpn/extra-nodes.json"
 
-VPNKIT_SECRETS_DIR="$BASE" VPNKIT_ROUTING_MODE="$ROUTING_MODE" VPNKIT_RULESET_SOURCE_MODE="${VPNKIT_RULESET_SOURCE_MODE:-local-fixture}" scripts/vpnkit-render-local-configs.sh >/dev/null
+VPNKIT_SECRETS_DIR="$BASE" VPNKIT_ROUTING_MODE="$ROUTING_MODE" VPNKIT_RULESET_SOURCE_MODE="${VPNKIT_RULESET_SOURCE_MODE:-local-fixture}" VPNKIT_SELECTED_OUTBOUND_MODE="${VPNKIT_SELECTED_OUTBOUND_MODE:-direct-fixture}" VPNKIT_OPENVPN_PUSH_DNS="${VPNKIT_OPENVPN_PUSH_DNS:-172.19.0.1}" scripts/vpnkit-render-local-configs.sh >/dev/null
 
 python3 - "$CLIENT_DIR/test-client.ovpn" "$ENDPOINT" "$PORT" <<'PY'
 import pathlib, sys

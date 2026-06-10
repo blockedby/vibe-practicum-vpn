@@ -3,7 +3,16 @@ set -euo pipefail
 BASE=${VPNKIT_SECRETS_DIR:-secrets/vps}
 RENDERED="$BASE/rendered"
 mkdir -p "$RENDERED/openvpn/pki" "$RENDERED/openvpn/ccd" "$RENDERED/sing-box/rule-sets" "$RENDERED/vibe-vpn" "$BASE/openvpn/client"
-cp config/openvpn/server.tpl "$RENDERED/openvpn/server.conf"
+openvpn_push_dns=${VPNKIT_OPENVPN_PUSH_DNS:-10.89.0.1}
+python3 - "config/openvpn/server.tpl" "$RENDERED/openvpn/server.conf" "$openvpn_push_dns" <<'PY'
+import ipaddress, pathlib, sys
+tmpl, out, dns = sys.argv[1:]
+try:
+    ipaddress.IPv4Address(dns)
+except ValueError as exc:
+    raise SystemExit('VPNKIT_OPENVPN_PUSH_DNS must be an IPv4 literal') from exc
+pathlib.Path(out).write_text(pathlib.Path(tmpl).read_text().replace('{{OPENVPN_PUSH_DNS}}', dns))
+PY
 cp "$BASE/openvpn/pki/ca.crt" "$BASE/openvpn/pki/ta.key" "$BASE/openvpn/pki/vibe-asus.crt" "$BASE/openvpn/pki/vibe-asus.key" "$RENDERED/openvpn/pki/"
 cp "$BASE/openvpn/server/ccd-ignat" "$RENDERED/openvpn/ccd/ignat" 2>/dev/null || true
 routing_mode=${VPNKIT_ROUTING_MODE:-redirect}
@@ -15,18 +24,26 @@ case "$routing_mode" in
 esac
 ruleset_source_mode=${VPNKIT_RULESET_SOURCE_MODE:-remote}
 ruleset_source_mode=${ruleset_source_mode,,}
+selected_outbound_mode=${VPNKIT_SELECTED_OUTBOUND_MODE:-proxy}
+selected_outbound_mode=${selected_outbound_mode,,}
 case "$ruleset_source_mode" in
   remote|local-fixture) ;;
   *) echo "unsupported VPNKIT_RULESET_SOURCE_MODE=$VPNKIT_RULESET_SOURCE_MODE (expected remote or local-fixture)" >&2; exit 2 ;;
 esac
-python3 - "$BASE/sing-box/tproxy-canary.json" "$singbox_template" "$RENDERED/sing-box/config.json" "$ruleset_source_mode" <<'PY'
+case "$selected_outbound_mode" in
+  proxy|direct-fixture) ;;
+  *) echo "unsupported VPNKIT_SELECTED_OUTBOUND_MODE=$VPNKIT_SELECTED_OUTBOUND_MODE (expected proxy or direct-fixture)" >&2; exit 2 ;;
+esac
+python3 - "$BASE/sing-box/tproxy-canary.json" "$singbox_template" "$RENDERED/sing-box/config.json" "$ruleset_source_mode" "$selected_outbound_mode" <<'PY'
 import ipaddress, json, socket, sys
-src, tmpl, out, ruleset_source_mode = sys.argv[1:]
+src, tmpl, out, ruleset_source_mode, selected_outbound_mode = sys.argv[1:]
 data=json.load(open(src))
 vless=[o for o in data.get('outbounds',[]) if o.get('tag')=='selected-native-out' and o.get('type')=='vless']
 if not vless:
     raise SystemExit('selected-native-out vless outbound not found')
 selected=dict(vless[0])
+if selected_outbound_mode == 'direct-fixture':
+    selected = {'type': 'direct', 'tag': 'selected-native-out'}
 server=selected.get('server')
 if server:
     try:

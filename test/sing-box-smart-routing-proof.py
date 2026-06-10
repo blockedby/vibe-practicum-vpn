@@ -160,7 +160,7 @@ def assert_template(path: pathlib.Path, *, local_fixture: bool = False) -> None:
 
 def assert_openvpn_preserved() -> None:
     server = (ROOT / "config/openvpn/server.tpl").read_text()
-    for line in ("push \"redirect-gateway def1 bypass-dhcp\"", "tun-mtu 1400", "mssfix 1360"):
+    for line in ("push \"redirect-gateway def1 bypass-dhcp\"", "push \"dhcp-option DNS {{OPENVPN_PUSH_DNS}}\"", "tun-mtu 1400", "mssfix 1360"):
         assert line in server, f"OpenVPN server template missing preserved line: {line}"
 
 
