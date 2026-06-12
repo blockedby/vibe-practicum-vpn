@@ -1,8 +1,8 @@
-$ tests/sing-box-dns-schema-test.sh
+$ test/sing-box-dns-schema-test.sh
 sing-box DNS schema tests passed
-$ tests/vpnkit-production-routing-wiring-test.sh
+$ test/vpnkit-production-routing-wiring-test.sh
 vpnkit production routing wiring tests passed
-$ bash -n scripts/*.sh docker/vpnkit/*.sh tests/*.sh
+$ bash -n scripts/*.sh docker/vpnkit/*.sh test/*.sh
 $ go test ./...
 ok  	github.com/kcnc/vibe-practicum-vpn/cmd/vibe-vpn	(cached)
 ok  	github.com/kcnc/vibe-practicum-vpn/internal/config	(cached)

@@ -20,7 +20,7 @@
 ## Spec compliance
 - Requirement / AC: new DNS schema in tracked sing-box templates.
   - Status: done
-  - Evidence: `config/sing-box/config.json.template` and `config/sing-box/config.tun.json.template` now use `type`/`server` DNS entries instead of legacy `address: tls://...`; verified by `tests/sing-box-dns-schema-test.sh` and rendered-config checks.
+  - Evidence: `config/sing-box/config.json.template` and `config/sing-box/config.tun.json.template` now use `type`/`server` DNS entries instead of legacy `address: tls://...`; verified by `test/sing-box-dns-schema-test.sh` and rendered-config checks.
   - Gap if any: none.
 - Requirement / AC: explicit default domain resolver.
   - Status: done
@@ -32,7 +32,7 @@
   - Gap if any: none.
 - Requirement / AC: local tests prove the config without deprecated DNS compatibility flags.
   - Status: done
-  - Evidence: `verification/local-final.md` shows `tests/sing-box-dns-schema-test.sh`, `tests/vpnkit-production-routing-wiring-test.sh`, `bash -n`, `go test ./...`, and `docker build` all passed; temp rendered-config checks also passed without deprecated DNS env.
+  - Evidence: `verification/local-final.md` shows `test/sing-box-dns-schema-test.sh`, `test/vpnkit-production-routing-wiring-test.sh`, `bash -n`, `go test ./...`, and `docker build` all passed; temp rendered-config checks also passed without deprecated DNS env.
   - Gap if any: none.
 - Requirement / AC: production runtime smoke on both failover endpoints.
   - Status: done
@@ -53,7 +53,7 @@
 
 ## Acceptance verification
 - AC1: new DNS schema in templates
-  - Covered by: `tests/sing-box-dns-schema-test.sh`, `tests/vpnkit-production-routing-wiring-test.sh`, template file inspection.
+  - Covered by: `test/sing-box-dns-schema-test.sh`, `test/vpnkit-production-routing-wiring-test.sh`, template file inspection.
   - Result: passed
   - Evidence: local-final and template contents.
 - AC2: default domain resolver present
@@ -92,9 +92,9 @@
 
 ## Verification run
 - Local / targeted checks:
-  - `tests/sing-box-dns-schema-test.sh`: passed
-  - `tests/vpnkit-production-routing-wiring-test.sh`: passed
-  - `bash -n scripts/*.sh docker/vpnkit/*.sh tests/*.sh`: passed
+  - `test/sing-box-dns-schema-test.sh`: passed
+  - `test/vpnkit-production-routing-wiring-test.sh`: passed
+  - `bash -n scripts/*.sh docker/vpnkit/*.sh test/*.sh`: passed
   - `go test ./...`: passed
   - `docker build -q -t vpnkit-singbox-dns-migration:local -f docker/vpnkit/Dockerfile .`: passed
 - Local / full checks:

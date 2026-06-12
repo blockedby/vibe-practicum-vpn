@@ -18,7 +18,7 @@
 - PR state: done. PR #25 opened and marked ready.
 
 ## Acceptance verification
-- AC1/AC2 templates migrated and resolver explicit: passed via `tests/sing-box-dns-schema-test.sh` and `tests/vpnkit-production-routing-wiring-test.sh`.
+- AC1/AC2 templates migrated and resolver explicit: passed via `test/sing-box-dns-schema-test.sh` and `test/vpnkit-production-routing-wiring-test.sh`.
 - AC3 no deprecated DNS env reliance: passed locally and in prod (`deprecated_env=absent` on both endpoints).
 - AC4 local verification: passed in `verification/local-final.md`: schema test, routing wiring test, `bash -n`, `go test ./...`, Docker build.
 - AC5 production runtime: passed in `verification/production-runtime-final-verify.md`: both endpoints `singbox_check=ok`, `routing_mode=tun`, OpenVPN/tun0 up, sing-box/sb-tun0 up, policy rule/route table ok, UDP 1194 mapped/listening.
@@ -33,7 +33,7 @@
 ## Issues
 ### R-01: `sing-box check` missed runtime-invalid direct DNS detour
 - Evidence: final redeploy initially caused restart loop because `direct-dns` had `detour: direct-out`; sing-box start rejected it.
-- Resolution: changed `direct-dns` to `type: local` and added startup smoke to `tests/sing-box-dns-schema-test.sh`.
+- Resolution: changed `direct-dns` to `type: local` and added startup smoke to `test/sing-box-dns-schema-test.sh`.
 
 ### R-02: direct DoT bootstrap resolver was not portable
 - Evidence: one endpoint could not reach direct TLS DNS on 853 during rule-set bootstrap.
