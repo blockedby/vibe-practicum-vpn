@@ -23,7 +23,15 @@ assert_not_grep '([0-9]{1,3}\.){3}[0-9]{1,3}|token=[^<]'
 check_ok env VPNKIT_PROD_DEPLOY_HOSTS='example.invalid example2.invalid' "$script" dry-run --target-ref main --deploy-id env-id
 if [[ $(grep -c 'mutation=none' /tmp/vpnkit-prod-deploy-test.out) -ne 2 ]]; then echo "env host list not handled sequentially"; fail=1; fi
 check_ok env TZ=UTC "$script" plan --target-ref HEAD example.invalid
-assert_grep 'deploy_id=[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]+'
+head_short=$(git rev-parse --short=12 HEAD)
+assert_grep "deploy_id=[0-9]{8}T[0-9]{6}Z-${head_short}"
+if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+  check_ok env TZ=UTC "$script" plan --target-ref HEAD~1 example.invalid
+  prev_short=$(git rev-parse --short=12 HEAD~1)
+  assert_grep "deploy_id=[0-9]{8}T[0-9]{6}Z-${prev_short}"
+fi
+check_fail "$script" plan --target-ref main --deploy-id nested/id example.invalid
+assert_grep 'deploy id contains unsupported characters'
 
 mock_root=$(mktemp -d /tmp/vpnkit-prod-deploy-mock.XXXXXX)
 trap 'rm -rf "$mock_root"' EXIT
@@ -68,6 +76,7 @@ VPNKIT_PROD_PREVIOUS_LINK="$VPNKIT_MOCK_REMOTE_ROOT/links/previous" \
 VPNKIT_PROD_REMOTE_TIMEOUT_BIN="$VPNKIT_PROD_DEPLOY_TIMEOUT_BIN" \
 VPNKIT_MOCK_ROUTING_MODE="${VPNKIT_MOCK_ROUTING_MODE:-tun}" \
 VPNKIT_MOCK_ROLLBACK_SMOKE_FAIL="${VPNKIT_MOCK_ROLLBACK_SMOKE_FAIL:-0}" \
+VPNKIT_MOCK_REQUIRE_TUN_FAIL="${VPNKIT_MOCK_REQUIRE_TUN_FAIL:-0}" \
 bash -s -- __remote "$mode" "$target_ref" "$deploy_id" "$rollback_id" <<<"$script"
 MOCK
 chmod +x "$fakebin/ssh"
@@ -97,8 +106,9 @@ root=${VPNKIT_MOCK_REMOTE_ROOT:?}
 case "$1" in
   compose)
     if [[ "${2:-}" == version ]]; then echo 'Docker Compose mock'; exit 0; fi
-    if [[ "${2:-}" == build ]]; then echo "compose_build=$3"; exit 0; fi
-    if [[ "${2:-}" == up ]]; then echo "compose_up=${*:3}"; exit 0; fi ;;
+    if [[ "${2:-}" == build ]]; then echo "compose_build=${*: -1}"; exit 0; fi
+    if [[ "${2:-}" == images ]]; then echo 'sha256:candidatebuild'; exit 0; fi
+    if [[ "${2:-}" == up || "$*" == *' up '* ]]; then echo "compose_up=${*:2}"; exit 0; fi ;;
   ps) echo mock-container ;;
   inspect)
     if [[ "$*" == *'{{.Config.Image}}'* ]]; then echo 'vpnkit:previous'; exit 0; fi
@@ -119,7 +129,17 @@ case "$1" in
       echo openvpn=up; echo tun0=present; echo singbox=up; echo routing_mode=tun; echo singbox_check=ok; echo sb_tun0=present; echo policy_rule=ok; echo route_table=missing; exit 39
     fi
     if [[ "$*" == *'printenv VPNKIT_ROUTING_MODE'* && "$*" != *'ip route show table'* ]]; then
-      [[ "${VPNKIT_MOCK_ROUTING_MODE:-tun}" == tun ]] && echo tun || true
+      if [[ "$*" != *'echo routing_mode='* ]]; then
+        echo "${VPNKIT_MOCK_PREVIOUS_ROUTING_MODE:-tun}"
+        exit 0
+      fi
+      if [[ "${VPNKIT_MOCK_REQUIRE_TUN_FAIL:-0}" == 1 ]]; then echo routing_mode=redirect; exit 41; fi
+      if [[ "$*" == *'\[ "$mode" = tun \]'* ]]; then
+        [[ "${VPNKIT_MOCK_ROUTING_MODE:-tun}" == tun ]] && echo routing_mode=tun || echo routing_mode=redirect
+        [[ "${VPNKIT_MOCK_ROUTING_MODE:-tun}" == tun ]] || exit 41
+        exit 0
+      fi
+      [[ "${VPNKIT_MOCK_ROUTING_MODE:-tun}" == tun ]] && echo tun || echo redirect
       [[ "${VPNKIT_MOCK_ROUTING_MODE:-tun}" == tun ]] || exit 41
       exit 0
     fi
@@ -160,7 +180,10 @@ assert_grep 'source_transfer_arg=absent'
 assert_grep 'source_update=git resolved_ref=abc123resolved'
 assert_grep 'release_dir=.*/releases/20260613T010203Z-deadbeef'
 assert_grep 'candidate_image=vpnkit:20260613T010203Z-deadbeef'
+assert_grep 'docker_tag=sha256:candidatebuild vpnkit:20260613T010203Z-deadbeef'
 assert_grep 'compose_build=vpnkit'
+assert_grep 'compose_up=.*-f .*/compose.image.override.yaml up -d --no-build vpnkit'
+assert_grep 'compose_image_override=.*/compose.image.override.yaml'
 assert_grep 'activation=no_build'
 assert_grep 'persisted_singbox_check=ok'
 assert_grep 'deploy=ok'
@@ -175,6 +198,8 @@ assert_not_grep 'secret|token=|password=|PRIVATE|BEGIN ' "$bundle/env-references
 
 check_ok "${mock_env[@]}" "$script" rollback --yes --rollback-id "$bundle" host-a
 assert_grep 'rollback_start=.*rollback'
+assert_grep 'compose_up=.*-f .*/rollback.compose.image.override.yaml up -d --no-build vpnkit'
+assert_grep 'compose_image_override=.*/rollback.compose.image.override.yaml'
 assert_grep 'rollback_activation=no_build'
 assert_grep 'rollback=ok'
 assert_not_grep 'compose_build'
@@ -183,5 +208,10 @@ check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/ti
 assert_grep 'rollback_smoke=failed'
 assert_grep 'manual_recovery_command=ssh <host> "cd .+ && VPNKIT_RECOVERY_BUNDLE=.+ scripts/vpnkit/vpnkit-prod-deploy.sh __remote rollback'
 assert_not_grep 'compose_build'
+
+check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_REQUIRE_TUN_FAIL=1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010204Z-deadbeef host-a
+assert_grep 'deploy_activation_or_config=failed'
+assert_grep 'rollback_start=.*rollback'
+assert_grep 'rollback_activation=no_build'
 
 exit "$fail"

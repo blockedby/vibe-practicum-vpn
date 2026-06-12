@@ -184,3 +184,59 @@ Task 3 status: done.
 - Evidence: `verification/prod-deploy-redesign-local.md` records PASS for syntax check, helper test, `git diff --check`, forbidden source-transfer grep, and public-safety grep.
 - No live production deploy/rollback/verify was run.
 - Report: `reports/slice-owner-prod-deploy-redesign.md`.
+
+2026-06-13 prod-deploy-redesign follow-up blocker pass:
+- Mission: confirm/fix root integration blockers after Task 3 without live production mutation.
+- Scope: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, task-package report/verification updates. Docs only if behavior text needs correction.
+- Do-not-touch: no live production endpoints, no private env reads/prints, no generated profiles/config/logs/images, no source archive/scp fallback/source-mode option, preserve unrelated changes.
+- Reuse discovery: current helper already has local/remote split, mock ssh/timeout tests, deploy-id override, release root/current/previous metadata, candidate-image metadata, auto-rollback on smoke failure, and no source-transfer assertions. Current likely gaps: local default deploy_id uses `git rev-parse HEAD`; deploy_id validation permits `/`; candidate image is tagged from existing container image after compose build and compose up relies only on `VPNKIT_IMAGE`; `require_tun_pair` is outside rollback-protected conditional under `set -e`.
+- Missing pieces: derive default deploy_id from resolved `--target-ref` short SHA; separate stricter deploy_id validation from ref/rollback path; make compose build/up/rollback actually consume `VPNKIT_IMAGE` through a generated Compose override (or equivalent) and assert no-build activation/rollback; wrap deploy activation/config/smoke failures so rollback is attempted.
+
+### Task 4: Follow-up blocker fixes for deploy-id/image activation/rollback safety
+Goal:
+- Fix confirmed root-integration blockers in the production deploy helper redesign and prove them with local/mocked tests.
+
+Boundary:
+- System area: shell deploy helper and shell tests.
+- Primary verification: syntax check, targeted mocked helper tests, `git diff --check`, source-transfer grep, public-safety grep.
+
+Existing pattern / reuse:
+- Reuse current `__remote` functions, `run_bounded`, mock ssh/timeout/docker patterns in `test/prod-deploy-helper-test.sh`, and task-package verification/report paths.
+
+Missing change:
+- Default deploy_id must be UTC timestamp plus short SHA from resolved `--target-ref`, not local HEAD.
+- Deploy_id must not allow `/` or nested release dirs; keep rollback-id/path support separate.
+- Candidate image activation/rollback must actually use `vpnkit:<deploy-id>` or previous image via no-build Compose override/equivalent under current compose shape.
+- Deploy activation/config/smoke failures, including `require_tun_pair`, must attempt rollback.
+
+Acceptance criteria:
+- Tests prove target-ref-derived default deploy_id, deploy-id slash rejection while target_ref/rollback paths remain valid where appropriate, image-tag activation/no-build behavior via compose override/equivalent, rollback no-build behavior, and auto-rollback when tun config/mode check fails.
+- Existing prior-slice acceptance still passes.
+- No source archive/scp fallback/source-mode option is reintroduced.
+- No live production mutation or private endpoint use.
+
+Evidence route:
+- `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`
+- `test/prod-deploy-helper-test.sh`
+- `git diff --check`
+- source-transfer grep and public-safety grep recorded in `verification/prod-deploy-redesign-local.md`.
+
+Dependencies:
+- Depends on: Task 3 redesign.
+- Blocks: follow-up final report.
+- Can run parallel with: none; single helper/test edit.
+
+Executor:
+- aad-implementer preferred; owner may apply tiny integration/report updates if delegation is unavailable.
+
+Task 4 status: ready for implementation dispatch.
+
+2026-06-13 prod-deploy-redesign follow-up blocker completion update:
+- Task 4 status: done.
+- Changed files: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, `verification/prod-deploy-redesign-local.md`, `reports/slice-owner-prod-deploy-redesign.md`, plan/progress artifacts.
+- R-01 fixed: default deploy_id now derives from resolved `--target-ref` short SHA; tests assert `HEAD` and `HEAD~1` derived deploy IDs when available.
+- R-02 fixed: activation/rollback now use generated Compose image override files with selected image tags and `up -d --no-build`; tests assert candidate image tagging from compose image ID, override file usage, and no rollback build.
+- R-03 fixed: `require_tun_pair` explicitly returns failure and deploy wraps activation/config/smoke failures in rollback; tests force TUN pair failure and assert rollback starts.
+- R-04 fixed: deploy ID validation rejects `/` separately from target ref / rollback path validation.
+- Verification evidence: `verification/prod-deploy-redesign-local.md` records PASS for syntax check, helper test, `git diff --check`, source-transfer grep, and public-safety grep.
+- No live production deploy/rollback/verify was run.

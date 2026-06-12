@@ -36,12 +36,13 @@ redact() {
 }
 
 die() { echo "error: $*" >&2; exit 2; }
-valid_id_re='^[A-Za-z0-9._@:+/-]+$'
+ref_id_re='^[A-Za-z0-9._@:+/~^-]+$'
+deploy_id_re='^[A-Za-z0-9._@:+-]+$'
 
 default_deploy_id() {
-  local ts sha
+  local ref=${1:?} ts sha
   ts=$(date -u +%Y%m%dT%H%M%SZ)
-  sha=$(git rev-parse --short=12 HEAD 2>/dev/null || printf 'nogit')
+  sha=$(git rev-parse --short=12 "${ref}^{commit}" 2>/dev/null || git rev-parse --short=12 "$ref" 2>/dev/null || printf 'nogit')
   printf '%s-%s\n' "$ts" "$sha"
 }
 
@@ -54,7 +55,7 @@ if [[ "${1:-}" == "__remote" ]]; then
   current_link=${VPNKIT_PROD_CURRENT_LINK:-/opt/vpnkit/current}
   previous_link=${VPNKIT_PROD_PREVIOUS_LINK:-/opt/vpnkit/previous}
   compose_bin=""
-  container=""; workdir=""; service=""; project=""
+  container=""; workdir=""; service=""; project=""; compose_image_override=""
   log() { printf '%s\n' "$*"; }
   run_bounded() { "$timeout_cmd" "$run_timeout" "$@"; }
   find_compose() { if docker compose version >/dev/null 2>&1; then compose_bin="docker compose"; elif command -v docker-compose >/dev/null 2>&1; then compose_bin="docker-compose"; else log compose=missing; return 20; fi; }
@@ -94,12 +95,12 @@ if [[ "${1:-}" == "__remote" ]]; then
     log "discover=ok service=$service project=${project:-unknown} workdir=<discovered>"
   }
   require_tun_pair() {
-    docker exec "$container" sh -lc 'mode=$(printenv VPNKIT_ROUTING_MODE 2>/dev/null || true); [ "$mode" = tun ] && echo routing_mode=tun || { echo routing_mode=${mode:-missing}; exit 41; }'
+    docker exec "$container" sh -lc 'mode=$(printenv VPNKIT_ROUTING_MODE 2>/dev/null || true); [ "$mode" = tun ] && echo routing_mode=tun || { echo routing_mode=${mode:-missing}; exit 41; }' || return $?
     if [ -f secrets/vps/rendered/sing-box/config.json ]; then
-      docker cp secrets/vps/rendered/sing-box/config.json "$container:/var/lib/vpnkit/sing-box/config.json" >/dev/null
+      docker cp secrets/vps/rendered/sing-box/config.json "$container:/var/lib/vpnkit/sing-box/config.json" >/dev/null || return $?
       log persisted_singbox_config=refreshed
     fi
-    docker exec "$container" sh -lc 'sing-box check -c /var/lib/vpnkit/sing-box/config.json >/tmp/vpnkit-sing-box-check.out 2>&1 || { echo persisted_singbox_check=fail; tail -20 /tmp/vpnkit-sing-box-check.out; exit 42; }'
+    docker exec "$container" sh -lc 'sing-box check -c /var/lib/vpnkit/sing-box/config.json >/tmp/vpnkit-sing-box-check.out 2>&1 || { echo persisted_singbox_check=fail; tail -20 /tmp/vpnkit-sing-box-check.out; exit 42; }' || return $?
     log persisted_singbox_check=ok
   }
   smoke() {
@@ -120,6 +121,19 @@ if [[ "${1:-}" == "__remote" ]]; then
       ip route show table "$table" | grep -q "^default .* dev $iface" && echo route_table=ok || { echo route_table=missing; exit 39; }
       if command -v ss >/dev/null 2>&1; then ss -lunp | grep -q ":1194" && echo udp_1194_listener=ok || { echo udp_1194_listener=missing; exit 40; }; fi
     '
+  }
+  compose_up_no_build_with_image() {
+    image=$1
+    override=$2
+    mkdir -p "$(dirname "$override")"
+    cat >"$override" <<EOFOVERRIDE
+services:
+  $service:
+    image: $image
+EOFOVERRIDE
+    compose_image_override=$override
+    if [ -f compose.yaml ]; then base_compose=compose.yaml; elif [ -f compose.yml ]; then base_compose=compose.yml; elif [ -f docker-compose.yml ]; then base_compose=docker-compose.yml; else base_compose=docker-compose.yaml; fi
+    VPNKIT_IMAGE="$image" run_bounded $compose_bin -f "$base_compose" -f "$override" up -d --no-build "$service"
   }
   write_metadata() {
     dir=$1; mkdir -p "$dir"
@@ -152,12 +166,13 @@ if [[ "${1:-}" == "__remote" ]]; then
   activate_image() {
     image="vpnkit:$deploy_id"
     run_bounded $compose_bin build "$service"
-    built_image=$(docker inspect "$container" --format "{{.Config.Image}}" 2>/dev/null || true)
-    if [ -n "${built_image:-}" ]; then docker tag "$built_image" "$image" 2>/dev/null || docker tag "$container" "$image"; else docker tag "$container" "$image"; fi
+    built_image=$(run_bounded $compose_bin images -q "$service" 2>/dev/null | awk 'NR==1{print}' || true)
+    if [ -n "${built_image:-}" ]; then docker tag "$built_image" "$image"; else docker tag "$container" "$image"; fi
     log "candidate_image=$image"
     if [ -L "$current_link" ] || [ -e "$current_link" ]; then ln -sfn "$(readlink -f "$current_link" 2>/dev/null || printf '%s' "$current_link")" "$previous_link" 2>/dev/null || true; fi
     ln -sfn "$release_root/$deploy_id" "$current_link" 2>/dev/null || true
-    VPNKIT_IMAGE="$image" run_bounded $compose_bin up -d --no-build "$service"
+    compose_up_no_build_with_image "$image" "$release_root/$deploy_id/compose.image.override.yaml"
+    log "compose_image_override=$compose_image_override"
     log activation=no_build
   }
   manual_recovery() { rb=$1; printf 'manual_recovery_command=ssh <host> "cd %s && VPNKIT_RECOVERY_BUNDLE=%s scripts/vpnkit/vpnkit-prod-deploy.sh __remote rollback \"\" \"\" %s"\n' "$workdir" "$rb" "$rb"; }
@@ -171,7 +186,8 @@ if [[ "${1:-}" == "__remote" ]]; then
     prev_mode=$(cat "$rb/previous-routing-mode.txt" 2>/dev/null || true)
     [ "$prev_mode" = tun ] || { log previous_routing_mode=${prev_mode:-missing}; return 52; }
     ln -sfn "$(dirname "$rb")" "$previous_link" 2>/dev/null || true
-    VPNKIT_IMAGE="$prev_image" VPNKIT_ROUTING_MODE=tun run_bounded $compose_bin up -d --no-build "$service"
+    compose_up_no_build_with_image "$prev_image" "$rb/rollback.compose.image.override.yaml"
+    log "compose_image_override=$compose_image_override"
     log rollback_activation=no_build
     new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}')
     [ -n "${new_container:-}" ] || new_container=$container
@@ -179,7 +195,7 @@ if [[ "${1:-}" == "__remote" ]]; then
   }
   plan() { discover; log "plan=deploy target_ref=$target_ref deploy_id=$deploy_id"; log "steps=discover,resolve-git-ref,release-dir:$release_root/$deploy_id,rollback-metadata,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure"; }
   verify() { discover; smoke "$container"; }
-  deploy() { discover; create_release; if ! activate_image; then rollback_to || true; exit 60; fi; require_tun_pair; new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}'); [ -n "${new_container:-}" ] || new_container=$container; if smoke "$new_container"; then log deploy=ok; else log deploy_smoke=failed; rollback_to || true; exit 61; fi; }
+  deploy() { discover; create_release; if activate_image && require_tun_pair; then new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}'); [ -n "${new_container:-}" ] || new_container=$container; if smoke "$new_container"; then log deploy=ok; return 0; else log deploy_smoke=failed; fi; else log deploy_activation_or_config=failed; fi; rollback_to || true; exit 61; }
   case "$mode" in plan|dry-run) plan ;; verify) verify ;; deploy) deploy ;; rollback) discover; rollback_to ;; *) die "unsupported remote mode: $mode" ;; esac
   exit 0
 fi
@@ -213,10 +229,10 @@ case "$mode" in
   verify) ;;
   *) die "unsupported mode: $mode" ;;
 esac
-[[ -z "$target_ref" || "$target_ref" =~ $valid_id_re ]] || die "target ref contains unsupported characters"
-[[ -z "$rollback_id" || "$rollback_id" =~ $valid_id_re ]] || die "rollback id contains unsupported characters"
-if [[ -z "$deploy_id" && ( "$mode" == "plan" || "$mode" == "dry-run" || "$mode" == "deploy" ) ]]; then deploy_id=$(default_deploy_id); fi
-[[ -z "$deploy_id" || "$deploy_id" =~ $valid_id_re ]] || die "deploy id contains unsupported characters"
+[[ -z "$target_ref" || "$target_ref" =~ $ref_id_re ]] || die "target ref contains unsupported characters"
+[[ -z "$rollback_id" || "$rollback_id" =~ $ref_id_re ]] || die "rollback id contains unsupported characters"
+if [[ -z "$deploy_id" && ( "$mode" == "plan" || "$mode" == "dry-run" || "$mode" == "deploy" ) ]]; then deploy_id=$(default_deploy_id "$target_ref"); fi
+[[ -z "$deploy_id" || "$deploy_id" =~ $deploy_id_re ]] || die "deploy id contains unsupported characters"
 
 run_remote() {
   local host=$1

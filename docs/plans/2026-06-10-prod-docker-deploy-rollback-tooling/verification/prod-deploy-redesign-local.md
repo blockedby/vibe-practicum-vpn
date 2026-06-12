@@ -16,14 +16,20 @@ No live production SSH/deploy/rollback/verify was performed. All runtime evidenc
   - Result: PASS
 - `! grep -RInE 'source_update=archive|source-before\.tar|git archive|scp ' scripts/vpnkit/vpnkit-prod-deploy.sh README.md`
   - Result: PASS; no forbidden helper/docs source-transfer strings found.
-  - Note: test/plan contain intentional negative assertions/wording for removed source-mode/archive/scp behavior.
+  - Note: test/plan/report files contain intentional negative assertions/wording for removed source-mode/archive/scp behavior.
 - Public-safety grep over changed tracked files:
-  - Command: `git diff --name-only | xargs grep -InE 'BEGIN (RSA|OPENSSH|PRIVATE)|PRIVATE KEY|password=[^<[:space:]]+|token=[^<[:space:]]+|secret=[^<[:space:]]+|vless://|trojan://|vmess://' || true`
-  - Result: PASS with expected mock/negative-test matches only:
-    - `test/prod-deploy-helper-test.sh` asserts token redaction and negative secret patterns using `mock-secret-output`.
-    - No real private key/token/password/subscription/profile content was found.
+  - Command: `git diff -- scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh README.md docs/plans/2026-06-10-prod-docker-deploy-rollback-tooling | grep '^+' | grep -Ev '^\+\+\+|assert_|grep|public-safety|secret-like|token=mock-secret-output' | grep -E '([0-9]{1,3}\.){3}[0-9]{1,3}|(password|passwd|token|secret|private[_-]?key)[=:][^<[:space:]]|BEGIN (RSA|OPENSSH|PRIVATE)' || true`
+  - Result: PASS; no suspicious added secret/private endpoint material outside intentional mock/negative-test assertions.
 
-## Acceptance evidence map
+## Follow-up blocker evidence map
+
+- Default deploy_id uses resolved target ref: covered by `plan --target-ref HEAD` expecting current short SHA and `plan --target-ref HEAD~1` expecting the prior commit short SHA when available. Override remains covered by `--deploy-id custom-id`.
+- Deploy_id path safety: covered by `plan --target-ref main --deploy-id nested/id` failing with `deploy id contains unsupported characters`; target refs retain separate ref validation and rollback paths remain separate via `--rollback-id` tests.
+- Actual image-tag activation: mocked deploy now proves `docker tag=sha256:candidatebuild vpnkit:<deploy-id>` and Compose activation uses a generated image override with `up -d --no-build`.
+- Rollback no-build by image tag: mocked rollback proves a generated rollback image override and `up -d --no-build`, with no `compose_build` during rollback.
+- Auto-rollback on TUN config/mode failure: forced `require_tun_pair` failure now returns nonzero explicitly and mocked deploy proves `deploy_activation_or_config=failed`, `rollback_start=...`, and `rollback_activation=no_build`.
+
+## Existing acceptance evidence map
 
 - Git-only CLI/deploy-id: covered by plan output tests for default and `--deploy-id`, and source-mode refusal.
 - Non-mutating plan/dry-run: covered by `mutation=none` plan/dry-run assertions.
