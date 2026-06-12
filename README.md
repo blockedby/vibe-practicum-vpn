@@ -226,13 +226,15 @@ Compose labels. Approved overrides for unusual hosts are
 `VPNKIT_PROD_PROJECT`; keep their real values local-only. Deploy is sequential
 across hosts and stops on the first failed host after attempting rollback. Source
 updates are git-only: deploy resolves the requested ref on the remote host,
-creates `/opt/vpnkit/releases/<deploy-id>` (default deploy id is UTC timestamp +
-resolved target-ref short SHA, or pass `--deploy-id`), records rollback metadata,
-builds/tags the candidate as `vpnkit:<deploy-id>`, and activates the service with
-that image tag without a second build where Compose supports it. The helper also
-maintains `current`/`previous` release pointers where permissions allow.
-Rollback restores the previous image tag plus the paired persisted sing-box
-config and `VPNKIT_ROUTING_MODE=tun` metadata, then re-activates without build;
+creates `.releases/vpnkit/<deploy-id>` under the discovered workdir by default
+(default deploy id is UTC timestamp + resolved target-ref short SHA, or pass
+`--deploy-id`), records rollback metadata, builds/tags the candidate as
+`vpnkit:<deploy-id>`, and activates the service with that image tag without a
+second build where Compose supports it. The helper also maintains
+`current`/`previous` release pointers under the same writable workdir by default
+(or uses explicit remote path overrides when configured). Rollback restores the
+previous image tag plus the paired persisted sing-box config and
+`VPNKIT_ROUTING_MODE=tun` metadata, then re-activates without build;
 if rollback smoke fails it prints a bounded manual recovery command. Smoke checks
 are bounded and require full-tunnel mode: `VPNKIT_ROUTING_MODE=tun`, container
 state, UDP 1194, OpenVPN/`tun0`, sing-box config check, `sb-tun0`, policy rule,

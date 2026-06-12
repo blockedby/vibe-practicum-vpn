@@ -1,6 +1,7 @@
 .git
 .worktrees
 .hermes
+.releases
 secrets
 logs
 clients

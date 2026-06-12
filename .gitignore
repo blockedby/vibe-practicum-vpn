@@ -51,6 +51,7 @@ __pycache__/
 .worktrees/
 /.worktrees/
 progress.md
+.releases/
 
 # Steam Deck local operator inputs
 steam-deck/hotspot-client/.env

@@ -16,8 +16,9 @@ Safety:
 - plan/dry-run print the bounded remote plan only; they do not run remote Docker/Compose mutation.
 - deploy and rollback refuse unless --yes is passed.
 - production source updates are git-only: the remote release is checked out from the requested git ref.
-- deploy creates /opt/vpnkit/releases/<deploy-id>, tags the candidate image vpnkit:<deploy-id>,
-  updates current/previous release pointers where permitted, and records rollback metadata.
+- deploy creates a release under the discovered workdir by default (.releases/vpnkit/<deploy-id>),
+  tags the candidate image vpnkit:<deploy-id>, updates current/previous release pointers, and
+  records rollback metadata. Override paths only with remote VPNKIT_PROD_RELEASE_ROOT/CURRENT_LINK/PREVIOUS_LINK.
 - rollback restores previous image/release/config/mode metadata and does not build.
 - hosts are supplied explicitly or by VPNKIT_PROD_DEPLOY_HOSTS; keep real values in
   config/private-endpoints.local.env, never in tracked files.
@@ -51,9 +52,9 @@ if [[ "${1:-}" == "__remote" ]]; then
   mode=${1:?}; target_ref=${2:-}; deploy_id=${3:-}; rollback_id=${4:-}
   timeout_cmd=${VPNKIT_PROD_REMOTE_TIMEOUT_BIN:-timeout}
   run_timeout=${VPNKIT_PROD_REMOTE_INNER_TIMEOUT:-600}
-  release_root=${VPNKIT_PROD_RELEASE_ROOT:-/opt/vpnkit/releases}
-  current_link=${VPNKIT_PROD_CURRENT_LINK:-/opt/vpnkit/current}
-  previous_link=${VPNKIT_PROD_PREVIOUS_LINK:-/opt/vpnkit/previous}
+  release_root=${VPNKIT_PROD_RELEASE_ROOT:-}
+  current_link=${VPNKIT_PROD_CURRENT_LINK:-}
+  previous_link=${VPNKIT_PROD_PREVIOUS_LINK:-}
   compose_bin=""
   container=""; workdir=""; service=""; project=""; compose_image_override=""
   log() { printf '%s\n' "$*"; }
@@ -77,6 +78,11 @@ if [[ "${1:-}" == "__remote" ]]; then
       esac
     done
   }
+  init_release_paths() {
+    if [ -z "${release_root:-}" ]; then release_root="$workdir/.releases/vpnkit"; fi
+    if [ -z "${current_link:-}" ]; then current_link="$workdir/.releases/current"; fi
+    if [ -z "${previous_link:-}" ]; then previous_link="$workdir/.releases/previous"; fi
+  }
   discover() {
     container=${VPNKIT_PROD_CONTAINER:-}
     [ -n "${container:-}" ] || container=$(docker ps --filter label=com.docker.compose.service=vpnkit --format "{{.ID}}" | awk 'NR==1{print}')
@@ -92,7 +98,8 @@ if [[ "${1:-}" == "__remote" ]]; then
     [ "$service" = vpnkit ] || { log service=unexpected; return 12; }
     cd "$workdir"
     find_compose
-    log "discover=ok service=$service project=${project:-unknown} workdir=<discovered>"
+    init_release_paths
+    log "discover=ok service=$service project=${project:-unknown} workdir=<discovered> release_root=<workdir>/.releases/vpnkit"
   }
   require_tun_pair() {
     docker exec "$container" sh -lc 'mode=$(printenv VPNKIT_ROUTING_MODE 2>/dev/null || true); [ "$mode" = tun ] && echo routing_mode=tun || { echo routing_mode=${mode:-missing}; exit 41; }' || return $?
@@ -122,9 +129,15 @@ if [[ "${1:-}" == "__remote" ]]; then
       if command -v ss >/dev/null 2>&1; then ss -lunp | grep -q ":1194" && echo udp_1194_listener=ok || { echo udp_1194_listener=missing; exit 40; }; fi
     '
   }
+  refresh_container() {
+    new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}')
+    [ -n "${new_container:-}" ] || { log container_after=missing; return 44; }
+    container=$new_container
+  }
   compose_up_no_build_with_image() {
-    image=$1
-    override=$2
+    local image=$1
+    local override=$2
+    local base_compose
     mkdir -p "$(dirname "$override")"
     cat >"$override" <<EOFOVERRIDE
 services:
@@ -135,10 +148,30 @@ services:
 EOFOVERRIDE
     compose_image_override=$override
     if [ -f compose.yaml ]; then base_compose=compose.yaml; elif [ -f compose.yml ]; then base_compose=compose.yml; elif [ -f docker-compose.yml ]; then base_compose=docker-compose.yml; else base_compose=docker-compose.yaml; fi
-    VPNKIT_IMAGE="$image" run_bounded $compose_bin -f "$base_compose" -f "$override" up -d --no-build "$service"
+    VPNKIT_IMAGE="$image" run_bounded $compose_bin -f "$base_compose" -f "$override" up -d --no-build "$service" || return $?
+    refresh_container || return $?
+  }
+  tag_candidate_image() {
+    local image=$1
+    local built_image refs ref
+    built_image=$(run_bounded $compose_bin images -q "$service" 2>/dev/null | awk 'NR==1{print}' || true)
+    refs=""
+    [ -n "${built_image:-}" ] && refs="$refs $built_image sha256:$built_image"
+    [ -n "${project:-}" ] && refs="$refs ${project}-${service}:latest"
+    refs="$refs $(basename "$workdir")-${service}:latest ${service}:latest"
+    for ref in $refs; do
+      if docker image inspect "$ref" >/dev/null 2>&1; then
+        docker tag "$ref" "$image" || return $?
+        log "candidate_image_source=$ref"
+        return 0
+      fi
+    done
+    log candidate_image_tag=failed
+    return 43
   }
   write_metadata() {
-    dir=$1; mkdir -p "$dir"
+    local dir=$1
+    mkdir -p "$dir"
     printf '%s\n' "$deploy_id" >"$dir/deploy-id.txt"
     printf 'vpnkit:%s\n' "$deploy_id" >"$dir/candidate-image.txt"
     git rev-parse --verify HEAD >"$dir/git-ref.txt" 2>/dev/null || true
@@ -168,17 +201,16 @@ EOFOVERRIDE
   }
   activate_image() {
     image="vpnkit:$deploy_id"
-    run_bounded $compose_bin build "$service"
-    built_image=$(run_bounded $compose_bin images -q "$service" 2>/dev/null | awk 'NR==1{print}' || true)
-    if [ -n "${built_image:-}" ]; then docker tag "$built_image" "$image"; else docker tag "$container" "$image"; fi
+    run_bounded $compose_bin build "$service" || return $?
+    tag_candidate_image "$image" || return $?
     log "candidate_image=$image"
     if [ -L "$current_link" ] || [ -e "$current_link" ]; then ln -sfn "$(readlink -f "$current_link" 2>/dev/null || printf '%s' "$current_link")" "$previous_link" 2>/dev/null || true; fi
     ln -sfn "$release_root/$deploy_id" "$current_link" 2>/dev/null || true
-    compose_up_no_build_with_image "$image" "$release_root/$deploy_id/compose.image.override.yaml"
+    compose_up_no_build_with_image "$image" "$release_root/$deploy_id/compose.image.override.yaml" || return $?
     log "compose_image_override=$compose_image_override"
     log activation=no_build
   }
-  manual_recovery() { rb=$1; printf 'manual_recovery_command=ssh <host> "cd %s && VPNKIT_RECOVERY_BUNDLE=%s scripts/vpnkit/vpnkit-prod-deploy.sh __remote rollback \"\" \"\" %s"\n' "$workdir" "$rb" "$rb"; }
+  manual_recovery() { local rb=$1; printf 'manual_recovery_command=ssh <host> "cd %s && VPNKIT_RECOVERY_BUNDLE=%s scripts/vpnkit/vpnkit-prod-deploy.sh __remote rollback \"\" \"\" %s"\n' "$workdir" "$rb" "$rb"; }
   rollback_to() {
     if [ -n "$rollback_id" ]; then rb="$rollback_id"; else rb=$(find "$release_root" -path '*/rollback' -type d 2>/dev/null | sort | tail -1); fi
     [ -n "${rb:-}" ] || { log rollback_bundle=missing; return 50; }
@@ -192,7 +224,7 @@ EOFOVERRIDE
     prior_release=$(cat "$rb/previous-release-target.txt" 2>/dev/null || true)
     if [ -n "$prior_release" ]; then ln -sfn "$prior_release" "$current_link" 2>/dev/null || true; else log previous_release_target=missing; fi
     ln -sfn "$failed_release" "$previous_link" 2>/dev/null || true
-    compose_up_no_build_with_image "$prev_image" "$rb/rollback.compose.image.override.yaml"
+    compose_up_no_build_with_image "$prev_image" "$rb/rollback.compose.image.override.yaml" || { log rollback_activation=failed; manual_recovery "$rb"; return 60; }
     log "compose_image_override=$compose_image_override"
     log rollback_activation=no_build
     new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}')
@@ -253,7 +285,7 @@ for host in "${hosts[@]}"; do
 mode=$mode host=<host> target_ref=$target_ref deploy_id=$deploy_id
 remote_discovery=labels_or_overrides
 mutation=none
-steps=discover,resolve-git-ref,release-dir:/opt/vpnkit/releases/$deploy_id,rollback-metadata,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure
+steps=discover,resolve-git-ref,release-dir:<remote-workdir>/.releases/vpnkit/$deploy_id,rollback-metadata,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure
 EOFPLAN
     continue
   fi

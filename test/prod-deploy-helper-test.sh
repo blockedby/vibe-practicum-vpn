@@ -15,7 +15,7 @@ check_fail "$script" plan --source-mode archive --target-ref main example.invali
 assert_grep "unsupported option: --source-mode"
 check_ok "$script" plan --target-ref main --deploy-id custom-id example.invalid
 assert_grep 'deploy_id=custom-id'
-assert_grep 'release-dir:/opt/vpnkit/releases/custom-id'
+assert_grep 'release-dir:<remote-workdir>/.releases/vpnkit/custom-id'
 assert_grep 'build-tag:vpnkit:custom-id'
 assert_grep 'activate-no-build'
 assert_not_grep 'source-before\.tar|source_update=archive|git archive|scp '
