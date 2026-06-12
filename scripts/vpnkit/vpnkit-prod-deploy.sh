@@ -130,6 +130,8 @@ if [[ "${1:-}" == "__remote" ]]; then
 services:
   $service:
     image: $image
+    environment:
+      VPNKIT_ROUTING_MODE: tun
 EOFOVERRIDE
     compose_image_override=$override
     if [ -f compose.yaml ]; then base_compose=compose.yaml; elif [ -f compose.yml ]; then base_compose=compose.yml; elif [ -f docker-compose.yml ]; then base_compose=docker-compose.yml; else base_compose=docker-compose.yaml; fi
@@ -142,6 +144,7 @@ EOFOVERRIDE
     git rev-parse --verify HEAD >"$dir/git-ref.txt" 2>/dev/null || true
     docker inspect "$container" --format "{{.Config.Image}}" >"$dir/previous-image.txt" 2>/dev/null || true
     docker inspect "$container" --format "{{.Image}}" >"$dir/previous-image-id.txt" 2>/dev/null || true
+    if [ -L "$current_link" ] || [ -e "$current_link" ]; then readlink -f "$current_link" >"$dir/previous-release-target.txt" 2>/dev/null || printf '%s\n' "$current_link" >"$dir/previous-release-target.txt"; else : >"$dir/previous-release-target.txt"; fi
     docker exec "$container" sh -lc 'printenv VPNKIT_ROUTING_MODE 2>/dev/null || true' >"$dir/previous-routing-mode.txt" 2>/dev/null || true
     docker inspect "$container" >"$dir/container-inspect.json" 2>/dev/null || true
     docker cp "$container:/var/lib/vpnkit/sing-box/config.json" "$dir/previous-sing-box-config.json" >/dev/null 2>&1 || true
@@ -185,7 +188,10 @@ EOFOVERRIDE
     [ -f "$rb/previous-sing-box-config.json" ] && docker cp "$rb/previous-sing-box-config.json" "$container:/var/lib/vpnkit/sing-box/config.json" || true
     prev_mode=$(cat "$rb/previous-routing-mode.txt" 2>/dev/null || true)
     [ "$prev_mode" = tun ] || { log previous_routing_mode=${prev_mode:-missing}; return 52; }
-    ln -sfn "$(dirname "$rb")" "$previous_link" 2>/dev/null || true
+    failed_release=$(dirname "$rb")
+    prior_release=$(cat "$rb/previous-release-target.txt" 2>/dev/null || true)
+    if [ -n "$prior_release" ]; then ln -sfn "$prior_release" "$current_link" 2>/dev/null || true; else log previous_release_target=missing; fi
+    ln -sfn "$failed_release" "$previous_link" 2>/dev/null || true
     compose_up_no_build_with_image "$prev_image" "$rb/rollback.compose.image.override.yaml"
     log "compose_image_override=$compose_image_override"
     log rollback_activation=no_build

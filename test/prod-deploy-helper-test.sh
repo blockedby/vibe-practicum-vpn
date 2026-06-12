@@ -38,6 +38,8 @@ trap 'rm -rf "$mock_root"' EXIT
 fakebin=$mock_root/bin
 remote_root=$mock_root/remote
 mkdir -p "$fakebin" "$remote_root/bin" "$remote_root/workdir" "$remote_root/releases" "$remote_root/links"
+mkdir -p "$remote_root/releases/prior-release"
+ln -sfn "$remote_root/releases/prior-release" "$remote_root/links/current"
 cat >"$remote_root/workdir/compose.yaml" <<'YAML'
 services:
   vpnkit:
@@ -174,8 +176,8 @@ assert_not_grep 'token=mock-secret-output'
 check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_ROUTING_MODE=redirect "$script" verify host-a
 assert_grep 'routing_mode=redirect'
 
-check_ok "${mock_env[@]}" "$script" deploy --yes --target-ref main --deploy-id 20260613T010203Z-deadbeef host-a host-b
-if [[ $(grep -c 'mock_ssh_host=' /tmp/vpnkit-prod-deploy-test.out) -ne 2 ]]; then echo "mock deploy did not sequence two hosts"; fail=1; fi
+check_ok "${mock_env[@]}" "$script" deploy --yes --target-ref main --deploy-id 20260613T010203Z-deadbeef host-a
+if [[ $(grep -c 'mock_ssh_host=' /tmp/vpnkit-prod-deploy-test.out) -ne 1 ]]; then echo "mock deploy did not execute host once"; fail=1; fi
 assert_grep 'source_transfer_arg=absent'
 assert_grep 'source_update=git resolved_ref=abc123resolved'
 assert_grep 'release_dir=.*/releases/20260613T010203Z-deadbeef'
@@ -188,12 +190,17 @@ assert_grep 'activation=no_build'
 assert_grep 'persisted_singbox_check=ok'
 assert_grep 'deploy=ok'
 bundle="$remote_root/releases/20260613T010203Z-deadbeef/rollback"
-for artifact in deploy-id.txt candidate-image.txt git-ref.txt previous-image.txt previous-image-id.txt previous-routing-mode.txt container-inspect.json previous-sing-box-config.json compose-files.txt env-references.txt; do
+for artifact in deploy-id.txt candidate-image.txt git-ref.txt previous-image.txt previous-image-id.txt previous-release-target.txt previous-routing-mode.txt container-inspect.json previous-sing-box-config.json compose-files.txt env-references.txt; do
   if [[ ! -s "$bundle/$artifact" ]]; then echo "missing rollback artifact: $artifact"; fail=1; fi
 done
 assert_grep 'vpnkit:20260613T010203Z-deadbeef' "$bundle/candidate-image.txt"
 assert_grep 'vpnkit:previous' "$bundle/previous-image.txt"
+assert_grep '.*/releases/prior-release$' "$bundle/previous-release-target.txt"
 assert_grep '^tun$' "$bundle/previous-routing-mode.txt"
+if [[ "$(readlink -f "$remote_root/links/current")" != "$remote_root/releases/20260613T010203Z-deadbeef" ]]; then echo "current link not set to candidate release after deploy"; fail=1; fi
+if [[ "$(readlink -f "$remote_root/links/previous")" != "$remote_root/releases/prior-release" ]]; then echo "previous link not set to prior release after deploy"; fail=1; fi
+assert_grep 'image: vpnkit:20260613T010203Z-deadbeef' "$remote_root/releases/20260613T010203Z-deadbeef/compose.image.override.yaml"
+assert_grep 'VPNKIT_ROUTING_MODE: tun' "$remote_root/releases/20260613T010203Z-deadbeef/compose.image.override.yaml"
 assert_not_grep 'secret|token=|password=|PRIVATE|BEGIN ' "$bundle/env-references.txt"
 
 check_ok "${mock_env[@]}" "$script" rollback --yes --rollback-id "$bundle" host-a
@@ -202,6 +209,10 @@ assert_grep 'compose_up=.*-f .*/rollback.compose.image.override.yaml up -d --no-
 assert_grep 'compose_image_override=.*/rollback.compose.image.override.yaml'
 assert_grep 'rollback_activation=no_build'
 assert_grep 'rollback=ok'
+if [[ "$(readlink -f "$remote_root/links/current")" != "$remote_root/releases/prior-release" ]]; then echo "current link not restored to prior release after rollback"; fail=1; fi
+if [[ "$(readlink -f "$remote_root/links/previous")" != "$remote_root/releases/20260613T010203Z-deadbeef" ]]; then echo "previous link not set to failed release after rollback"; fail=1; fi
+assert_grep 'image: vpnkit:previous' "$bundle/rollback.compose.image.override.yaml"
+assert_grep 'VPNKIT_ROUTING_MODE: tun' "$bundle/rollback.compose.image.override.yaml"
 assert_not_grep 'compose_build'
 
 check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_ROLLBACK_SMOKE_FAIL=1 "$script" rollback --yes --rollback-id "$bundle" host-a

@@ -240,3 +240,55 @@ Task 4 status: ready for implementation dispatch.
 - R-04 fixed: deploy ID validation rejects `/` separately from target ref / rollback path validation.
 - Verification evidence: `verification/prod-deploy-redesign-local.md` records PASS for syntax check, helper test, `git diff --check`, source-transfer grep, and public-safety grep.
 - No live production deploy/rollback/verify was run.
+
+2026-06-13 root audit follow-up blocker pass:
+- Mission: close strict user-requested audit partials for release-pointer rollback and explicit TUN mode restoration in production deploy helper redesign, using local/static/mocked evidence only.
+- Scope: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, task-package verification/report/plan artifacts. No docs unless behavior text needs correction.
+- Do-not-touch: no live production mutation or real SSH endpoints, no private env reads/prints, no generated profiles/configs/logs/images, no archive/scp/source-mode behavior.
+- Reuse discovery: current helper already writes rollback metadata, release/current/previous symlinks, Compose image override, TUN pair check, and tests via fake ssh/timeout/docker/git.
+- Missing pieces: rollback metadata must record pre-deploy current release target; deploy must set current to candidate and previous to prior target consistently; rollback must restore current to prior target while preserving failed/current release as previous; Compose override must explicitly enforce `VPNKIT_ROUTING_MODE: tun` for activation and rollback; tests must directly inspect symlinks and override contents.
+
+### Task 5: Strict audit closure for release pointer and TUN mode rollback
+Goal:
+- Make rollback restore the previous release pointer and explicitly enforce TUN mode in activation/rollback Compose override, with mocked tests proving both.
+
+Boundary:
+- System area: shell deploy helper and shell tests.
+- Primary verification: syntax check, helper tests, `git diff --check`, source-transfer grep, public-safety grep.
+
+Existing pattern / reuse:
+- Reuse current `write_metadata()`, `activate_image()`, `rollback_to()`, `compose_up_no_build_with_image()`, and mock test harness.
+
+Missing change:
+- Add `previous-release-target.txt` (or equivalent) in rollback metadata.
+- During deploy activation, set `previous` to the prior `current` target and `current` to the candidate release.
+- During rollback, set `current` to the metadata prior release target and `previous` to the failed/current release target where available.
+- Generated Compose image override must include an environment entry enforcing `VPNKIT_ROUTING_MODE=tun`; rollback override must do the same.
+
+Acceptance criteria:
+- Tests prove `current`/`previous` link values after deploy and after rollback.
+- Tests prove deploy and rollback override files include selected image and `VPNKIT_ROUTING_MODE: tun` (or equivalent enforced env).
+- Prior redesign tests continue to pass; no archive/scp/source-mode behavior is reintroduced.
+
+Evidence route:
+- `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`
+- `test/prod-deploy-helper-test.sh`
+- `git diff --check`
+- source-transfer grep and public-safety grep.
+
+Dependencies:
+- Depends on: Task 4 redesign blocker fixes.
+- Blocks: final strict audit closure report.
+- Can run parallel with: none.
+
+Executor:
+- aad-implementer
+
+Task 5 status: ready for implementation dispatch.
+
+2026-06-13 root audit follow-up strict closure completion update:
+- Task 5 status: done.
+- R-01 fixed: rollback metadata records `previous-release-target.txt`; deploy sets `current` to candidate release and `previous` to prior current; rollback restores `current` to the prior release and `previous` to the failed release. Mocked tests directly assert these symlink targets.
+- R-02 fixed: generated deploy and rollback Compose image overrides explicitly include `VPNKIT_ROUTING_MODE: tun`; mocked tests inspect both override files.
+- Verification evidence: `verification/prod-deploy-redesign-local.md` records PASS for syntax check, helper test, `git diff --check`, source-transfer grep, and public-safety grep.
+- Prior audit partials for release-pointer rollback and explicit mode restore are closed under local/static/mocked evidence. Live production/CI evidence remains out of scope unless separately authorized/requested.

@@ -1,40 +1,38 @@
 # Production deploy redesign local verification
 
-Date: 2026-06-13
-Worktree: `/home/kcnc/code/tools/vibe-practicum-vpn/.worktrees/issue-24-smart-routing-manifest`
-Branch: `feat/issue-24-smart-routing-manifest`
+Updated: 2026-06-13 strict audit follow-up pass.
 
-No live production SSH/deploy/rollback/verify was performed. All runtime evidence is local/static or mocked remote execution.
+Scope: local/static/mocked checks only. No live production mutation, no real SSH endpoints, no private endpoint values, no generated profiles/configs/logs/images.
 
-## Commands
+## Fresh required checks
 
 - `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`
   - Result: PASS
 - `test/prod-deploy-helper-test.sh`
-  - Result: PASS (no output)
+  - Result: PASS
+  - Evidence: mocked ssh/timeout/docker/git paths cover plan/refusal/redaction, verify TUN smoke, deploy release/image override activation, rollback no-build activation, rollback-smoke manual recovery, TUN-pair deploy failure auto-rollback, strict current/previous symlink behavior, and override content with `VPNKIT_ROUTING_MODE: tun`.
 - `git diff --check`
   - Result: PASS
-- `! grep -RInE 'source_update=archive|source-before\.tar|git archive|scp ' scripts/vpnkit/vpnkit-prod-deploy.sh README.md`
-  - Result: PASS; no forbidden helper/docs source-transfer strings found.
-  - Note: test/plan/report files contain intentional negative assertions/wording for removed source-mode/archive/scp behavior.
-- Public-safety grep over changed tracked files:
-  - Command: `git diff -- scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh README.md docs/plans/2026-06-10-prod-docker-deploy-rollback-tooling | grep '^+' | grep -Ev '^\+\+\+|assert_|grep|public-safety|secret-like|token=mock-secret-output' | grep -E '([0-9]{1,3}\.){3}[0-9]{1,3}|(password|passwd|token|secret|private[_-]?key)[=:][^<[:space:]]|BEGIN (RSA|OPENSSH|PRIVATE)' || true`
-  - Result: PASS; no suspicious added secret/private endpoint material outside intentional mock/negative-test assertions.
+- source-transfer grep
+  - Command: `! grep -RInE 'source_update=archive|source-before\.tar|git archive|scp ' scripts/vpnkit/vpnkit-prod-deploy.sh README.md`
+  - Result: PASS
+  - Note: tests/task-package docs may contain intentional negative assertions/history for removed source-mode/archive/scp behavior.
+- public-safety grep
+  - Command: `git diff -- scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh README.md docs/plans/2026-06-10-prod-docker-deploy-rollback-tooling | grep '^+' | grep -Ev '^\+\+\+|assert_|grep|public-safety|source-transfer|token=mock-secret-output|secret\|token' | (! grep -E 'BEGIN (RSA|OPENSSH|PRIVATE)|PRIVATE KEY|client\.ovpn|vless://|trojan://|ss://|vmess://|password=[^<]|token=[^<]|([0-9]{1,3}\.){3}[0-9]{1,3}')`
+  - Result: PASS
+  - Note: excludes documented grep command lines and intentional test redaction sentinels; no private material was found in added content.
 
-## Follow-up blocker evidence map
+## Strict audit partial closure evidence
 
-- Default deploy_id uses resolved target ref: covered by `plan --target-ref HEAD` expecting current short SHA and `plan --target-ref HEAD~1` expecting the prior commit short SHA when available. Override remains covered by `--deploy-id custom-id`.
-- Deploy_id path safety: covered by `plan --target-ref main --deploy-id nested/id` failing with `deploy id contains unsupported characters`; target refs retain separate ref validation and rollback paths remain separate via `--rollback-id` tests.
-- Actual image-tag activation: mocked deploy now proves `docker tag=sha256:candidatebuild vpnkit:<deploy-id>` and Compose activation uses a generated image override with `up -d --no-build`.
-- Rollback no-build by image tag: mocked rollback proves a generated rollback image override and `up -d --no-build`, with no `compose_build` during rollback.
-- Auto-rollback on TUN config/mode failure: forced `require_tun_pair` failure now returns nonzero explicitly and mocked deploy proves `deploy_activation_or_config=failed`, `rollback_start=...`, and `rollback_activation=no_build`.
+- Release-pointer rollback:
+  - Code: `write_metadata()` writes `previous-release-target.txt` before activation; `activate_image()` sets `previous` to the pre-deploy `current` target and `current` to `/opt/vpnkit/releases/<deploy-id>`; `rollback_to()` restores `current` from `previous-release-target.txt` and sets `previous` to the failed release dir.
+  - Test: `test/prod-deploy-helper-test.sh` creates a mocked prior release/current symlink, asserts metadata records it, asserts deploy `current`/`previous` values, runs rollback, then asserts rollback `current` is restored to the prior release and `previous` points at the failed release.
+  - Result: PASS; prior AC4 release-pointer limitation closed for mocked/local evidence.
+- Explicit TUN mode restore/enforcement:
+  - Code: generated Compose image override now includes `environment: VPNKIT_ROUTING_MODE: tun` for both deploy activation and rollback activation.
+  - Test: `test/prod-deploy-helper-test.sh` inspects both deploy and rollback override files for selected image and `VPNKIT_ROUTING_MODE: tun`.
+  - Result: PASS; prior AC5 explicit mode-restore limitation closed for mocked/local evidence.
 
-## Existing acceptance evidence map
+## Remaining limitation
 
-- Git-only CLI/deploy-id: covered by plan output tests for default and `--deploy-id`, and source-mode refusal.
-- Non-mutating plan/dry-run: covered by `mutation=none` plan/dry-run assertions.
-- Release/image deploy flow: covered by mocked deploy assertions for release dir, resolved git ref, `vpnkit:<deploy-id>`, build/tag, no-build activation, tun config check, and two-host sequencing.
-- Rollback no-build flow: covered by mocked rollback assertions for previous image/config/mode metadata, `rollback_activation=no_build`, and absence of build during rollback.
-- Tun-required smoke: covered by verify PASS with tun outputs and verify FAIL when mocked mode is `redirect`.
-- Manual recovery command: covered by forced rollback-smoke failure assertion.
-- No live mutation: commands used only local static checks and mocked ssh/timeout/docker/git paths.
+- Live production deploy/rollback/verify and CI/push evidence remain outside this bounded follow-up unless separately authorized/requested.
