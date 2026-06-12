@@ -129,6 +129,20 @@ if [[ "${1:-}" == "__remote" ]]; then
       if command -v ss >/dev/null 2>&1; then ss -lunp | grep -q ":1194" && echo udp_1194_listener=ok || { echo udp_1194_listener=missing; exit 40; }; fi
     '
   }
+  smoke_with_retries() {
+    local cid=${1:-$container}
+    local attempts=${VPNKIT_PROD_SMOKE_ATTEMPTS:-6}
+    local delay=${VPNKIT_PROD_SMOKE_DELAY:-5}
+    local n=1
+    while [ "$n" -le "$attempts" ]; do
+      log "smoke_attempt=$n/$attempts"
+      if smoke "$cid"; then return 0; fi
+      [ "$n" -lt "$attempts" ] || break
+      sleep "$delay"
+      n=$((n + 1))
+    done
+    return 1
+  }
   refresh_container() {
     new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}')
     [ -n "${new_container:-}" ] || { log container_after=missing; return 44; }
@@ -229,11 +243,11 @@ EOFOVERRIDE
     log rollback_activation=no_build
     new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}')
     [ -n "${new_container:-}" ] || new_container=$container
-    if smoke "$new_container"; then log rollback=ok; else log rollback_smoke=failed; manual_recovery "$rb"; return 61; fi
+    if smoke_with_retries "$new_container"; then log rollback=ok; else log rollback_smoke=failed; manual_recovery "$rb"; return 61; fi
   }
   plan() { discover; log "plan=deploy target_ref=$target_ref deploy_id=$deploy_id"; log "steps=discover,resolve-git-ref,release-dir:$release_root/$deploy_id,rollback-metadata,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure"; }
   verify() { discover; smoke "$container"; }
-  deploy() { discover; create_release; if activate_image && require_tun_pair; then new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}'); [ -n "${new_container:-}" ] || new_container=$container; if smoke "$new_container"; then log deploy=ok; return 0; else log deploy_smoke=failed; fi; else log deploy_activation_or_config=failed; fi; rollback_to || true; exit 61; }
+  deploy() { discover; create_release; if activate_image && require_tun_pair; then new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}'); [ -n "${new_container:-}" ] || new_container=$container; if smoke_with_retries "$new_container"; then log deploy=ok; return 0; else log deploy_smoke=failed; fi; else log deploy_activation_or_config=failed; fi; rollback_to || true; exit 61; }
   case "$mode" in plan|dry-run) plan ;; verify) verify ;; deploy) deploy ;; rollback) discover; rollback_to ;; *) die "unsupported remote mode: $mode" ;; esac
   exit 0
 fi
