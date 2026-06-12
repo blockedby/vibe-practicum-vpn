@@ -110,6 +110,14 @@ func newRootCommand() *cobra.Command {
 	cur.Flags().Bool("link", false, "print only current VLESS link")
 	root.AddCommand(cur)
 	root.AddCommand(&cobra.Command{Use: "rollback", Short: "Rollback configured production runtime config to latest backup", RunE: func(cmd *cobra.Command, args []string) error { return cmdRollback(o) }})
+	syncSingBox := &cobra.Command{Use: "sync-sing-box-config", Short: "Refresh runtime sing-box config from source while preserving selected outbound", Hidden: true, RunE: func(cmd *cobra.Command, args []string) error {
+		source, _ := cmd.Flags().GetString("source")
+		runtime, _ := cmd.Flags().GetString("runtime")
+		return singbox.SyncFromSourcePreserveSelected(source, runtime)
+	}}
+	syncSingBox.Flags().String("source", "/etc/sing-box/config.json", "rendered source sing-box config")
+	syncSingBox.Flags().String("runtime", "/var/lib/vpnkit/sing-box/config.json", "persisted runtime sing-box config")
+	root.AddCommand(syncSingBox)
 	root.AddCommand(&cobra.Command{Use: "refresh", Short: "Fetch subscription and print summary", RunE: func(cmd *cobra.Command, args []string) error { return cmdRefresh(o) }})
 	root.AddCommand(&cobra.Command{Use: "doctor", Short: "Run local configuration and safety checks", RunE: func(cmd *cobra.Command, args []string) error { return cmdDoctor(o) }})
 	logs := &cobra.Command{Use: "logs", Short: "Show vibe-vpn state summary", RunE: func(cmd *cobra.Command, args []string) error {
