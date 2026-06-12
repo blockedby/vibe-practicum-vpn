@@ -227,7 +227,7 @@ Compose labels. Approved overrides for unusual hosts are
 across hosts and stops on the first failed host after attempting rollback. Source
 updates are git-only: deploy resolves the requested ref on the remote host,
 creates `/opt/vpnkit/releases/<deploy-id>` (default deploy id is UTC timestamp +
-resolved local short SHA, or pass `--deploy-id`), records rollback metadata,
+resolved target-ref short SHA, or pass `--deploy-id`), records rollback metadata,
 builds/tags the candidate as `vpnkit:<deploy-id>`, and activates the service with
 that image tag without a second build where Compose supports it. The helper also
 maintains `current`/`previous` release pointers where permissions allow.
