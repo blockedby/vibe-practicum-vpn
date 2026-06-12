@@ -224,14 +224,18 @@ The helper discovers the live Compose workdir/service/container from Docker
 Compose labels. Approved overrides for unusual hosts are
 `VPNKIT_PROD_WORKDIR`, `VPNKIT_PROD_SERVICE`, `VPNKIT_PROD_CONTAINER`, and
 `VPNKIT_PROD_PROJECT`; keep their real values local-only. Deploy is sequential
-across hosts and stops on the first failed host after attempting rollback. The
-remote flow is: create `.rollback/vpnkit/<timestamp>/`, fetch/checkout the target
-ref from the discovered git workdir (non-git workdirs fail rather than receiving
-an uploaded source archive), render/check and refresh persisted sing-box config,
-rebuild/recreate only
-the `vpnkit` service, smoke the runtime, auto-rollback on failed smoke, and smoke
-after rollback. Smoke checks are bounded and cover container state, UDP 1194,
-OpenVPN/`tun0`, sing-box, `sb-tun0` policy routing for `tun` mode, and
-`sing-box check` when available. Output is redacted; do not paste raw secret
-files, rendered configs, profiles, logs, image exports, or private endpoint
-values into tracked docs.
+across hosts and stops on the first failed host after attempting rollback. Source
+updates are git-only: deploy resolves the requested ref on the remote host,
+creates `/opt/vpnkit/releases/<deploy-id>` (default deploy id is UTC timestamp +
+resolved local short SHA, or pass `--deploy-id`), records rollback metadata,
+builds/tags the candidate as `vpnkit:<deploy-id>`, and activates the service with
+that image tag without a second build where Compose supports it. The helper also
+maintains `current`/`previous` release pointers where permissions allow.
+Rollback restores the previous image tag plus the paired persisted sing-box
+config and `VPNKIT_ROUTING_MODE=tun` metadata, then re-activates without build;
+if rollback smoke fails it prints a bounded manual recovery command. Smoke checks
+are bounded and require full-tunnel mode: `VPNKIT_ROUTING_MODE=tun`, container
+state, UDP 1194, OpenVPN/`tun0`, sing-box config check, `sb-tun0`, policy rule,
+and route table. Output is redacted; do not paste raw secret files, rendered
+configs, profiles, logs, image exports, or private endpoint values into tracked
+docs. No live production mutation was performed while documenting this tooling.

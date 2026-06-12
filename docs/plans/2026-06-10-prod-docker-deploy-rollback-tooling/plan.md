@@ -127,3 +127,60 @@ Task 2 status: ready for implementation dispatch.
 ## Root integration status
 
 Final status: done for repo-safe tooling. Slice implementation and audit-gap fix reports are integrated. Final audit (`reports/acceptance-auditor-final.md`) accepts AC1-AC9 for tooling-only readiness. Live production deployment remains out of scope pending explicit operator approval and private endpoint env.
+
+2026-06-13 prod-deploy-redesign update:
+- Mission: redesign existing production deploy helper to be git-only with deploy-id release/image-tag activation and no archive/scp source mode, without live production mutation.
+- Scope: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, README/docs/config examples as needed, and this task package only.
+- Do-not-touch: no live production deploy/rollback/verify, no private endpoint reads/prints, no generated secrets/profiles/logs/images, preserve unrelated worktree/index changes.
+- Reuse discovery: existing helper/test patterns already cover safe subcommands, remote discovery, mock ssh/timeout remote execution, redaction, refusal without `--yes`, sequential hosts, rollback bundles, and README tooling-only docs. Repo guidance requires git-only production helper, tun full-tunnel acceptance, and local/mocked verification.
+- Missing pieces: remove source-mode/archive/scp behavior; deploy-id default/override; `/opt/vpnkit/releases/<deploy-id>` plus current/previous symlinks where feasible; candidate image `vpnkit:<deploy-id>`; activation and rollback by image tag without rebuild on rollback; persisted sing-box config + `VPNKIT_ROUTING_MODE` pair backup/restore; tun mode required smoke; exact manual recovery command on rollback-smoke failure; more readable `__remote` self-transfer/subcommand structure if practical; matching tests/docs.
+
+### Task 3: Production deploy helper redesign
+Goal:
+- Make the production deploy helper implement the requested git-only release/image-tag deploy and no-build rollback design, with focused tests/docs and no live mutation.
+
+Boundary:
+- System area: shell deploy helper, shell tests, public README/docs/config examples.
+- Primary verification: syntax check, mocked helper tests, `git diff --check`, targeted no-archive/scp grep, public-safety grep.
+
+Existing pattern / reuse:
+- Reuse `scripts/vpnkit/vpnkit-prod-deploy.sh` subcommand/refusal/redaction/remote discovery and `test/prod-deploy-helper-test.sh` fake ssh/timeout patterns.
+- Prefer readable shell functions and local `__remote` subcommand/self-transfer over giant remote heredoc variables.
+
+Missing change:
+- Implement acceptance criteria from the 2026-06-13 routing context, including deploy-id, release layout, image tag activation, rollback metadata/config-mode restore, tun-required smoke, manual recovery command, and docs/tests.
+
+Acceptance criteria:
+- AC1-AC8 from the 2026-06-13 routing context are all covered by code, tests, or explicit tooling-only documentation.
+- No archive fallback or scp source-transfer behavior remains in helper/test/docs except intentional negative assertions/wording.
+- No live production mutation is performed.
+
+Evidence route:
+- Existing automated checks: `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`; `test/prod-deploy-helper-test.sh`; `git diff --check`.
+- Add/extend tests: mocked remote execution should cover refusal/safety, no archive/scp behavior, deploy_id generation/override, release/image tag metadata, no-build rollback, tun smoke requirement, and manual recovery command output.
+- Bounded acceptance probe: local shell/mock-only tests and greps; no real SSH endpoint.
+- Access/runtime needed: local shell only.
+- Outcome boundary: PASS proves public-safe helper behavior and command construction under mocks; does not prove live production readiness.
+
+Test plan:
+- Positive: plan/dry-run text describes release/image rollback flow; deploy with override/default deploy ID creates release/image metadata; rollback uses previous image/release/config/mode and does not build; verify/smoke requires tun mode and checks sing-box config, sb-tun0, policy rule, route.
+- Negative: mutating commands refuse without `--yes`; source-mode/archive option refused/absent; no scp source transfer; rollback smoke failure prints exact manual recovery command.
+- Edge cases: missing private endpoint env is not required for local tests; secret-like output redacted; host names redacted in output.
+- Manual: no live production action by scope.
+
+Dependencies:
+- Depends on: prior helper implementation in this branch.
+- Blocks: final slice report and verification artifact.
+- Can run parallel with: none (single-writer shell helper/test redesign).
+
+Executor:
+- aad-implementer
+
+Task 3 status: done.
+
+2026-06-13 prod-deploy-redesign completion update:
+- Subagent dispatch attempted but blocked by nested subagent depth; slice owner implemented the bounded shell/test/docs redesign directly in the current worktree.
+- Changed files: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, `README.md`, task-package report/verification artifacts.
+- Evidence: `verification/prod-deploy-redesign-local.md` records PASS for syntax check, helper test, `git diff --check`, forbidden source-transfer grep, and public-safety grep.
+- No live production deploy/rollback/verify was run.
+- Report: `reports/slice-owner-prod-deploy-redesign.md`.
