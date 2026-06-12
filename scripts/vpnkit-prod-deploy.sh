@@ -79,6 +79,7 @@ remote_script='set -euo pipefail
 mode=$1
 target_ref=${2:-}
 rollback_id=${3:-}
+source_archive=${4:-}
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 timeout_cmd=${VPNKIT_PROD_REMOTE_TIMEOUT_BIN:-timeout}
 run_timeout=${VPNKIT_PROD_REMOTE_INNER_TIMEOUT:-600}
@@ -162,6 +163,7 @@ make_bundle() {
   docker inspect "$container" --format "{{.Image}}" >"$rollback_dir/image-id.txt" 2>/dev/null || true
   docker inspect "$container" >"$rollback_dir/container-inspect.json" 2>/dev/null || true
   docker cp "$container:/var/lib/vpnkit/sing-box/config.json" "$rollback_dir/sing-box-config.json" >/dev/null 2>&1 || true
+  tar -cf "$rollback_dir/source-before.tar" --exclude=.git --exclude=.rollback --exclude=secrets --exclude=logs --exclude=generated . >/dev/null 2>&1 || true
   : >"$rollback_dir/compose-files.txt"
   for compose_file in compose.yaml compose.yml docker-compose.yml docker-compose.yaml; do
     [ -f "$compose_file" ] && printf "%s\n" "$compose_file" >>"$rollback_dir/compose-files.txt"
@@ -185,7 +187,8 @@ set -euo pipefail
 bundle_dir=\$(cd "\$(dirname "\$0")" && pwd)
 cd "$workdir"
 ref=\$(cat "\$bundle_dir/git-ref.txt" 2>/dev/null || true)
-[ -n "\$ref" ] && git checkout --detach "\$ref"
+if [ -n "\$ref" ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then git checkout --detach "\$ref" || true; fi
+[ -f "\$bundle_dir/source-before.tar" ] && tar -xf "\$bundle_dir/source-before.tar" -C . || true
 [ -f "\$bundle_dir/sing-box-config.json" ] && docker cp "\$bundle_dir/sing-box-config.json" "$container:/var/lib/vpnkit/sing-box/config.json" || true
 if docker compose version >/dev/null 2>&1; then docker compose up -d --build "$service"; else docker-compose up -d --build "$service"; fi
 ROLLBACK
@@ -212,14 +215,26 @@ rollback_to() {
 plan() {
   discover
   log "plan=deploy target_ref=$target_ref"
-  log "steps=rollback-bundle,git-fetch-checkout,render-persisted-singbox-check,compose-up-vpnkit-only,smoke,auto-rollback-on-failure,post-rollback-smoke"
+  log "steps=rollback-bundle,source-update-git-or-archive,render-persisted-singbox-check,compose-up-vpnkit-only,smoke,auto-rollback-on-failure,post-rollback-smoke"
 }
 verify() { discover; smoke "$container"; }
+update_source() {
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    run_bounded git fetch --all --prune
+    run_bounded git checkout --detach "$target_ref"
+    log source_update=git
+  elif [ -n "${source_archive:-}" ] && [ -r "$source_archive" ]; then
+    tar -xf "$source_archive" -C "$workdir"
+    log source_update=archive
+  else
+    log source_update=failed
+    return 40
+  fi
+}
 deploy() {
   discover
   make_bundle
-  run_bounded git fetch --all --prune
-  run_bounded git checkout --detach "$target_ref"
+  if ! update_source; then rollback_to; exit 62; fi
   render_and_check
   run_bounded $compose_bin up -d --build "$service"
   sleep "${VPNKIT_PROD_POST_RECREATE_SLEEP:-5}"
@@ -237,8 +252,17 @@ esac
 
 run_remote() {
   local host=$1
+  local remote_archive=""
+  local tmp_archive=""
+  if [[ "$mode" == "deploy" ]]; then
+    tmp_archive=$(mktemp /tmp/vpnkit-prod-source.XXXXXX.tar)
+    git -C "$repo_root" archive --format=tar "$target_ref" >"$tmp_archive"
+    remote_archive="/tmp/vpnkit-prod-source-${target_ref//[^A-Za-z0-9._-]/_}.tar"
+    "$timeout_bin" "$remote_timeout" "$scp_cmd" -o BatchMode=yes -o ConnectTimeout="$ssh_timeout" "$tmp_archive" "$host:$remote_archive" >/dev/null 2>&1
+    rm -f "$tmp_archive"
+  fi
   "$timeout_bin" "$remote_timeout" "$ssh_cmd" -o BatchMode=yes -o ConnectTimeout="$ssh_timeout" "$host" \
-    "bash -s -- '$mode' '$target_ref' '$rollback_id'" <<<"$remote_script" 2>&1 | redact
+    "bash -s -- '$mode' '$target_ref' '$rollback_id' '$remote_archive'" <<<"$remote_script" 2>&1 | redact
 }
 
 for host in "${hosts[@]}"; do
