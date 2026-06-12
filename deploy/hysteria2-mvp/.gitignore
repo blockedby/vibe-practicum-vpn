@@ -1,5 +1,0 @@
-# Generated local client config and copied server secrets.
-client.yaml
-server.env
-*.crt
-*.key

@@ -1,6 +1,6 @@
 ## Task
 - Mission: Audit the sing-box DNS schema migration and production deployment for readiness.
-- Target: `config/sing-box/*.template`, `docker-compose.yml`, `scripts/vpnkit-prod-singbox-dns-migration.sh`, `scripts/vpnkit-steamdeck-podman.sh`, and the task package evidence under `docs/plans/2026-06-09-sing-box-dns-schema-migration/`.
+- Target: `config/sing-box/*.template`, `docker-compose.yml`, `scripts/vpnkit/vpnkit-prod-singbox-dns-migration.sh`, `scripts/deck/vpnkit-steamdeck-podman.sh`, and the task package evidence under `docs/plans/2026-06-09-sing-box-dns-schema-migration/`.
 - Boundaries: read-only audit; no implementation changes; no secret/private-endpoint disclosure.
 - Done when: the migration is either accepted, or the exact gap/limitation is explicit and traceable to evidence.
 - Expected evidence: local tests, production runtime verify, profile smoke, public-safety review, rollback refs, and any stated limitation around VPN-over-VPN nested diagnostics.
@@ -20,7 +20,7 @@
 ## Spec compliance
 - Requirement / AC: new DNS schema in tracked sing-box templates.
   - Status: done
-  - Evidence: `config/sing-box/config.json.template` and `config/sing-box/config.tun.json.template` now use `type`/`server` DNS entries instead of legacy `address: tls://...`; verified by `tests/sing-box-dns-schema-test.sh` and rendered-config checks.
+  - Evidence: `config/sing-box/config.json.template` and `config/sing-box/config.tun.json.template` now use `type`/`server` DNS entries instead of legacy `address: tls://...`; verified by `test/sing-box-dns-schema-test.sh` and rendered-config checks.
   - Gap if any: none.
 - Requirement / AC: explicit default domain resolver.
   - Status: done
@@ -28,11 +28,11 @@
   - Gap if any: none.
 - Requirement / AC: no deprecated DNS compatibility env reliance in tracked runtime wiring.
   - Status: done
-  - Evidence: `docker-compose.yml` no longer sets the deprecated DNS envs; `scripts/vpnkit-steamdeck-podman.sh` removed them; production verify reports `deprecated_env=absent` on both endpoints.
+  - Evidence: `docker-compose.yml` no longer sets the deprecated DNS envs; `scripts/deck/vpnkit-steamdeck-podman.sh` removed them; production verify reports `deprecated_env=absent` on both endpoints.
   - Gap if any: none.
 - Requirement / AC: local tests prove the config without deprecated DNS compatibility flags.
   - Status: done
-  - Evidence: `verification/local-final.md` shows `tests/sing-box-dns-schema-test.sh`, `tests/vpnkit-production-routing-wiring-test.sh`, `bash -n`, `go test ./...`, and `docker build` all passed; temp rendered-config checks also passed without deprecated DNS env.
+  - Evidence: `verification/local-final.md` shows `test/sing-box-dns-schema-test.sh`, `test/vpnkit-production-routing-wiring-test.sh`, `bash -n`, `go test ./...`, and `docker build` all passed; temp rendered-config checks also passed without deprecated DNS env.
   - Gap if any: none.
 - Requirement / AC: production runtime smoke on both failover endpoints.
   - Status: done
@@ -53,7 +53,7 @@
 
 ## Acceptance verification
 - AC1: new DNS schema in templates
-  - Covered by: `tests/sing-box-dns-schema-test.sh`, `tests/vpnkit-production-routing-wiring-test.sh`, template file inspection.
+  - Covered by: `test/sing-box-dns-schema-test.sh`, `test/vpnkit-production-routing-wiring-test.sh`, template file inspection.
   - Result: passed
   - Evidence: local-final and template contents.
 - AC2: default domain resolver present
@@ -61,7 +61,7 @@
   - Result: passed
   - Evidence: `route.default_domain_resolver` exists; production verify passes.
 - AC3: deprecated DNS env removed from runtime wiring
-  - Covered by: `docker-compose.yml`, `scripts/vpnkit-steamdeck-podman.sh`, production verify.
+  - Covered by: `docker-compose.yml`, `scripts/deck/vpnkit-steamdeck-podman.sh`, production verify.
   - Result: passed
   - Evidence: both runtime checks report `deprecated_env=absent`.
 - AC4: local tests
@@ -92,9 +92,9 @@
 
 ## Verification run
 - Local / targeted checks:
-  - `tests/sing-box-dns-schema-test.sh`: passed
-  - `tests/vpnkit-production-routing-wiring-test.sh`: passed
-  - `bash -n scripts/*.sh docker/vpnkit/*.sh tests/*.sh`: passed
+  - `test/sing-box-dns-schema-test.sh`: passed
+  - `test/vpnkit-production-routing-wiring-test.sh`: passed
+  - `bash -n scripts/*.sh docker/vpnkit/*.sh test/*.sh`: passed
   - `go test ./...`: passed
   - `docker build -q -t vpnkit-singbox-dns-migration:local -f docker/vpnkit/Dockerfile .`: passed
 - Local / full checks:

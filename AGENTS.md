@@ -17,7 +17,7 @@
 ## Container images and runtimes
 
 - Use the current Docker setup documentation in `docs/DOCKER_SETUP.md` for local validation.
-- Steam Deck deployment remains Podman-only when intentionally operating on a Deck, but tracked public docs must not include real Deck LAN endpoints.
+- Steam Deck server-host use is a test/lab environment, not production. Deck tests do not require the production approval gate, but Steam Deck deployment remains Podman-only when intentionally operating on a Deck, tracked public docs must not include real Deck LAN endpoints, and live Deck actions still require explicit bounded approval/context.
 - Docker/Podman images are build artifacts, not source artifacts. Do not commit generated image exports or logs.
 - For tests or experiments on a live host, start separate throwaway containers with distinct names, Compose project names, ports, networks, volumes, and state directories. Do **not** reuse, remove, recreate, restart, or adopt the production `vpnkit` container for tests.
 - Mutating the production `vpnkit` container is allowed only for an explicit deploy/rollback/maintenance action after operator approval, with a backup/rollback path and post-change smoke tests.
@@ -25,6 +25,14 @@
 ## Default testing workflow before live deploy
 
 For `vpnkit` runtime, routing, OpenVPN, sing-box, DNS, IPv6, or `vibe-vpn` daemon changes, do not deploy directly to any live host first. Use the local Docker lab and client-test container as the default acceptance path, then mutate a live runtime only after local evidence passes and private endpoint values are loaded from the gitignored local endpoint file.
+
+## Agent skills and workflow notes
+
+- Use `devops-runtime-readiness` for Docker/Compose, deployment, rollback, environment, startup, or runtime-wiring changes; record config/env/secrets, container, smoke, and rollback evidence in the existing task package/report.
+- Use `aad-verification`/acceptance evidence before saying work is ready. A subagent implementation report is not enough; run or cite fresh checks against the current branch state.
+- Use `aad-target-branch-preparation` before PR/merge finalization when aligning the feature branch with `main`.
+- Use `agent-pipeline-feedback` only for reusable workflow friction; do not make it a required done-state step.
+- For this repo, prefer extending the unified runner and existing scripts over creating parallel one-off test/deploy entrypoints.
 
 ## Production VPN topology and routing decisions
 
@@ -69,3 +77,12 @@ For `vpnkit` runtime, routing, OpenVPN, sing-box, DNS, IPv6, or `vibe-vpn` daemo
 - Missing inputs, unavailable SSH targets, absent profiles, missing endpoint values, or unavailable runtime tools should be reported as `SKIP` or a clear `FAIL` reason while the runner continues to later checks; do not make one missing prerequisite abort the whole run.
 - The runner must write redacted output to both console and a log file immediately. Default log path is `logs/vpnkit-containers-test-<timestamp>.log`; use `VPNKIT_CONTAINERS_TEST_LOG` to override.
 - For Deck tests, source `config/private-endpoints.local.env` when available, then run with `VPNKIT_TEST_SSH_TARGET`, `VPNKIT_TEST_RUNTIME=podman`, `VPNKIT_TEST_SERVER_CONTAINER`, `VPNKIT_TEST_ENDPOINT`, and `VPNKIT_TEST_PROFILE` as needed.
+- Current Steam Deck lab lifecycle is part of the unified runner: `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle`. It creates isolated test PKI/profiles/rendered configs under `secrets/vpnkit-labs/steamdeck-host/`, deploys only `vpnkit-test-steamdeck-host`, and includes nested OpenVPN acceptance rows as required deploy-readiness checks.
+- Smart routing proof remains repo-local in `test/sing-box-smart-routing-proof.py`; do not treat the runner's policy-visibility scaffold rows as production proof unless they are implemented as required PASS rows.
+
+## Production deploy/rollback helper
+
+- Use `scripts/vpnkit/vpnkit-prod-deploy.sh` for repeatable production Docker/Compose plan/deploy/verify/rollback flows. Do not create one-off production deploy scripts unless the helper cannot support the required operation.
+- Safe review commands are `plan`/`dry-run`; mutating `deploy` and `rollback` require `--yes` and explicit operator approval.
+- The helper must target both production failover endpoints for production rollout, create a remote rollback bundle, rebuild/recreate only the `vpnkit` service, run smoke, and auto-rollback on failed deploy smoke.
+- Real production host aliases and override values belong only in `config/private-endpoints.local.env` or the operator environment; tracked docs must use placeholders.

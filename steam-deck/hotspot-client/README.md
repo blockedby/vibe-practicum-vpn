@@ -141,7 +141,7 @@ Once `tun0` exists on the Deck host and `./scripts/test.sh` passes, continue wit
 the hotspot gateway scripts from the repo root:
 
 ```bash
-scripts/deck-hotspot-vpn-up.sh --ssh-target deck --dry-run
+scripts/deck/deck-hotspot-vpn-up.sh --ssh-target deck --dry-run
 ```
 
 Then review the dry-run report before using `--apply`.
