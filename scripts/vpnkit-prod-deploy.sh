@@ -86,6 +86,29 @@ compose_bin=""
 log() { printf "%s\n" "$*"; }
 run_bounded() { "$timeout_cmd" "$run_timeout" "$@"; }
 find_compose() { if docker compose version >/dev/null 2>&1; then compose_bin="docker compose"; elif command -v docker-compose >/dev/null 2>&1; then compose_bin="docker-compose"; else log compose=missing; return 20; fi; }
+docker_label() {
+  key=$1
+  value=$(docker inspect "$container" --format "{{index .Config.Labels \"$key\"}}" 2>/dev/null || true)
+  if [ "$value" != "<no value>" ]; then printf "%s\n" "$value"; fi
+}
+infer_workdir_from_mounts() {
+  docker inspect "$container" --format "{{range .Mounts}}{{println .Source \"->\" .Destination}}{{end}}" 2>/dev/null |
+  while read -r mount_src _arrow mount_dest; do
+    case "$mount_dest" in
+      /etc/openvpn|/etc/sing-box|/etc/vibe-vpn)
+        case "$mount_src" in
+          */secrets/vps/rendered/openvpn|*/secrets/vps/rendered/sing-box|*/secrets/vps/rendered/vibe-vpn)
+            root=${mount_src%/secrets/vps/rendered/*}
+            if [ -d "$root" ] && { [ -f "$root/docker-compose.yml" ] || [ -f "$root/docker-compose.yaml" ] || [ -f "$root/compose.yaml" ] || [ -f "$root/compose.yml" ]; }; then
+              printf "%s\n" "$root"
+              break
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  done
+}
 discover() {
   container=${VPNKIT_PROD_CONTAINER:-}
   if [ -z "${container:-}" ]; then
@@ -94,11 +117,16 @@ discover() {
   if [ -z "${container:-}" ]; then
     container=$(docker ps --filter name='^/vpnkit$' --format "{{.ID}}" | awk "NR==1{print}")
   fi
+  if [ -z "${container:-}" ]; then
+    container=$(docker ps --format "{{.ID}} {{.Names}}" | while read -r cid cname; do case "$cname" in *vpnkit*) printf "%s\n" "$cid"; break ;; esac; done)
+  fi
   [ -n "${container:-}" ] || { log container=missing; return 10; }
-  workdir=${VPNKIT_PROD_WORKDIR:-$(docker inspect "$container" --format "{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}" 2>/dev/null || true)}
-  service=${VPNKIT_PROD_SERVICE:-$(docker inspect "$container" --format "{{index .Config.Labels \"com.docker.compose.service\"}}" 2>/dev/null || true)}
-  project=${VPNKIT_PROD_PROJECT:-$(docker inspect "$container" --format "{{index .Config.Labels \"com.docker.compose.project\"}}" 2>/dev/null || true)}
+  workdir=${VPNKIT_PROD_WORKDIR:-$(docker_label com.docker.compose.project.working_dir)}
+  [ -n "${workdir:-}" ] || workdir=$(infer_workdir_from_mounts)
+  service=${VPNKIT_PROD_SERVICE:-$(docker_label com.docker.compose.service)}
+  project=${VPNKIT_PROD_PROJECT:-$(docker_label com.docker.compose.project)}
   [ -n "${workdir:-}" ] || { log workdir=missing; return 11; }
+  [ -d "$workdir" ] || { log workdir=not_directory; return 11; }
   [ -n "${service:-}" ] || service=vpnkit
   [ "$service" = vpnkit ] || { log service=unexpected; return 12; }
   cd "$workdir"
@@ -108,7 +136,7 @@ discover() {
 smoke() {
   cid=${1:-$container}
   docker inspect -f "{{.State.Running}}" "$cid" | grep -q true && log container_running=ok || { log container_running=fail; return 30; }
-  docker inspect "$cid" --format "udp_1194={{if (index .NetworkSettings.Ports \"1194/udp\")}}mapped{{else}}missing{{end}}" | grep -q mapped || { log udp_1194=mapping_missing; return 31; }
+  docker inspect "$cid" --format "{{json .NetworkSettings.Ports}}" | grep -q "\"1194/udp\"" && log udp_1194=mapped || { log udp_1194=mapping_missing; return 31; }
   docker exec "$cid" sh -lc '\''set -eu
     pgrep openvpn >/dev/null && echo openvpn=up || { echo openvpn=down; exit 32; }
     ip addr show tun0 >/dev/null 2>&1 && echo tun0=present || { echo tun0=missing; exit 33; }

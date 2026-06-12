@@ -91,6 +91,7 @@ case "$1" in
     if [[ "$*" == *'com.docker.compose.service'* ]]; then echo vpnkit; exit 0; fi
     if [[ "$*" == *'com.docker.compose.project'* ]]; then echo vpnkit-prod; exit 0; fi
     if [[ "$*" == *'{{.State.Running}}'* ]]; then echo true; exit 0; fi
+    if [[ "$*" == *'{{json .NetworkSettings.Ports}}'* ]]; then echo '{"1194/udp":[{"HostPort":"1194"}]}'; exit 0; fi
     if [[ "$*" == *'1194/udp'* ]]; then echo udp_1194=mapped; exit 0; fi
     echo '[{"mock":"inspect"}]'
     ;;
