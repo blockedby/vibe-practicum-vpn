@@ -14,7 +14,7 @@
   - Result: passed
   - Gap: none for tooling-only acceptance
 - AC2: deploy sequence is backup -> fetch/checkout -> config refresh/check -> rebuild/recreate vpnkit -> smoke -> auto-rollback on smoke failure -> post-rollback smoke
-  - Evidence present: code path in `scripts/vpnkit-prod-deploy.sh` (`make_bundle`, `deploy`, `rollback_to`, `smoke`)
+  - Evidence present: code path in `scripts/vpnkit/vpnkit-prod-deploy.sh` (`make_bundle`, `deploy`, `rollback_to`, `smoke`)
   - Result: passed
   - Gap: no live deploy execution, by scope
 - AC3: rollback bundles under `.rollback/vpnkit/<timestamp>/` include git ref, image metadata/tag/id where available, compose/env references, runtime sing-box config, container inspect metadata, and executable rollback payload
@@ -26,7 +26,7 @@
   - Result: passed
   - Gap: none
 - AC5: smoke checks cover container running, UDP 1194 published/listening, OpenVPN/tun0, sing-box/sb-tun0 for tun mode, policy rule/table, and `sing-box check` when available
-  - Evidence present: `smoke()` in `scripts/vpnkit-prod-deploy.sh`
+  - Evidence present: `smoke()` in `scripts/vpnkit/vpnkit-prod-deploy.sh`
   - Result: passed
   - Gap: runtime availability of `sing-box`/`ss` is assumed on the target host; no live host probe was run
 - AC6: multi-host deploy is sequential and stops on first host failure after rollback; no partial silent success
@@ -38,7 +38,7 @@
   - Result: passed
   - Gap: none
 - AC8: tests/checks cover shell syntax and safe argument/refusal/redaction behavior; mocked SSH/Docker/Compose tests are added where feasible
-  - Evidence present: `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`, `test/prod-deploy-helper-test.sh`, `git diff --check`
+  - Evidence present: `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`, `test/prod-deploy-helper-test.sh`, `git diff --check`
   - Result: partial
   - Gap: no mocked SSH/Docker/Compose path coverage; the current test file exercises refusal/redaction/env-host-list only
 - AC9: changes are committed and pushed to `feat/issue-24-smart-routing-manifest` if verification passes

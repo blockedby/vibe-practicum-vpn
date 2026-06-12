@@ -53,8 +53,8 @@ Boundary:
 
 Existing pattern / reuse:
 - `test/containers-test.sh` as unified runner.
-- `scripts/vpnkit-steamdeck-podman.sh` for Deck Podman sync/build/run/check/down behavior.
-- `scripts/vpnkit-render-local-configs.sh` plus tracked OpenVPN/sing-box templates/rule sets for production-like rendering.
+- `scripts/deck/vpnkit-steamdeck-podman.sh` for Deck Podman sync/build/run/check/down behavior.
+- `scripts/vpnkit/vpnkit-render-local-configs.sh` plus tracked OpenVPN/sing-box templates/rule sets for production-like rendering.
 - `config/private-endpoints.example.env` / `config/private-endpoints.local.env` public/private split.
 - Existing issue #24 manifest/profile docs and smart-routing proof.
 
@@ -68,8 +68,8 @@ Missing change:
 
 Likely files:
 - `test/containers-test.sh`
-- `scripts/vpnkit-steamdeck-podman.sh`
-- New or existing backend such as `scripts/vpnkit-test-lab-setup.sh` / `scripts/vpnkit-lab.sh`
+- `scripts/deck/vpnkit-steamdeck-podman.sh`
+- New or existing backend such as `scripts/vpnkit/vpnkit-test-lab-setup.sh` / `scripts/vpnkit-lab.sh`
 - `.gitignore`
 - `config/private-endpoints.example.env`
 - `README.md`, possibly `docs/DOCKER_SETUP.md`
@@ -114,7 +114,7 @@ Boundary:
 
 Existing pattern / reuse:
 - `test/containers-test.sh` result recording/redaction and lifecycle functions.
-- `scripts/vpnkit-steamdeck-podman.sh` deploy/cleanup behavior.
+- `scripts/deck/vpnkit-steamdeck-podman.sh` deploy/cleanup behavior.
 - `config/private-endpoints.example.env` / `config/private-endpoints.local.env` public/private split.
 
 Missing change:
@@ -151,7 +151,7 @@ Boundary:
 - Primary verification: static shell checks, smart-routing proof, and bounded live `down`/`up`/`test`/`cycle` sequence against the isolated lab.
 
 Existing pattern / reuse:
-- `scripts/vpnkit-steamdeck-podman.sh` already provides helper-level timeouts for remote, build, run, logs, and verify operations.
+- `scripts/deck/vpnkit-steamdeck-podman.sh` already provides helper-level timeouts for remote, build, run, logs, and verify operations.
 - `test/containers-test.sh` already wraps lifecycle phases with timeout knobs and redacts emitted output.
 
 Missing change:
@@ -168,7 +168,7 @@ Acceptance criteria:
 - PR #26 and issue #27 receive public-safe status updates after push.
 
 Test plan:
-- Static: `bash -n scripts/vpnkit-steamdeck-podman.sh test/containers-test.sh` (or broader shell set if feasible).
+- Static: `bash -n scripts/deck/vpnkit-steamdeck-podman.sh test/containers-test.sh` (or broader shell set if feasible).
 - Proof: `python3 test/sing-box-smart-routing-proof.py`.
 - Live: source `config/private-endpoints.local.env` locally if present; if endpoint placeholders remain, discover Deck IPv4 via SSH alias `deck` without printing it; run bounded `down`, `up`, `test`, and `cycle` with `VPNKIT_TEST_SSH_TARGET=deck`, nonprinted endpoint env, isolated lab defaults, and short enough helper timeouts to prove finite behavior.
 - Safety: `git status --short`, `git ls-files`/grep checks for accidental tracked secrets/logs.
@@ -190,8 +190,8 @@ Boundary:
 - Primary verification: targeted render/proof checks plus bounded live `down`/`up`/`test`/`cycle` if authorized private Deck access is available.
 
 Existing pattern / reuse:
-- `scripts/vpnkit-render-local-configs.sh` renders tracked sing-box templates into gitignored `rendered/sing-box/config.json` and copies local rule sets.
-- `scripts/vpnkit-test-lab-setup.sh` creates isolated lab secrets/rendered tree and calls the renderer.
+- `scripts/vpnkit/vpnkit-render-local-configs.sh` renders tracked sing-box templates into gitignored `rendered/sing-box/config.json` and copies local rule sets.
+- `scripts/vpnkit/vpnkit-test-lab-setup.sh` creates isolated lab secrets/rendered tree and calls the renderer.
 - `config/sing-box/config*.json.template` define the production-like routing shape.
 - `test/sing-box-smart-routing-proof.py` asserts smart-routing policy order and default remote RU rule-set shape.
 
@@ -210,7 +210,7 @@ Acceptance criteria:
 - Commit(s) are pushed and issue #27 / PR #26 are updated public-safely.
 
 Test plan:
-- `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh` (or broader shell set if feasible).
+- `bash -n scripts/vpnkit/vpnkit-render-local-configs.sh scripts/vpnkit/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/deck/vpnkit-steamdeck-podman.sh` (or broader shell set if feasible).
 - `python3 test/sing-box-smart-routing-proof.py` covering default remote and rendered local-fixture shape.
 - Render a disposable lab fixture under a gitignored/temp path and inspect generated config/rule-set files without printing secrets.
 - Run `sing-box check -c <lab rendered config>` if the binary is installed; otherwise record unavailable.
@@ -234,8 +234,8 @@ Boundary:
 - Primary verification: renderer/proof checks plus live isolated `down`/`up`/`test`/`cycle` when private Deck bindings are available.
 
 Existing pattern / reuse:
-- `scripts/vpnkit-render-local-configs.sh` already centralizes rendered sing-box/OpenVPN config.
-- `scripts/vpnkit-test-lab-setup.sh` already sets lab-only fixture defaults.
+- `scripts/vpnkit/vpnkit-render-local-configs.sh` already centralizes rendered sing-box/OpenVPN config.
+- `scripts/vpnkit/vpnkit-test-lab-setup.sh` already sets lab-only fixture defaults.
 - `test/sing-box-smart-routing-proof.py` already checks smart-routing/final/tag invariants.
 
 Missing change:
@@ -251,7 +251,7 @@ Acceptance criteria:
 - Live Deck lifecycle is green if private bindings are available; otherwise blocker is precise.
 
 Test plan:
-- `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh`.
+- `bash -n scripts/vpnkit/vpnkit-render-local-configs.sh scripts/vpnkit/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/deck/vpnkit-steamdeck-podman.sh`.
 - `python3 test/sing-box-smart-routing-proof.py`.
 - Disposable lab render assertions for direct-fixture/DNS/local RU.
 - Disposable explicit proxy/remote render assertions for production-compatible defaults.
@@ -276,8 +276,8 @@ Boundary:
 - Primary verification: direct-fixture render plus `sing-box check`, proxy/default render assertion, and live isolated `down`/`up`/`test`/`cycle` if private Deck access is available.
 
 Existing pattern / reuse:
-- `scripts/vpnkit-render-local-configs.sh` centralizes selected outbound mode rendering and already distinguishes `proxy` vs `direct-fixture`.
-- `scripts/vpnkit-test-lab-setup.sh` defaults labs to local RU fixtures and direct selected outbound.
+- `scripts/vpnkit/vpnkit-render-local-configs.sh` centralizes selected outbound mode rendering and already distinguishes `proxy` vs `direct-fixture`.
+- `scripts/vpnkit/vpnkit-test-lab-setup.sh` defaults labs to local RU fixtures and direct selected outbound.
 - `test/sing-box-smart-routing-proof.py` preserves smart-routing policy shape and default/fixture rule-set invariants.
 
 Missing change:
@@ -292,7 +292,7 @@ Acceptance criteria:
 - Commit/push and public-safe issue #27 / PR #26 updates completed.
 
 Test plan:
-- `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh`.
+- `bash -n scripts/vpnkit/vpnkit-render-local-configs.sh scripts/vpnkit/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/deck/vpnkit-steamdeck-podman.sh`.
 - `python3 test/sing-box-smart-routing-proof.py`.
 - Render direct-fixture lab and assert DNS server detours are absent, then run `sing-box check -c <rendered config>`.
 - Render explicit proxy/default config and assert DNS server detours remain `selected-native-out` and selected outbound remains proxy/VLESS.
@@ -319,8 +319,8 @@ Boundary:
 - Primary verification: shell/static checks plus live `test/containers-test.sh --scenario steamdeck-host --action cycle` with nested acceptance rows when private Deck env is available.
 
 Existing pattern / reuse:
-- `scripts/vpnkit-test-lab-setup.sh` already generates ignored lab PKI/profile under `secrets/vpnkit-labs/steamdeck-host/`.
-- `scripts/vpnkit-steamdeck-client-test.sh` already builds/runs `docker/ovpn-client-test` with NET_ADMIN and `/dev/net/tun`.
+- `scripts/vpnkit/vpnkit-test-lab-setup.sh` already generates ignored lab PKI/profile under `secrets/vpnkit-labs/steamdeck-host/`.
+- `scripts/deck/vpnkit-steamdeck-client-test.sh` already builds/runs `docker/ovpn-client-test` with NET_ADMIN and `/dev/net/tun`.
 - `test/containers-test.sh` records acceptance rows and manages `up/test/down/cycle` for the same scenario.
 
 Missing change:
@@ -337,7 +337,7 @@ Acceptance criteria:
 - Safe repo checks and sensitive artifact guards pass; live cycle is green or a concrete environment blocker is reported without readiness claim.
 
 Evidence route:
-- Static: `bash -n test/containers-test.sh scripts/vpnkit-test-lab-setup.sh scripts/vpnkit-steamdeck-client-test.sh docker/ovpn-client-test/*.sh`; Python/Go checks as listed by root task.
+- Static: `bash -n test/containers-test.sh scripts/vpnkit/vpnkit-test-lab-setup.sh scripts/deck/vpnkit-steamdeck-client-test.sh docker/ovpn-client-test/*.sh`; Python/Go checks as listed by root task.
 - Runtime: if authorized private Deck bindings exist, run bounded `down`, `cycle`, and final `down`; capture public-safe nested row summaries in `verification/nested-vpn.md`.
 - Safety: `git status --short --ignored` review and `git ls-files` guards for `.ovpn`, `.pem`, private secrets/log artifacts under generated/secrets/logs.
 

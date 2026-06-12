@@ -12,9 +12,9 @@ Slice stayed whole. Remediation was handled in the slice worktree. No sub-slices
 - `.gitignore` — manifest/local binding/generated profile ignore entries from original Slice A.
 - `config/vpnkit-manifest.schema.json` — public JSON Schema now requires explicit client identity fields: `id`, `displayName`, `profileCommonName`, `clientCertIdentity`.
 - `config/vpnkit-manifest.example.yaml` — public `host-machine` example now uses `displayName` and includes `id`, `profileCommonName`, `clientCertIdentity` defaults.
-- `scripts/vpnkit-manifest-validate.py` — imports real PyYAML/jsonschema only, fails clearly when absent, validates client `id` against manifest key, and resolved sanitized JSON includes `serverMetadata` / `clientMetadata` for labels/rendering.
+- `scripts/vpnkit/vpnkit-manifest-validate.py` — imports real PyYAML/jsonschema only, fails clearly when absent, validates client `id` against manifest key, and resolved sanitized JSON includes `serverMetadata` / `clientMetadata` for labels/rendering.
 - Removed `scripts/jsonschema.py` — avoids shadowing the real dependency.
-- `scripts/vpnkit-render-profile-for-pair.sh`, `test/containers-test.sh` — original Slice A renderer/harness changes remain in scope.
+- `scripts/vpnkit/vpnkit-render-profile-for-pair.sh`, `test/containers-test.sh` — original Slice A renderer/harness changes remain in scope.
 - `docs/plans/2026-06-09-issue-24-smart-routing-manifest/verification/slice-a.md` — updated with remediation evidence.
 
 ## Spec compliance
@@ -29,7 +29,7 @@ Slice stayed whole. Remediation was handled in the slice worktree. No sub-slices
   - Result: partial/pass for remediated field presence; positive schema validation not run because external `jsonschema` is absent.
   - Evidence: `verification/slice-a.md` shows `client_required=id,displayName,profileCommonName,clientCertIdentity,capabilities,profile_inputs` and `host-machine` defaults.
 - AC2:
-  - Covered by: `python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine`.
+  - Covered by: `python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine`.
   - Result: expected dependency error in this environment, exit 2.
   - Evidence: `Missing Python dependency for manifest validation: jsonschema (python3 -m pip install jsonschema)` plus public install guidance.
 - AC3:
@@ -45,8 +45,8 @@ Slice stayed whole. Remediation was handled in the slice worktree. No sub-slices
 - Dependency readiness: external `jsonschema` must be installed for positive manifest validation, resolver, renderer, and harness fixture execution. The repo no longer ships an incomplete `scripts/jsonschema.py` substitute.
 
 ## Verification run
-- `bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh`: PASS.
-- `python3 -m py_compile scripts/vpnkit-manifest-validate.py`: PASS.
+- `bash -n scripts/vpnkit/vpnkit-render-profile-for-pair.sh test/containers-test.sh`: PASS.
+- `python3 -m py_compile scripts/vpnkit/vpnkit-manifest-validate.py`: PASS.
 - Client identity example check: PASS; `host-machine` has `id`, `displayName`, `profileCommonName`, `clientCertIdentity`.
 - Schema required-fields check: PASS; client schema requires those fields.
 - Resolver command: expected exit 2 in this environment with clear missing `jsonschema` dependency guidance.

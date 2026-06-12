@@ -171,7 +171,7 @@ run_lifecycle_down() {
     record FAIL "lifecycle:prereq-ssh" "steamdeck-host requires non-placeholder SSH target before isolated cleanup (source=$selected_ssh_source)"
     return 1
   fi
-  if ! out=$(run_capture_timeout "$REMOTE_CMD_TIMEOUT" scripts/vpnkit-steamdeck-podman.sh cleanup); then
+  if ! out=$(run_capture_timeout "$REMOTE_CMD_TIMEOUT" scripts/deck/vpnkit-steamdeck-podman.sh cleanup); then
     record FAIL "lifecycle:down" "isolated container cleanup failed: $out"
     return 1
   fi
@@ -198,7 +198,7 @@ run_lifecycle_up() {
     record FAIL "lifecycle:prereq-ssh" "steamdeck-host requires non-placeholder SSH target from VPNKIT_TEST_SSH_TARGET, VPNKIT_STEAMDECK_SSH_TARGET, VPNKIT_STEAMDECK_SSH_HOST, or deck (source=$selected_ssh_source)"
   fi
   if [[ $FAIL -gt 0 ]]; then return 1; fi
-  if out=$(run_capture env VPNKIT_TEST_LAB_SECRETS_DIR="$LAB_SCENARIO_DIR" VPNKIT_TEST_LAB_ENDPOINT="$TEST_ENDPOINT" VPNKIT_TEST_LAB_PORT="$LAB_PORT" VPNKIT_ROUTING_MODE="$TEST_ROUTING_MODE" scripts/vpnkit-test-lab-setup.sh); then
+  if out=$(run_capture env VPNKIT_TEST_LAB_SECRETS_DIR="$LAB_SCENARIO_DIR" VPNKIT_TEST_LAB_ENDPOINT="$TEST_ENDPOINT" VPNKIT_TEST_LAB_PORT="$LAB_PORT" VPNKIT_ROUTING_MODE="$TEST_ROUTING_MODE" scripts/vpnkit/vpnkit-test-lab-setup.sh); then
     printf '%s\n' "$out"
     record PASS "lifecycle:prepare" "generated isolated lab artifacts under $LAB_SCENARIO_DIR (contents not printed)"
   else
@@ -206,7 +206,7 @@ run_lifecycle_up() {
     record FAIL "lifecycle:prepare" "lab setup failed"
     return 1
   fi
-  if out=$(run_capture_timeout "$DEPLOY_TIMEOUT" scripts/vpnkit-steamdeck-podman.sh deploy); then
+  if out=$(run_capture_timeout "$DEPLOY_TIMEOUT" scripts/deck/vpnkit-steamdeck-podman.sh deploy); then
     printf '%s\n' "$out"
     record PASS "lifecycle:deploy" "isolated Podman lab deployed"
   else
@@ -330,15 +330,15 @@ if [[ -n "$TEST_MANIFEST" || -n "$TEST_MANIFEST_SERVER" || -n "$TEST_MANIFEST_CL
     record FAIL "manifest:selection" "VPNKIT_TEST_MANIFEST_SERVER and VPNKIT_TEST_MANIFEST_CLIENT are required when manifest mode is selected"
   elif [[ ! -r "$TEST_MANIFEST" ]]; then
     record FAIL "manifest:validate" "manifest missing/unreadable: $TEST_MANIFEST"
-  elif [[ ! -x scripts/vpnkit-manifest-validate.py ]]; then
-    record FAIL "manifest:validate" "scripts/vpnkit-manifest-validate.py not executable"
-  elif out=$(run_capture python3 scripts/vpnkit-manifest-validate.py --manifest "$TEST_MANIFEST"); then
+  elif [[ ! -x scripts/vpnkit/vpnkit-manifest-validate.py ]]; then
+    record FAIL "manifest:validate" "scripts/vpnkit/vpnkit-manifest-validate.py not executable"
+  elif out=$(run_capture python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest "$TEST_MANIFEST"); then
     record PASS "manifest:validate" "manifest schema/semantics passed"
-    if out=$(run_capture python3 scripts/vpnkit-manifest-validate.py --manifest "$TEST_MANIFEST" --server "$TEST_MANIFEST_SERVER" --client "$TEST_MANIFEST_CLIENT" --profile-intent "$TEST_MANIFEST_PROFILE_INTENT"); then
+    if out=$(run_capture python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest "$TEST_MANIFEST" --server "$TEST_MANIFEST_SERVER" --client "$TEST_MANIFEST_CLIENT" --profile-intent "$TEST_MANIFEST_PROFILE_INTENT"); then
       record PASS "manifest:resolve-pair" "resolved $TEST_MANIFEST_SERVER/$TEST_MANIFEST_CLIENT intent=$TEST_MANIFEST_PROFILE_INTENT to sanitized JSON"
-      if [[ ! -x scripts/vpnkit-render-profile-for-pair.sh ]]; then
-        record FAIL "manifest:render-profile" "scripts/vpnkit-render-profile-for-pair.sh not executable"
-      elif out=$(run_capture scripts/vpnkit-render-profile-for-pair.sh --manifest "$TEST_MANIFEST" --server "$TEST_MANIFEST_SERVER" --client "$TEST_MANIFEST_CLIENT" --profile-intent "$TEST_MANIFEST_PROFILE_INTENT" --out-dir "$TEST_MANIFEST_OUT_DIR" --"$TEST_MANIFEST_RENDER_MODE"); then
+      if [[ ! -x scripts/vpnkit/vpnkit-render-profile-for-pair.sh ]]; then
+        record FAIL "manifest:render-profile" "scripts/vpnkit/vpnkit-render-profile-for-pair.sh not executable"
+      elif out=$(run_capture scripts/vpnkit/vpnkit-render-profile-for-pair.sh --manifest "$TEST_MANIFEST" --server "$TEST_MANIFEST_SERVER" --client "$TEST_MANIFEST_CLIENT" --profile-intent "$TEST_MANIFEST_PROFILE_INTENT" --out-dir "$TEST_MANIFEST_OUT_DIR" --"$TEST_MANIFEST_RENDER_MODE"); then
         printf '%s\n' "$out"
         rendered_profile=$(printf '%s\n' "$out" | awk -F= '/^profile_written=/{print $2; exit}')
         if [[ -n "$rendered_profile" && -r "$rendered_profile" ]]; then
@@ -377,7 +377,7 @@ elif [[ $manifest_fixture_profile -eq 1 && -r "$TEST_PROFILE" ]]; then
   fi
 elif [[ -r "$TEST_PROFILE" ]]; then
   if [[ -n "$TEST_ENDPOINT" ]]; then
-    if [[ -x scripts/vpnkit-steamdeck-client-test.sh ]]; then
+    if [[ -x scripts/deck/vpnkit-steamdeck-client-test.sh ]]; then
       nested_args=()
       if [[ "$SCENARIO" == "steamdeck-host" ]]; then
         if [[ "${VPNKIT_STEAMDECK_NESTED_VPN_ENABLED:-1}" == "0" ]]; then
@@ -386,7 +386,7 @@ elif [[ -r "$TEST_PROFILE" ]]; then
           nested_args+=(--nested-profile "${VPNKIT_STEAMDECK_NESTED_CLIENT_PROFILE:-}")
         fi
       fi
-      if out=$(run_capture_timeout "$CLIENT_TIMEOUT" env VPNKIT_STEAMDECK_CLIENT_ENDPOINT="$TEST_ENDPOINT" VPNKIT_STEAMDECK_CLIENT_PROFILE="$TEST_PROFILE" VPNKIT_STEAMDECK_CLIENT_LOG_FILE= VPNKIT_STEAMDECK_CLIENT_TIMEOUT="$CLIENT_TIMEOUT" VPNKIT_STEAMDECK_NESTED_VPN_ENABLED="${VPNKIT_STEAMDECK_NESTED_VPN_ENABLED:-1}" scripts/vpnkit-steamdeck-client-test.sh --endpoint "$TEST_ENDPOINT" --profile "$TEST_PROFILE" --timeout "$CLIENT_TIMEOUT" "${nested_args[@]}"); then
+      if out=$(run_capture_timeout "$CLIENT_TIMEOUT" env VPNKIT_STEAMDECK_CLIENT_ENDPOINT="$TEST_ENDPOINT" VPNKIT_STEAMDECK_CLIENT_PROFILE="$TEST_PROFILE" VPNKIT_STEAMDECK_CLIENT_LOG_FILE= VPNKIT_STEAMDECK_CLIENT_TIMEOUT="$CLIENT_TIMEOUT" VPNKIT_STEAMDECK_NESTED_VPN_ENABLED="${VPNKIT_STEAMDECK_NESTED_VPN_ENABLED:-1}" scripts/deck/vpnkit-steamdeck-client-test.sh --endpoint "$TEST_ENDPOINT" --profile "$TEST_PROFILE" --timeout "$CLIENT_TIMEOUT" "${nested_args[@]}"); then
         printf '%s\n' "$out"
         if [[ "$SCENARIO" == "steamdeck-host" && "${VPNKIT_STEAMDECK_NESTED_VPN_ENABLED:-1}" != "0" ]]; then
           for pair in "client:nested-route-via-tun0=nested_route_via_tun0=ok" "client:nested-handshake=nested_openvpn_handshake=ok" "client:nested-tun1=nested_tun1=ok" "client:nested-ping-peer=nested_ping_peer=ok"; do
@@ -406,10 +406,10 @@ elif [[ -r "$TEST_PROFILE" ]]; then
         record FAIL "client:steamdeck-profile-smoke" "existing client smoke failed or timed out after ${CLIENT_TIMEOUT}s"
       fi
     else
-      record SKIP "client:steamdeck-profile-smoke" "scripts/vpnkit-steamdeck-client-test.sh not executable"
+      record SKIP "client:steamdeck-profile-smoke" "scripts/deck/vpnkit-steamdeck-client-test.sh not executable"
     fi
-  elif [[ -x scripts/vpnkit-profile-check.sh ]]; then
-    if out=$(run_capture scripts/vpnkit-profile-check.sh "$TEST_PROFILE"); then
+  elif [[ -x scripts/vpnkit/vpnkit-profile-check.sh ]]; then
+    if out=$(run_capture scripts/vpnkit/vpnkit-profile-check.sh "$TEST_PROFILE"); then
       printf '%s\n' "$out"
       record PASS "client:profile-check" "existing profile check passed"
     else
@@ -417,7 +417,7 @@ elif [[ -r "$TEST_PROFILE" ]]; then
       record FAIL "client:profile-check" "existing profile check failed"
     fi
   else
-    record SKIP "client:profile-check" "scripts/vpnkit-profile-check.sh not executable"
+    record SKIP "client:profile-check" "scripts/vpnkit/vpnkit-profile-check.sh not executable"
   fi
 else
   if [[ $manifest_pair_selected -eq 1 ]]; then

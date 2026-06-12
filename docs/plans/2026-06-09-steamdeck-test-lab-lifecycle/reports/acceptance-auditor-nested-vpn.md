@@ -14,7 +14,7 @@
   - Result: passed
   - Gap: none
 - AC2: Nested lab material is generated under ignored `secrets/vpnkit-labs/steamdeck-host/nested/openvpn/...` and not tracked/printed
-  - Evidence present: `scripts/vpnkit-test-lab-setup.sh` + `verification/nested-vpn.md`
+  - Evidence present: `scripts/vpnkit/vpnkit-test-lab-setup.sh` + `verification/nested-vpn.md`
   - Result: passed
   - Gap: none
 - AC3: Nested target/lifecycle management is wired into the existing lab lifecycle, not a separate scenario/root

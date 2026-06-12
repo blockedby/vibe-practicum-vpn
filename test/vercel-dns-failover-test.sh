@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="$ROOT/scripts/vercel-dns-failover.sh"
+SCRIPT="$ROOT/scripts/dns/vercel-dns-failover.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 write_env() {

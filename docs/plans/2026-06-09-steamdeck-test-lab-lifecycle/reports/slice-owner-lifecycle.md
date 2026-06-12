@@ -18,7 +18,7 @@
 - AC1 lifecycle command: done; `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle`.
 - AC2 isolation/default-prod safety: done; lab container/image/port/remote-dir defaults are distinct and `vpnkit-steamdeck-podman.sh run` refuses container `vpnkit` unless explicitly overridden.
 - AC3 gitignored artifacts: done; generated layout is `secrets/vpnkit-labs/steamdeck-host/...`, under ignored `secrets/`; docs/template updated.
-- AC4 test PKI/templates/rules: done; `scripts/vpnkit-test-lab-setup.sh` creates throwaway PKI/profile and invokes existing production-like renderer/templates/rule sets.
+- AC4 test PKI/templates/rules: done; `scripts/vpnkit/vpnkit-test-lab-setup.sh` creates throwaway PKI/profile and invokes existing production-like renderer/templates/rule sets.
 - AC5 lab tun mode: done; lifecycle defaults to `tun`, passes routing mode to Podman, and checks `sb-tun0` only for tun.
 - AC6 disabled daemon paths: done; missing `sub_url` is optional for server smoke; Deck verify skips `vibe-vpn doctor` when no lab subscription is mounted.
 - AC7 missing prerequisites: done locally; explicit `steamdeck-host` missing endpoint exits nonzero with `FAIL lifecycle:prereq-endpoint`.
@@ -43,7 +43,7 @@
 ## Verification run
 - Local / targeted checks:
   - `bash -n scripts/*.sh test/*.sh`: passed.
-  - `scripts/vpnkit-test-lab-setup.sh --endpoint 127.0.0.1 --port 21194`: passed, generated ignored artifacts only.
+  - `scripts/vpnkit/vpnkit-test-lab-setup.sh --endpoint 127.0.0.1 --port 21194`: passed, generated ignored artifacts only.
   - `VPNKIT_TEST_SSH_TARGET= VPNKIT_TEST_ENDPOINT= test/containers-test.sh --scenario steamdeck-host --action test`: expected nonzero with clear FAIL diagnostic.
 - Local / full checks:
   - `python3 -m py_compile scripts/*.py test/*.py`: passed.

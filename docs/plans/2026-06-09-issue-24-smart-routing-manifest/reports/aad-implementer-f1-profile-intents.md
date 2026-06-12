@@ -11,8 +11,8 @@ FILES_CHANGED:
 - config/private-endpoints.example.env: adds a placeholder production OpenVPN endpoint binding name for the production profile intent.
 - config/vpnkit-manifest.example.yaml: splits the selected `steamdeck`/`host-machine` pair into `test` and `production` profile intent entries.
 - config/vpnkit-manifest.schema.json: requires `profile.intent` with `test`/`production` enum.
-- scripts/vpnkit-manifest-validate.py: validates duplicate server/client/intent semantics and resolves sanitized JSON by `--profile-intent` (default `test`).
-- scripts/vpnkit-render-profile-for-pair.sh: accepts `--profile-intent`, forwards it to the resolver, writes intent-specific filenames, and uses manifest-selected local binding refs in real mode without printing values.
+- scripts/vpnkit/vpnkit-manifest-validate.py: validates duplicate server/client/intent semantics and resolves sanitized JSON by `--profile-intent` (default `test`).
+- scripts/vpnkit/vpnkit-render-profile-for-pair.sh: accepts `--profile-intent`, forwards it to the resolver, writes intent-specific filenames, and uses manifest-selected local binding refs in real mode without printing values.
 - test/containers-test.sh: defaults selected manifest-pair profile intent to `test`, supports explicit `VPNKIT_TEST_MANIFEST_PROFILE_INTENT=production`, and avoids generated-profile content greps.
 - test/manifest-profile-intents-test.sh: adds focused public-safe checks for resolver intents and fixture render path/mode/stdout without reading generated `.ovpn` contents.
 - docs/plans/2026-06-09-issue-24-smart-routing-manifest/plan.md: records F1 implementation evidence pointer.
@@ -28,10 +28,10 @@ TESTS_RUN:
 - RED: resolver `--profile-intent test`: failed before implementation with unrecognized argument — passed as expected red evidence.
 - RED: renderer `--profile-intent test`: failed before implementation with unknown argument — passed as expected red evidence.
 - RED: `test/manifest-profile-intents-test.sh`: failed before implementation on missing resolver argument — passed as expected red evidence.
-- `PATH=/tmp/f1-profile-intents-venv/bin:$PATH bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh`: passed.
-- `PATH=/tmp/f1-profile-intents-venv/bin:$PATH python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml`: passed.
-- `PATH=/tmp/f1-profile-intents-venv/bin:$PATH python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent test`: passed.
-- `PATH=/tmp/f1-profile-intents-venv/bin:$PATH python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent production`: passed.
+- `PATH=/tmp/f1-profile-intents-venv/bin:$PATH bash -n scripts/vpnkit/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh`: passed.
+- `PATH=/tmp/f1-profile-intents-venv/bin:$PATH python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml`: passed.
+- `PATH=/tmp/f1-profile-intents-venv/bin:$PATH python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent test`: passed.
+- `PATH=/tmp/f1-profile-intents-venv/bin:$PATH python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent production`: passed.
 - `PATH=/tmp/f1-profile-intents-venv/bin:$PATH test/manifest-profile-intents-test.sh`: passed.
 - Renderer fixture `test` and `production` intents into ignored `generated/openvpn-profiles`: passed; both reported `permissions=600` and `secret_material=not_printed`.
 - Non-live harness default-intent check with `VPNKIT_TEST_SSH_TARGET=0.0.0.0` and selected manifest pair: passed manifest/profile rows with `intent=test`, total `PASS=4 FAIL=0 SKIP=11`.

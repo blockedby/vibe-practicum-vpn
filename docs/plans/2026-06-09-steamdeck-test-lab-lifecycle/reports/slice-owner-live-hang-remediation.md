@@ -1,6 +1,6 @@
 ## Task
 - Mission: Diagnose/fix the Steam Deck lab live-cycle hang and rerun bounded live lifecycle evidence for issue #27 / PR #26.
-- Target: `scripts/vpnkit-steamdeck-podman.sh`, `test/containers-test.sh`, isolated `vpnkit-test-steamdeck-host` Deck lab.
+- Target: `scripts/deck/vpnkit-steamdeck-podman.sh`, `test/containers-test.sh`, isolated `vpnkit-test-steamdeck-host` Deck lab.
 - Boundaries: Do not mutate default/prod `vpnkit`; do not print/commit private endpoints, logs, profiles, keys, certs, rendered configs, or secrets.
 - Done when: Hang paths are bounded, safe checks pass, live lab sequence is run as far as safely possible, PR branch is ready for public-safe update.
 - Expected evidence: root cause, changed files, commands/results, live matrix, cleanup state, blockers.
@@ -23,7 +23,7 @@
   - Gap if any: Exact prior 13h process stack cannot be recovered after kill, so diagnosis is from script behavior plus fresh bounded reproduction.
 - Requirement / AC: Bound lifecycle commands and finite verify output.
   - Status: done.
-  - Evidence: `scripts/vpnkit-steamdeck-podman.sh` wraps `podman ps`, logs, `pgrep`, `sing-box check`, subscription test, and `vibe-vpn doctor` in finite timeouts; logs use `--tail` only. `test/containers-test.sh` skips client smoke when server container is unavailable.
+  - Evidence: `scripts/deck/vpnkit-steamdeck-podman.sh` wraps `podman ps`, logs, `pgrep`, `sing-box check`, subscription test, and `vibe-vpn doctor` in finite timeouts; logs use `--tail` only. `test/containers-test.sh` skips client smoke when server container is unavailable.
   - Gap if any: none for touched hang paths.
 - Requirement / AC: Run live sequence safely against isolated lab.
   - Status: partial/current-goal blocker.
@@ -46,7 +46,7 @@
 - AC2: Remote logs/exec/doctor paths bounded.
   - Covered by: code change and live `up` returning boundedly after finite logs.
   - Result: passed.
-  - Evidence: `scripts/vpnkit-steamdeck-podman.sh`; `up` returned FAIL quickly instead of hanging.
+  - Evidence: `scripts/deck/vpnkit-steamdeck-podman.sh`; `up` returned FAIL quickly instead of hanging.
 - AC3: Live down/up/test/cycle.
   - Covered by: live commands.
   - Result: partial/blocked.
@@ -79,7 +79,7 @@
 
 ## Verification run
 - Local / targeted checks:
-  - `bash -n scripts/vpnkit-steamdeck-podman.sh test/containers-test.sh`: passed.
+  - `bash -n scripts/deck/vpnkit-steamdeck-podman.sh test/containers-test.sh`: passed.
   - `python3 test/sing-box-smart-routing-proof.py`: passed.
 - Local / full checks:
   - `bash -n scripts/*.sh test/*.sh`: passed.

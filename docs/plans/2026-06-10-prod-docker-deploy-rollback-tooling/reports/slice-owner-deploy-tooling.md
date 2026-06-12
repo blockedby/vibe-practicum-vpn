@@ -1,6 +1,6 @@
 ## Task
 - Mission: Implement safe production Docker/Compose deploy/rollback tooling for vpnkit before any real deploy.
-- Target: `scripts/vpnkit-prod-deploy.sh`, operator docs/env placeholders, and local static tests.
+- Target: `scripts/vpnkit/vpnkit-prod-deploy.sh`, operator docs/env placeholders, and local static tests.
 - Boundaries: Public-safe local/static only; no production endpoints read, probed, restarted, deployed, or rolled back.
 - Done when: AC1-AC9 are satisfied by tracked tooling/docs/tests and passing local checks.
 
@@ -12,7 +12,7 @@
 - PR: #26
 
 ## Files changed
-- Added `scripts/vpnkit-prod-deploy.sh`.
+- Added `scripts/vpnkit/vpnkit-prod-deploy.sh`.
 - Added `test/prod-deploy-helper-test.sh`.
 - Updated `README.md` with production helper runbook/usage.
 - Updated `config/private-endpoints.example.env` with placeholder-only helper env knobs.
@@ -23,12 +23,12 @@
 
 ## Usage examples
 ```bash
-scripts/vpnkit-prod-deploy.sh plan --target-ref origin/main your-prod-ssh-alias
-scripts/vpnkit-prod-deploy.sh dry-run --target-ref origin/main your-prod-ssh-alias
-scripts/vpnkit-prod-deploy.sh deploy --yes --target-ref <commit-or-branch> host-a host-b
-scripts/vpnkit-prod-deploy.sh rollback --yes host-a host-b
-scripts/vpnkit-prod-deploy.sh rollback --yes --rollback-id .rollback/vpnkit/<timestamp> host-a
-scripts/vpnkit-prod-deploy.sh verify host-a host-b
+scripts/vpnkit/vpnkit-prod-deploy.sh plan --target-ref origin/main your-prod-ssh-alias
+scripts/vpnkit/vpnkit-prod-deploy.sh dry-run --target-ref origin/main your-prod-ssh-alias
+scripts/vpnkit/vpnkit-prod-deploy.sh deploy --yes --target-ref <commit-or-branch> host-a host-b
+scripts/vpnkit/vpnkit-prod-deploy.sh rollback --yes host-a host-b
+scripts/vpnkit/vpnkit-prod-deploy.sh rollback --yes --rollback-id .rollback/vpnkit/<timestamp> host-a
+scripts/vpnkit/vpnkit-prod-deploy.sh verify host-a host-b
 ```
 
 ## Spec compliance / acceptance verification
@@ -48,7 +48,7 @@ scripts/vpnkit-prod-deploy.sh verify host-a host-b
 - Production mutation: not performed by design.
 
 ## Verification run
-- `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`: passed.
+- `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`: passed.
 - `test/prod-deploy-helper-test.sh`: passed.
 - Public-safety diff scan for private keys/VLESS URLs/token assignments: passed (no matches).
 - `git diff --check`: passed.

@@ -10,7 +10,7 @@
 
 ## Acceptance coverage
 - AC1: Schema/example supports servers, clients, pairs, capabilities, local binding refs, and test/production profile intents.
-  - Evidence present: `python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml` and full schema/example inspection.
+  - Evidence present: `python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml` and full schema/example inspection.
   - Result: passed.
   - Gap: none for repo-local scope.
 - AC2: Validator/resolver has clear dependency errors, `--server/--client`, `--profile-intent test|production`, default `test`, duplicate intent semantic validation, and sanitized output.
@@ -18,7 +18,7 @@
   - Result: passed.
   - Gap: none for repo-local scope.
 - AC3: Renderer writes ignored pair-specific `.ovpn`, mode 600, no secret stdout; real mode requires private values; fixture/test mode works.
-  - Evidence present: `scripts/vpnkit-render-profile-for-pair.sh ... --fixture` for both intents produced `generated/openvpn-profiles/steamdeck-host-machine-test.ovpn` and `...production.ovpn`, both reported `permissions=600` and `secret_material=not_printed`; `--real` without bindings failed clearly with missing-env diagnostics.
+  - Evidence present: `scripts/vpnkit/vpnkit-render-profile-for-pair.sh ... --fixture` for both intents produced `generated/openvpn-profiles/steamdeck-host-machine-test.ovpn` and `...production.ovpn`, both reported `permissions=600` and `secret_material=not_printed`; `--real` without bindings failed clearly with missing-env diagnostics.
   - Result: passed.
   - Gap: real-mode success was not run because private bindings were intentionally absent.
 - AC4: `test/containers-test.sh` integrates the selected manifest pair and defaults to test profile intent; production is explicit.

@@ -7,7 +7,7 @@ Scope: public-safe local/static/mock-only tests. No production endpoints were co
 ## Commands run
 
 ```bash
-bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh
+bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh
 # result: PASS
 
 # Includes local fake timeout/ssh and mocked remote docker/docker-compose/git/date paths for verify, rollback, and deploy.
@@ -21,7 +21,7 @@ git diff --check
 Public-safety scan of audit-gap-fix diff:
 
 ```bash
-git diff -- scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh \
+git diff -- scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh \
   docs/plans/2026-06-10-prod-docker-deploy-rollback-tooling \
   | grep -E 'BEGIN (RSA|OPENSSH|PRIVATE)|vless://[^[]|token=[A-Za-z0-9]|password=[A-Za-z0-9]' || true
 # result: no matches

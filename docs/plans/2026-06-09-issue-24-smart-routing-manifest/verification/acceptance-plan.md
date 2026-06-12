@@ -16,8 +16,8 @@ Independent readiness audit of branch `feat/issue-24-smart-routing-manifest` in 
 1. `git status --short`
 2. `git diff --check main...HEAD`
 3. `git ls-files '*.ovpn'`
-4. `bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh`
-5. `python3 -m py_compile scripts/vpnkit-manifest-validate.py test/sing-box-smart-routing-proof.py`
+4. `bash -n scripts/vpnkit/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh`
+5. `python3 -m py_compile scripts/vpnkit/vpnkit-manifest-validate.py test/sing-box-smart-routing-proof.py`
 6. Disposable venv with public `PyYAML` + `jsonschema`, then run manifest validation for `--profile-intent test` and `production`
 7. Renderer fixture check for selected pair, mode 600, and no secret stdout
 8. `VPNKIT_TEST_MANIFEST=... VPNKIT_TEST_MANIFEST_SERVER=... VPNKIT_TEST_MANIFEST_CLIENT=... VPNKIT_TEST_MANIFEST_RENDER_MODE=fixture VPNKIT_TEST_SSH_TARGET=nonexistent.invalid test/containers-test.sh`

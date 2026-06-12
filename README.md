@@ -13,9 +13,9 @@ Public-safe operational tooling for the containerized `vpnkit` VPN/routing setup
 
 This branch adds three connected pieces of operational tooling:
 
-- **Manifest/profile matrix**: `config/vpnkit-manifest.example.yaml`, `config/vpnkit-manifest.schema.json`, `scripts/vpnkit-manifest-validate.py`, and `scripts/vpnkit-render-profile-for-pair.sh` describe server/client/profile intent and render public-safe fixture or local real profiles.
+- **Manifest/profile matrix**: `config/vpnkit-manifest.example.yaml`, `config/vpnkit-manifest.schema.json`, `scripts/vpnkit/vpnkit-manifest-validate.py`, and `scripts/vpnkit/vpnkit-render-profile-for-pair.sh` describe server/client/profile intent and render public-safe fixture or local real profiles.
 - **Unified Steam Deck lab acceptance**: `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle` prepares isolated lab secrets, deploys `vpnkit-test-steamdeck-host`, runs OpenVPN/sing-box checks, outer client smoke, and required nested OpenVPN rows.
-- **Production deploy/rollback tooling**: `scripts/vpnkit-prod-deploy.sh` provides `plan`, `dry-run`, `deploy`, `verify`, and `rollback` for Docker/Compose production endpoints with rollback bundles and smoke checks.
+- **Production deploy/rollback tooling**: `scripts/vpnkit/vpnkit-prod-deploy.sh` provides `plan`, `dry-run`, `deploy`, `verify`, and `rollback` for Docker/Compose production endpoints with rollback bundles and smoke checks.
 
 Useful tests added/extended in this branch:
 
@@ -31,21 +31,21 @@ Agent/operator rule of thumb: use `devops-runtime-readiness` for deploy/runtime 
 Read-only backend drift check after sourcing local endpoints or passing SSH aliases:
 
 ```bash
-scripts/vpnkit-backend-drift-check.sh <ssh-target> [<ssh-target> ...]
-# or: VPNKIT_BACKEND_SSH_HOSTS="alias-a alias-b" scripts/vpnkit-backend-drift-check.sh
+scripts/vpnkit/vpnkit-backend-drift-check.sh <ssh-target> [<ssh-target> ...]
+# or: VPNKIT_BACKEND_SSH_HOSTS="alias-a alias-b" scripts/vpnkit/vpnkit-backend-drift-check.sh
 ```
 
 Throwaway Docker OpenVPN profile check:
 
 ```bash
-scripts/vpnkit-profile-check.sh /path/to/client.ovpn
+scripts/vpnkit/vpnkit-profile-check.sh /path/to/client.ovpn
 ```
 
 
 Local browser control panel for VPN diagnostics:
 
 ```bash
-scripts/vpnkit-control-panel.py
+scripts/vpnkit/vpnkit-control-panel.py
 # open http://127.0.0.1:8765/
 ```
 
@@ -60,23 +60,23 @@ Steam Deck one-adapter hotspot VPN gateway preparation:
 
 ```bash
 # Read-only inventory/report
-scripts/deck-hotspot-vpn-discover.sh --ssh-target deck
+scripts/deck/deck-hotspot-vpn-discover.sh --ssh-target deck
 
 # First create a host-namespace OpenVPN client on the Deck so tun0 exists there.
 # See steam-deck/hotspot-client/README.md for the git-pull-on-Deck workflow.
 
 # Dry-run hotspot bring-up plan; no Deck mutation
-scripts/deck-hotspot-vpn-up.sh --ssh-target deck --dry-run
+scripts/deck/deck-hotspot-vpn-up.sh --ssh-target deck --dry-run
 
 # Apply only after reviewing discovery/dry-run and setting a hotspot password
 DECK_HOTSPOT_PASSWORD='<local-wifi-password>' \
-  scripts/deck-hotspot-vpn-up.sh --ssh-target deck --apply --yes
+  scripts/deck/deck-hotspot-vpn-up.sh --ssh-target deck --apply --yes
 
 # Read-only Deck-side checks after bring-up
-scripts/deck-hotspot-vpn-test.sh --ssh-target deck
+scripts/deck/deck-hotspot-vpn-test.sh --ssh-target deck
 
 # Idempotent cleanup of this tool's hotspot connection/firewall table
-scripts/deck-hotspot-vpn-down.sh --ssh-target deck
+scripts/deck/deck-hotspot-vpn-down.sh --ssh-target deck
 ```
 
 The one-adapter Deck path is the primary target. USB Wi-Fi dongle mode is a
@@ -143,17 +143,17 @@ python3 -m pip install PyYAML jsonschema
 Then run the public-safe fixture path:
 
 ```bash
-python3 scripts/vpnkit-manifest-validate.py \
+python3 scripts/vpnkit/vpnkit-manifest-validate.py \
   --manifest config/vpnkit-manifest.example.yaml \
   --server steamdeck --client host-machine \
   --profile-intent test
 
-python3 scripts/vpnkit-manifest-validate.py \
+python3 scripts/vpnkit/vpnkit-manifest-validate.py \
   --manifest config/vpnkit-manifest.example.yaml \
   --server steamdeck --client host-machine \
   --profile-intent production
 
-scripts/vpnkit-render-profile-for-pair.sh \
+scripts/vpnkit/vpnkit-render-profile-for-pair.sh \
   --manifest config/vpnkit-manifest.example.yaml \
   --server steamdeck --client host-machine \
   --profile-intent test \
@@ -189,7 +189,7 @@ ASUS router OpenVPN client cycle test (operator-run only; mutates router VPN sta
 
 ```bash
 # Prefer loading real SSH values from gitignored config/private-endpoints.local.env first.
-ASUS_CONFIRM=YES scripts/openvpn-asus-client-cycle-test.sh \
+ASUS_CONFIRM=YES scripts/asus/openvpn-asus-client-cycle-test.sh \
   --host <asus-ssh-target> --port <ssh-port> --key <ssh-key> --slots 1,2,3,4
 ```
 
@@ -209,15 +209,15 @@ paths:
 
 ```bash
 # Plan only; no remote mutation.
-scripts/vpnkit-prod-deploy.sh plan --target-ref origin/main your-prod-ssh-alias
+scripts/vpnkit/vpnkit-prod-deploy.sh plan --target-ref origin/main your-prod-ssh-alias
 # Equivalent alias.
-scripts/vpnkit-prod-deploy.sh dry-run --target-ref origin/main your-prod-ssh-alias
+scripts/vpnkit/vpnkit-prod-deploy.sh dry-run --target-ref origin/main your-prod-ssh-alias
 
 # After explicit approval only; mutating commands refuse without --yes.
-scripts/vpnkit-prod-deploy.sh deploy --yes --target-ref <commit-or-branch> \
+scripts/vpnkit/vpnkit-prod-deploy.sh deploy --yes --target-ref <commit-or-branch> \
   your-prod-ssh-alias-a your-prod-ssh-alias-b
-scripts/vpnkit-prod-deploy.sh rollback --yes your-prod-ssh-alias-a your-prod-ssh-alias-b
-scripts/vpnkit-prod-deploy.sh verify your-prod-ssh-alias-a your-prod-ssh-alias-b
+scripts/vpnkit/vpnkit-prod-deploy.sh rollback --yes your-prod-ssh-alias-a your-prod-ssh-alias-b
+scripts/vpnkit/vpnkit-prod-deploy.sh verify your-prod-ssh-alias-a your-prod-ssh-alias-b
 ```
 
 The helper discovers the live Compose workdir/service/container from Docker
@@ -226,7 +226,9 @@ Compose labels. Approved overrides for unusual hosts are
 `VPNKIT_PROD_PROJECT`; keep their real values local-only. Deploy is sequential
 across hosts and stops on the first failed host after attempting rollback. The
 remote flow is: create `.rollback/vpnkit/<timestamp>/`, fetch/checkout the target
-ref, render/check and refresh persisted sing-box config, rebuild/recreate only
+ref from the discovered git workdir (non-git workdirs fail rather than receiving
+an uploaded source archive), render/check and refresh persisted sing-box config,
+rebuild/recreate only
 the `vpnkit` service, smoke the runtime, auto-rollback on failed smoke, and smoke
 after rollback. Smoke checks are bounded and cover container state, UDP 1194,
 OpenVPN/`tun0`, sing-box, `sb-tun0` policy routing for `tun` mode, and

@@ -1,6 +1,6 @@
 ## Task
 - Mission: Diagnose/fix the remaining isolated Steam Deck lab runtime data-path/DNS/SOCKS failure after RU fixture startup was fixed.
-- Target: `scripts/vpnkit-render-local-configs.sh`, `scripts/vpnkit-test-lab-setup.sh`, `config/openvpn/server.tpl`, `README.md`, `test/sing-box-smart-routing-proof.py`.
+- Target: `scripts/vpnkit/vpnkit-render-local-configs.sh`, `scripts/vpnkit/vpnkit-test-lab-setup.sh`, `config/openvpn/server.tpl`, `README.md`, `test/sing-box-smart-routing-proof.py`.
 - Boundaries: Keep production/default behavior unchanged; do not mutate prod/default `vpnkit`; do not print/commit private endpoints, profiles, certs, rendered configs, logs, or secrets.
 - Done when: Lab render has a safe selected outbound fixture and pushed DNS path, local checks pass, live Deck lifecycle is green if private bindings are available, and PR/issue status is updated.
 - Expected evidence: Root cause, changed files, local checks, live matrix or precise blocker.
@@ -73,7 +73,7 @@
 
 ## Verification run
 - Local / targeted checks:
-  - `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh`: passed.
+  - `bash -n scripts/vpnkit/vpnkit-render-local-configs.sh scripts/vpnkit/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/deck/vpnkit-steamdeck-podman.sh`: passed.
   - `python3 test/sing-box-smart-routing-proof.py`: passed.
   - Disposable lab setup/render assertion: passed; lab renders direct `selected-native-out`, local RU fixtures, and OpenVPN DNS `172.19.0.1`.
   - Disposable explicit/default render assertion: passed; proxy/VLESS selected outbound and OpenVPN DNS `10.89.0.1` preserved.
@@ -90,7 +90,7 @@
 ## Issues
 ### Issue R-01: Lab SOCKS/default egress used an impossible dummy selected proxy
 - Description: Lab-generated `selected-native-out` was a VLESS outbound to `127.0.0.1:443` with no fixture proxy listening there.
-- Evidence: `scripts/vpnkit-test-lab-setup.sh` dummy canary plus prior live `server:socks-inbound` `SSL_ERROR_SYSCALL`.
+- Evidence: `scripts/vpnkit/vpnkit-test-lab-setup.sh` dummy canary plus prior live `server:socks-inbound` `SSL_ERROR_SYSCALL`.
 - Resolution: Added `VPNKIT_SELECTED_OUTBOUND_MODE=proxy|direct-fixture`; lab defaults direct fixture while preserving `selected-native-out` tag/final.
 - Depends on: none.
 

@@ -1,6 +1,6 @@
 ## Task
 - Mission: Own AC5-AC6 for Issue #24 Slice B: sing-box smart routing/adblock/dev-direct policy and route-decision proofs.
-- Target: `config/sing-box/`, `scripts/vpnkit-render-local-configs.sh`, local route proof harness.
+- Target: `config/sing-box/`, `scripts/vpnkit/vpnkit-render-local-configs.sh`, local route proof harness.
 - Boundaries: Repo-local tests only; no live Deck/prod mutation; no private endpoint file read; no Slice A manifest/profile CLI changes.
 - Done when: Templates/rendering include narrow adblock/dev-direct policy, existing full-tunnel/RU/final behavior is preserved, and local proofs map route decisions to expected outbounds.
 - Expected evidence: report + verification artifact under task package with commands/results.
@@ -46,7 +46,7 @@
 - Local / targeted checks:
   - `python3 test/sing-box-smart-routing-proof.py`: passed.
     - Evidence: `PASS sing-box smart routing proof: adblock/dev-direct/RU/default decisions and template invariants`.
-  - Temp dummy render probe with `VPNKIT_ROUTING_MODE=tun scripts/vpnkit-render-local-configs.sh`: passed with expected missing-subscription warning.
+  - Temp dummy render probe with `VPNKIT_ROUTING_MODE=tun scripts/vpnkit/vpnkit-render-local-configs.sh`: passed with expected missing-subscription warning.
     - Evidence: rendered config parsed, policy order asserted, local rule-set files existed.
 - Local / full checks:
   - `bash -n scripts/*.sh test/*.sh`: passed.

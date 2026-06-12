@@ -44,7 +44,7 @@ Note: the ad-hoc root wrapper printed `ROOT_LIVE_MATRIX ... cycle=99` because th
 
 ## Fresh local checks after final live run
 
-- `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh scripts/vpnkit-steamdeck-podman.sh scripts/vpnkit-steamdeck-client-test.sh test/containers-test.sh`: PASS.
+- `bash -n scripts/vpnkit/vpnkit-render-local-configs.sh scripts/vpnkit/vpnkit-test-lab-setup.sh scripts/deck/vpnkit-steamdeck-podman.sh scripts/deck/vpnkit-steamdeck-client-test.sh test/containers-test.sh`: PASS.
 - `python3 test/sing-box-smart-routing-proof.py`: PASS.
 - `go test ./...`: PASS.
 - `go vet ./...`: PASS.

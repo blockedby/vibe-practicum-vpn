@@ -21,10 +21,10 @@
   - Evidence: nested acceptance is wired into `test/containers-test.sh --scenario steamdeck-host --action ...`; no new user-facing scenario/root was introduced.
 - Requirement: Generate nested lab material under existing ignored Steam Deck lab structure.
   - Status: done.
-  - Evidence: `scripts/vpnkit-test-lab-setup.sh` generates nested OpenVPN server/client material under `secrets/vpnkit-labs/steamdeck-host/nested/openvpn/...`; temp smoke verified generation without printing contents.
+  - Evidence: `scripts/vpnkit/vpnkit-test-lab-setup.sh` generates nested OpenVPN server/client material under `secrets/vpnkit-labs/steamdeck-host/nested/openvpn/...`; temp smoke verified generation without printing contents.
 - Requirement: Manage nested target/checks through existing lifecycle.
   - Status: done.
-  - Evidence: `docker/vpnkit/entrypoint.sh`, `docker/ovpn-client-test/entrypoint.sh`, `scripts/vpnkit-steamdeck-client-test.sh`, and `test/containers-test.sh` integrate nested server/client behavior into the existing lab container/client smoke flow.
+  - Evidence: `docker/vpnkit/entrypoint.sh`, `docker/ovpn-client-test/entrypoint.sh`, `scripts/deck/vpnkit-steamdeck-client-test.sh`, and `test/containers-test.sh` integrate nested server/client behavior into the existing lab container/client smoke flow.
 - Requirement: Nested acceptance rows are required.
   - Status: done for harness behavior.
   - Evidence: required rows include `client:nested-route-via-tun0`, `client:nested-handshake`, `client:nested-tun1`, and `client:nested-ping-peer`; explicit disable via `VPNKIT_STEAMDECK_NESTED_VPN_ENABLED=0` reports not deploy-ready.
@@ -63,7 +63,7 @@
 
 ## Verification run
 - Local / targeted checks:
-  - `bash -n test/containers-test.sh scripts/vpnkit-test-lab-setup.sh scripts/vpnkit-steamdeck-client-test.sh scripts/vpnkit-steamdeck-podman.sh docker/ovpn-client-test/*.sh docker/vpnkit/entrypoint.sh`: passed.
+  - `bash -n test/containers-test.sh scripts/vpnkit/vpnkit-test-lab-setup.sh scripts/deck/vpnkit-steamdeck-client-test.sh scripts/deck/vpnkit-steamdeck-podman.sh docker/ovpn-client-test/*.sh docker/vpnkit/entrypoint.sh`: passed.
   - `python3 -m py_compile scripts/*.py test/*.py`: passed.
   - `python3 test/sing-box-smart-routing-proof.py`: passed.
 - Local / full checks:

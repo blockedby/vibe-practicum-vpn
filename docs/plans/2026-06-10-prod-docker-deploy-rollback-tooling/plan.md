@@ -7,7 +7,7 @@ Implement repo-safe, repeatable, one-button production Docker/Compose deploy and
 ## Scope
 
 In scope:
-- Add a public-safe deploy helper (preferred `scripts/vpnkit-prod-deploy.sh`) with `plan`/`dry-run`, `deploy --yes --target-ref <ref> <host...>`, `rollback --yes <host...>`, and `verify <host...>` style flows.
+- Add a public-safe deploy helper (preferred `scripts/vpnkit/vpnkit-prod-deploy.sh`) with `plan`/`dry-run`, `deploy --yes --target-ref <ref> <host...>`, `rollback --yes <host...>`, and `verify <host...>` style flows.
 - Default-safe behavior: dry-run/plan by default, refusal for mutating actions without `--yes`, bounded remote command timeouts, redaction, no private endpoints/secrets/log payloads printed or committed.
 - Host inputs from CLI/env/gitignored `config/private-endpoints.local.env`; update tracked example keys only with placeholders if useful.
 - Remote discovery of repo/Compose workdir, Compose project/service/container from Docker Compose labels or approved env overrides; avoid hard-coded production paths.
@@ -45,8 +45,8 @@ Goal:
 - Make the repo contain a safe, documented, test-backed deploy/rollback helper meeting AC1-AC9 without mutating production.
 
 Boundary:
-- Likely files: `scripts/vpnkit-prod-deploy.sh`, `README.md`, `docs/*` runbook if appropriate, `config/private-endpoints.example.env`, `test/*` or existing shell test harness.
-- Reuse patterns: `scripts/vpnkit-prod-singbox-dns-migration.sh`, public-safety/redaction patterns in existing scripts/tests, AGENTS production checklist.
+- Likely files: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `README.md`, `docs/*` runbook if appropriate, `config/private-endpoints.example.env`, `test/*` or existing shell test harness.
+- Reuse patterns: `scripts/vpnkit/vpnkit-prod-singbox-dns-migration.sh`, public-safety/redaction patterns in existing scripts/tests, AGENTS production checklist.
 - Do not touch production endpoints, private local env values, generated profiles/configs, or unrelated runtime logic.
 
 Verification plan:
@@ -64,7 +64,7 @@ Status:
 ## Execution ledger
 
 2026-06-10 deploy-tooling slice owner update:
-- Implemented `scripts/vpnkit-prod-deploy.sh` with `plan`/`dry-run`, `deploy --yes --target-ref`, `rollback --yes`, and `verify` flows.
+- Implemented `scripts/vpnkit/vpnkit-prod-deploy.sh` with `plan`/`dry-run`, `deploy --yes --target-ref`, `rollback --yes`, and `verify` flows.
 - Added `test/prod-deploy-helper-test.sh` for local refusal/redaction/host-list coverage.
 - Updated `README.md` and `config/private-endpoints.example.env` with public-safe usage and placeholder env knobs.
 - Verification evidence recorded in `verification/local.md`.
@@ -72,7 +72,7 @@ Status:
 
 2026-06-10 audit-gap-fix slice update:
 - Mission: close acceptance audit gaps AC3 explicit rollback-bundle metadata/env references and AC8 mocked SSH/Docker/Compose path coverage without production mutation.
-- Scope: `scripts/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, task-package verification/report artifacts only unless a minimal docs note is required.
+- Scope: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, task-package verification/report artifacts only unless a minimal docs note is required.
 - Do-not-touch: do not read or print `config/private-endpoints.local.env`; no live deploy/rollback/verify against real hosts; no real endpoints/secrets/logs in tracked files.
 
 ### Task 2: AC3/AC8 audit gap fix
@@ -96,7 +96,7 @@ Acceptance criteria:
 - AC8: mocked path coverage exercises/refuses mutating actions without `--yes`, and for approved mocked paths proves deploy/verify/rollback remote command routing, redaction, and sequential host handling without real SSH/production contact.
 
 Evidence route:
-- Existing automated checks: `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`; `test/prod-deploy-helper-test.sh`; `git diff --check`.
+- Existing automated checks: `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`; `test/prod-deploy-helper-test.sh`; `git diff --check`.
 - Add/extend test: update `test/prod-deploy-helper-test.sh` with fake ssh/timeout path tests.
 - Bounded acceptance probe: local mock-only shell test; no real endpoints, no private env file.
 - Access/runtime needed: local shell only.
@@ -119,9 +119,9 @@ Task 2 status: ready for implementation dispatch.
 
 2026-06-10 audit-gap-fix completion update:
 - Task 2 status: done.
-- AC3 evidence: `scripts/vpnkit-prod-deploy.sh` `make_bundle()` now writes explicit `image-ref.txt`, `image-id.txt`, `compose-files.txt`, `env-references.txt`, plus legacy compatibility refs and prior rollback artifacts without env values.
+- AC3 evidence: `scripts/vpnkit/vpnkit-prod-deploy.sh` `make_bundle()` now writes explicit `image-ref.txt`, `image-id.txt`, `compose-files.txt`, `env-references.txt`, plus legacy compatibility refs and prior rollback artifacts without env values.
 - AC8 evidence: `test/prod-deploy-helper-test.sh` now includes fake `timeout`/`ssh` and mocked remote `docker`/Compose/`git`/`date` paths for `verify`, `rollback`, and two-host `deploy` sequencing; redaction of mocked token-like output is asserted.
-- Fresh verification: `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh` PASS; `test/prod-deploy-helper-test.sh` PASS; `git diff --check` PASS; audit-gap-fix secret-like diff scan PASS.
+- Fresh verification: `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh` PASS; `test/prod-deploy-helper-test.sh` PASS; `git diff --check` PASS; audit-gap-fix secret-like diff scan PASS.
 - Remaining limitation: no live production deploy/rollback/verify was run by scope; mock tests do not prove real host runtime readiness.
 
 ## Root integration status

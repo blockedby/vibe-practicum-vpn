@@ -7,7 +7,7 @@ Branch: `feat/issue-24-smart-routing-manifest`
 ## Root cause / diagnosis
 
 Resolved script hang risks:
-- `scripts/vpnkit-steamdeck-podman.sh verify_container` had an outer remote verify timeout, but several inner `podman` operations were not individually bounded, including `podman exec ... pgrep`, `podman exec ... test -r /etc/vibe-vpn/sub_url`, and `podman exec ... /usr/local/bin/vibe-vpn doctor`. If a container exec path or doctor process stalled after finite log output, the caller could appear hung until a much larger outer timeout or terminal kill.
+- `scripts/deck/vpnkit-steamdeck-podman.sh verify_container` had an outer remote verify timeout, but several inner `podman` operations were not individually bounded, including `podman exec ... pgrep`, `podman exec ... test -r /etc/vibe-vpn/sub_url`, and `podman exec ... /usr/local/bin/vibe-vpn doctor`. If a container exec path or doctor process stalled after finite log output, the caller could appear hung until a much larger outer timeout or terminal kill.
 - `test/containers-test.sh --scenario steamdeck-host --action test` could still launch the OpenVPN client smoke when the isolated server container was not running, causing a needless long wait after a failed `up`/deploy. It now skips client smoke when the explicit Steam Deck server container is unavailable.
 
 Current live blocker:
@@ -17,7 +17,7 @@ Current live blocker:
 
 ### Static/local checks
 
-- `bash -n scripts/vpnkit-steamdeck-podman.sh test/containers-test.sh`: PASS
+- `bash -n scripts/deck/vpnkit-steamdeck-podman.sh test/containers-test.sh`: PASS
 - `bash -n scripts/*.sh test/*.sh`: PASS
 - `python3 test/sing-box-smart-routing-proof.py`: PASS (`PASS sing-box smart routing proof: adblock/dev-direct/RU/default decisions and template invariants`)
 - `go test ./...`: PASS

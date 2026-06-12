@@ -11,8 +11,8 @@ Worktree: `.worktrees/issue-24-smart-routing-manifest`
 
 ## RED evidence
 
-- `python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent test` initially failed with `unrecognized arguments: --profile-intent test`.
-- `scripts/vpnkit-render-profile-for-pair.sh ... --profile-intent test ...` initially failed with `unknown argument: --profile-intent`.
+- `python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent test` initially failed with `unrecognized arguments: --profile-intent test`.
+- `scripts/vpnkit/vpnkit-render-profile-for-pair.sh ... --profile-intent test ...` initially failed with `unknown argument: --profile-intent`.
 - Newly added `test/manifest-profile-intents-test.sh` initially failed on the missing resolver argument.
 
 ## GREEN / behavior checks
@@ -28,10 +28,10 @@ export PATH=/tmp/f1-profile-intents-venv/bin:$PATH
 Commands run:
 
 ```bash
-bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh
-python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml
-python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent test
-python3 scripts/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent production
+bash -n scripts/vpnkit/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh
+python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml
+python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent test
+python3 scripts/vpnkit/vpnkit-manifest-validate.py --manifest config/vpnkit-manifest.example.yaml --server steamdeck --client host-machine --profile-intent production
 test/manifest-profile-intents-test.sh
 ```
 
@@ -79,7 +79,7 @@ Totals: PASS=4 FAIL=0 SKIP=11
 ## Quality/public-safety checks
 
 ```bash
-bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh
+bash -n scripts/vpnkit/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh
 git diff --check
 git ls-files '*.ovpn'
 ```

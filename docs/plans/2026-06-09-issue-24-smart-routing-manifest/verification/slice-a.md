@@ -5,13 +5,13 @@ Commands run from worktree `.worktrees/issue-24-manifest-profile-slice` on 2026-
 ## Static/syntax
 
 ```bash
-bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh
+bash -n scripts/vpnkit/vpnkit-render-profile-for-pair.sh test/containers-test.sh
 ```
 
 Result: PASS (`bash_n=0`).
 
 ```bash
-python3 -m py_compile scripts/vpnkit-manifest-validate.py
+python3 -m py_compile scripts/vpnkit/vpnkit-manifest-validate.py
 ```
 
 Result: PASS (`py_compile=0`). `scripts/jsonschema.py` was removed and is no longer compiled because the repo must not shadow the real `jsonschema` dependency.
@@ -62,7 +62,7 @@ client_required=id,displayName,profileCommonName,clientCertIdentity,capabilities
 Dependency-error check with repo-local `jsonschema.py` removed:
 
 ```bash
-python3 scripts/vpnkit-manifest-validate.py \
+python3 scripts/vpnkit/vpnkit-manifest-validate.py \
   --manifest config/vpnkit-manifest.example.yaml \
   --server steamdeck --client host-machine
 ```
@@ -95,6 +95,6 @@ Before the remediation removed `scripts/jsonschema.py`, the Slice A fixture path
  M test/containers-test.sh
 ?? config/vpnkit-manifest.example.yaml
 ?? config/vpnkit-manifest.schema.json
-?? scripts/vpnkit-manifest-validate.py
-?? scripts/vpnkit-render-profile-for-pair.sh
+?? scripts/vpnkit/vpnkit-manifest-validate.py
+?? scripts/vpnkit/vpnkit-render-profile-for-pair.sh
 ```

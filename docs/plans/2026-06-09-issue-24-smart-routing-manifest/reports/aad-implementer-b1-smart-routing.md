@@ -10,7 +10,7 @@ FILES_CHANGED:
 - `config/sing-box/config.tun.json.template`: added the same policy for TUN/full-tunnel template while preserving DNS hijack/sniff order, RU direct, and final selected native.
 - `config/sing-box/rule-sets/vpnkit-adblock.json`: added narrow public-safe ad sample source rule set.
 - `config/sing-box/rule-sets/vpnkit-dev-direct.json`: added conservative developer/package infrastructure source rule set.
-- `scripts/vpnkit-render-local-configs.sh`: renders/copies rule sets into `rendered/sing-box/rule-sets/` and applies private permissions.
+- `scripts/vpnkit/vpnkit-render-local-configs.sh`: renders/copies rule sets into `rendered/sing-box/rule-sets/` and applies private permissions.
 - `test/sing-box-smart-routing-proof.py`: deterministic local proof for policy order, sample route decisions, remote RU metadata, and OpenVPN invariants.
 - `docs/plans/2026-06-09-issue-24-smart-routing-manifest/verification/slice-b.md`: verification evidence.
 - `docs/plans/2026-06-09-issue-24-smart-routing-manifest/progress/aad-implementer-b1.md`: progress notes.
@@ -20,7 +20,7 @@ AC_VERIFICATION:
 TESTS_RUN:
 - `python3 test/sing-box-smart-routing-proof.py`: passed (`PASS sing-box smart routing proof: adblock/dev-direct/RU/default decisions and template invariants`).
 - `bash -n scripts/*.sh test/*.sh`: passed (no output).
-- Temp dummy render with `VPNKIT_SECRETS_DIR=<tmp> VPNKIT_ROUTING_MODE=tun scripts/vpnkit-render-local-configs.sh` plus rendered JSON assertions: passed; expected missing-subscription warning only.
+- Temp dummy render with `VPNKIT_SECRETS_DIR=<tmp> VPNKIT_ROUTING_MODE=tun scripts/vpnkit/vpnkit-render-local-configs.sh` plus rendered JSON assertions: passed; expected missing-subscription warning only.
 QUALITY_CHECKS:
 - JSON/template parsing: passed through proof harness and rendered-config probe.
 - Shell syntax: passed via `bash -n scripts/*.sh test/*.sh`.

@@ -87,7 +87,7 @@ if grep -q 'FATAL' "$tmp/redirect-run.log"; then
 fi
 
 if grep -R -n 'ENABLE_DEPRECATED_LEGACY_DNS_SERVERS\|ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER' \
-  docker-compose.yml scripts/vpnkit-steamdeck-podman.sh config/sing-box >/tmp/deprecated-env-grep.out; then
+  docker-compose.yml scripts/deck/vpnkit-steamdeck-podman.sh config/sing-box >/tmp/deprecated-env-grep.out; then
   cat /tmp/deprecated-env-grep.out >&2
   echo "deprecated sing-box DNS compatibility env remains in tracked runtime wiring" >&2
   exit 1

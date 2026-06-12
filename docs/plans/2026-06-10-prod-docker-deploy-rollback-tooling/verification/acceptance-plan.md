@@ -6,7 +6,7 @@
 - Re-audit focus: confirm whether prior AC3 and AC8 partials are now closed by the audit-gap fixes, using fresh local evidence only.
 
 ## Evidence sources to inspect
-- `scripts/vpnkit-prod-deploy.sh`
+- `scripts/vpnkit/vpnkit-prod-deploy.sh`
 - `test/prod-deploy-helper-test.sh`
 - `README.md`
 - `config/private-endpoints.example.env`

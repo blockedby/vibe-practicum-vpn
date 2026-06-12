@@ -13,7 +13,7 @@
 
 ## Acceptance verification
 - Fresh owner checks passed:
-  - `bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh`
+  - `bash -n scripts/vpnkit/vpnkit-render-profile-for-pair.sh test/containers-test.sh test/manifest-profile-intents-test.sh`
   - resolver checks for `--profile-intent test` and `--profile-intent production` using disposable PyYAML/jsonschema venv
   - `test/manifest-profile-intents-test.sh`
   - non-live `test/containers-test.sh` selected-pair harness showed `intent=test`, PASS=4 FAIL=0 SKIP=11

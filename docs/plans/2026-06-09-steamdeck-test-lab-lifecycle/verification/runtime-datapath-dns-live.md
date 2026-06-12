@@ -12,7 +12,7 @@ Branch: `feat/issue-24-smart-routing-manifest`
 
 ## Fresh local checks
 
-- `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh`: PASS.
+- `bash -n scripts/vpnkit/vpnkit-render-local-configs.sh scripts/vpnkit/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/deck/vpnkit-steamdeck-podman.sh`: PASS.
 - `python3 test/sing-box-smart-routing-proof.py`: PASS — remote/local-fixture routing invariants preserved.
 - Disposable lab setup/render: PASS — lab defaults render `selected-native-out` as direct with final/tag preserved, local RU fixtures, and OpenVPN pushes DNS `172.19.0.1`.
 - Disposable explicit/default render: PASS — `VPNKIT_RULESET_SOURCE_MODE=remote VPNKIT_SELECTED_OUTBOUND_MODE=proxy` renders VLESS `selected-native-out` and OpenVPN DNS `10.89.0.1`.

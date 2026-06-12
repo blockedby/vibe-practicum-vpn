@@ -13,7 +13,7 @@
 - Slice structure: single deployment-tooling slice, plus one audit-gap fix pass. This was kept as one slice because tooling/docs/tests share one ownership boundary and one verification story.
 
 ## Spec compliance
-- AC1 safe subcommands/refusal: done. `scripts/vpnkit-prod-deploy.sh` supports `plan`, `dry-run`, `deploy`, `rollback`, and `verify`; deploy/rollback require `--yes`.
+- AC1 safe subcommands/refusal: done. `scripts/vpnkit/vpnkit-prod-deploy.sh` supports `plan`, `dry-run`, `deploy`, `rollback`, and `verify`; deploy/rollback require `--yes`.
 - AC2 deploy sequence: done in helper: rollback bundle, fetch/checkout target ref, render/persisted sing-box check, Compose recreate of `vpnkit`, smoke, auto-rollback, post-rollback smoke.
 - AC3 rollback bundle contents: done. Bundle writes git ref, image ref/id, compose/env references without values, runtime sing-box config, container inspect metadata, and executable rollback payload.
 - AC4 discovery: done. Uses Compose labels and approved overrides; no production workdir/endpoint hard-coding.
@@ -25,7 +25,7 @@
 
 ## Acceptance verification
 - Local/root verification run:
-  - `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`: passed.
+  - `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`: passed.
   - `test/prod-deploy-helper-test.sh`: passed.
   - `git diff --check`: passed.
   - Secret-pattern diff scan over root task commits: passed/no matches.
@@ -52,7 +52,7 @@
 ## Issues
 ### Issue R-01: Acceptance audit found rollback metadata/test gaps
 - Resolution: Added explicit rollback metadata/env-reference artifacts and mocked SSH/Docker/Compose tests.
-- Evidence: `scripts/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, `reports/acceptance-auditor-final.md`.
+- Evidence: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, `reports/acceptance-auditor-final.md`.
 
 ### Issue U-01: Live production deploy not executed
 - Why unresolved: explicit user safety boundary.

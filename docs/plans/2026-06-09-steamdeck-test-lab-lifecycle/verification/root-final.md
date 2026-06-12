@@ -22,5 +22,5 @@
 - worktree generated artifact cleanup check
   - Result: cleanup done for local generated lab/log/cache artifacts
 - post-attempt isolated remote cleanup
-  - Command: `scripts/vpnkit-steamdeck-podman.sh cleanup` with explicit lab container `vpnkit-test-steamdeck-host` and default Deck alias fallback.
+  - Command: `scripts/deck/vpnkit-steamdeck-podman.sh cleanup` with explicit lab container `vpnkit-test-steamdeck-host` and default Deck alias fallback.
   - Result: PASS; helper reported the isolated lab container name removed. Production/default `vpnkit` was not targeted.

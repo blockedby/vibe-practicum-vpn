@@ -16,8 +16,8 @@
 - `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle/verification/root-final-live-green.md`
 - `README.md`
 - `test/containers-test.sh`
-- `scripts/vpnkit-test-lab-setup.sh`
-- `scripts/vpnkit-steamdeck-client-test.sh`
+- `scripts/vpnkit/vpnkit-test-lab-setup.sh`
+- `scripts/deck/vpnkit-steamdeck-client-test.sh`
 - `docker/ovpn-client-test/entrypoint.sh`
 - `docker/vpnkit/entrypoint.sh`
 

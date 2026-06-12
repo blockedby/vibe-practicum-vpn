@@ -1,5 +1,5 @@
 # Sanitized container-lab config for vibe-vpn inside vpnkit.
-# Render with scripts/vpnkit-render-local-configs.sh. Do not put secrets here.
+# Render with scripts/vpnkit/vpnkit-render-local-configs.sh. Do not put secrets here.
 subscription_file: /etc/vibe-vpn/sub_url
 extra_nodes_file: /etc/vibe-vpn/extra-nodes.json
 runtime: singbox

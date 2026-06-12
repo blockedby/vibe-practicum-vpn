@@ -1,6 +1,6 @@
 ## Task
 - Mission: Remediate issue #27 live-attempt blockers before another Steam Deck lab lifecycle run.
-- Target: `test/containers-test.sh`, `scripts/vpnkit-steamdeck-podman.sh`, README/template docs, task verification.
+- Target: `test/containers-test.sh`, `scripts/deck/vpnkit-steamdeck-podman.sh`, README/template docs, task verification.
 - Boundaries: Do not touch prod/default `vpnkit`; do not print/commit secrets, generated profiles, logs, or private endpoints.
 - Done when: placeholders fail fast, remote operations are bounded, docs/templates are updated, safe checks pass, and live status is classified.
 

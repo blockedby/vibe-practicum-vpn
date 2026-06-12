@@ -1,6 +1,6 @@
 ## Task
 - Mission: Close acceptance audit gaps AC3 and AC8 for production Docker deploy/rollback tooling without production mutation.
-- Target: `scripts/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, task-package plan/verification artifacts.
+- Target: `scripts/vpnkit/vpnkit-prod-deploy.sh`, `test/prod-deploy-helper-test.sh`, task-package plan/verification artifacts.
 - Boundaries: Mock/static/local only; no live deploy/rollback/verify; did not read or print `config/private-endpoints.local.env`; no real endpoints/secrets/logs in tracked files.
 - Done when: AC3 has explicit rollback-bundle metadata/env-reference artifacts and AC8 has lightweight mocked SSH/Docker/Compose path coverage, with fresh checks passing and changes pushed.
 - Expected evidence: syntax check, helper test, `git diff --check`, public-safe diff scan, commit hash.
@@ -50,10 +50,10 @@
 
 ## Verification run
 - Local / targeted checks:
-  - `bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`: passed.
+  - `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh`: passed.
   - `test/prod-deploy-helper-test.sh`: passed.
   - `git diff --check`: passed.
-  - `git diff -- scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh docs/plans/2026-06-10-prod-docker-deploy-rollback-tooling | grep -E 'BEGIN (RSA|OPENSSH|PRIVATE)|vless://[^[]|token=[A-Za-z0-9]|password=[A-Za-z0-9]' || true`: passed, no matches.
+  - `git diff -- scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh docs/plans/2026-06-10-prod-docker-deploy-rollback-tooling | grep -E 'BEGIN (RSA|OPENSSH|PRIVATE)|vless://[^[]|token=[A-Za-z0-9]|password=[A-Za-z0-9]' || true`: passed, no matches.
 - Local / full checks:
   - Not run; change is limited to shell helper/test/task-package docs and targeted checks directly cover the audit gaps.
 - Remote checks / CI:
@@ -91,7 +91,7 @@
 
 ## Next-agent brief
 - Objective: If continuing beyond repo-safe tooling, gather operator-approved live evidence.
-- Target: `scripts/vpnkit-prod-deploy.sh plan/deploy/verify/rollback` against approved production hosts.
+- Target: `scripts/vpnkit/vpnkit-prod-deploy.sh plan/deploy/verify/rollback` against approved production hosts.
 - Settled already: local repo-safe helper behavior, redaction, refusal, mocked routing, and rollback artifact writing.
 - Boundaries: do not use live endpoints or mutate production without explicit approval and private local env.
 - Verification target: real host plan evidence, then approved sequential deploy/verify/rollback smoke on all production endpoints.

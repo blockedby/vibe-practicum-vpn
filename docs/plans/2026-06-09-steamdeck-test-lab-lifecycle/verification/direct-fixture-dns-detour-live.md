@@ -31,5 +31,5 @@ PASS go test/vet/build
 
 ## Sensitive tracked artifact check
  M docs/plans/2026-06-09-steamdeck-test-lab-lifecycle/plan.md
- M scripts/vpnkit-render-local-configs.sh
+ M scripts/vpnkit/vpnkit-render-local-configs.sh
 PASS no tracked sensitive/generated artifact path matches

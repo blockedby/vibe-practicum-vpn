@@ -6,7 +6,7 @@ Fresh local checks (2026-06-09):
 | --- | --- | --- |
 | `python3 test/sing-box-smart-routing-proof.py` | PASS | `PASS sing-box smart routing proof: adblock/dev-direct/RU/default decisions and template invariants` |
 | `bash -n scripts/*.sh test/*.sh` | PASS | No output; shell syntax accepted for existing scripts and shell tests. |
-| Temp render probe with dummy public-safe secret tree and `VPNKIT_ROUTING_MODE=tun scripts/vpnkit-render-local-configs.sh` | PASS with expected missing-subscription warning | Rendered config parsed; `/rendered/sing-box/rule-sets/vpnkit-adblock.json` and `vpnkit-dev-direct.json` existed; policy order was adblock, dev-direct, RU geoip, RU geosite. |
+| Temp render probe with dummy public-safe secret tree and `VPNKIT_ROUTING_MODE=tun scripts/vpnkit/vpnkit-render-local-configs.sh` | PASS with expected missing-subscription warning | Rendered config parsed; `/rendered/sing-box/rule-sets/vpnkit-adblock.json` and `vpnkit-dev-direct.json` existed; policy order was adblock, dev-direct, RU geoip, RU geosite. |
 
 Acceptance mapping:
 

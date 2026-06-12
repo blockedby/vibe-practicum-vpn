@@ -7,7 +7,7 @@ Scope: public-safe local/static/tests only; no production endpoints were contact
 ## Commands run
 
 ```bash
-bash -n scripts/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh
+bash -n scripts/vpnkit/vpnkit-prod-deploy.sh test/prod-deploy-helper-test.sh
 # result: PASS
 
 test/prod-deploy-helper-test.sh
@@ -20,7 +20,7 @@ git diff --check
 Public-safety scan:
 
 ```bash
-git diff -- scripts/vpnkit-prod-deploy.sh README.md config/private-endpoints.example.env \
+git diff -- scripts/vpnkit/vpnkit-prod-deploy.sh README.md config/private-endpoints.example.env \
   test/prod-deploy-helper-test.sh docs/plans/2026-06-10-prod-docker-deploy-rollback-tooling \
   | grep -E 'BEGIN (RSA|OPENSSH|PRIVATE)|vless://[^[]|token=[A-Za-z0-9]' || true
 # result: no matches; no private keys, VLESS URLs, or token assignments in new deploy-tooling changes.

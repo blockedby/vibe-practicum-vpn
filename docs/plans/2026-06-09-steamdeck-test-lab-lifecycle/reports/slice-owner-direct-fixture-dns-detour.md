@@ -1,6 +1,6 @@
 ## Task
 - Mission: Fix isolated Steam Deck lab sing-box startup failure: `detour to an empty direct outbound makes no sense` in direct-fixture mode.
-- Target: `scripts/vpnkit-render-local-configs.sh` direct-fixture render semantics plus task evidence.
+- Target: `scripts/vpnkit/vpnkit-render-local-configs.sh` direct-fixture render semantics plus task evidence.
 - Boundaries: No production/default `vpnkit` mutation; no private endpoints/profiles/keys/logs in tracked files or chat; default/proxy render behavior unchanged.
 - Done when: Direct-fixture render passes `sing-box check`, default/proxy render still detours DNS via `selected-native-out`, live Deck lifecycle is run if private access exists, and branch/PR/issue are updated public-safely.
 - Expected evidence: Local render assertions, `sing-box check`, shell/proof/Go checks, sensitive artifact check, live matrix or precise blocker.
@@ -50,7 +50,7 @@
 
 ## Verification run
 - Local / targeted checks:
-  - `bash -n scripts/vpnkit-render-local-configs.sh scripts/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/vpnkit-steamdeck-podman.sh`: passed.
+  - `bash -n scripts/vpnkit/vpnkit-render-local-configs.sh scripts/vpnkit/vpnkit-test-lab-setup.sh test/containers-test.sh scripts/deck/vpnkit-steamdeck-podman.sh`: passed.
   - `python3 test/sing-box-smart-routing-proof.py`: passed.
   - Direct-fixture lab render assertion: passed.
   - `sing-box check -c /tmp/vpnkit-direct-fixture-singbox-check.json`: passed.
@@ -85,7 +85,7 @@
 - Status: partial / blocked on live private-env verification.
 - Code/config result: direct-fixture startup config defect fixed and locally proven; default/proxy behavior preserved.
 - Live matrix from this slice: `down=not-run up=not-run test=not-run cycle=not-run cleanup=not-run` due missing private env.
-- Files changed: `scripts/vpnkit-render-local-configs.sh`, `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle/plan.md`, this report, verification evidence.
+- Files changed: `scripts/vpnkit/vpnkit-render-local-configs.sh`, `docs/plans/2026-06-09-steamdeck-test-lab-lifecycle/plan.md`, this report, verification evidence.
 - Commit: `f4c389a` (`fix(lab): omit dns detour for direct fixture outbound`), pushed to `origin/feat/issue-24-smart-routing-manifest`.
 - GitHub: PR #26 comment https://github.com/blockedby/vibe-practicum-vpn/pull/26#issuecomment-4667957747; issue #27 comment https://github.com/blockedby/vibe-practicum-vpn/issues/27#issuecomment-4667957874.
 

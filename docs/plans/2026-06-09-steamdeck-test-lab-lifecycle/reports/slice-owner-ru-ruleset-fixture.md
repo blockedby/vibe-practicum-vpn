@@ -17,10 +17,10 @@
 ## Spec compliance
 - Default remote RU rule sets remain default:
   - Status: done
-  - Evidence: `scripts/vpnkit-render-local-configs.sh` defaults `VPNKIT_RULESET_SOURCE_MODE=remote`; `python3 test/sing-box-smart-routing-proof.py` covers remote/default invariants; explicit remote disposable render passed.
+  - Evidence: `scripts/vpnkit/vpnkit-render-local-configs.sh` defaults `VPNKIT_RULESET_SOURCE_MODE=remote`; `python3 test/sing-box-smart-routing-proof.py` covers remote/default invariants; explicit remote disposable render passed.
 - Lab defaults to local fixture:
   - Status: done
-  - Evidence: `test/containers-test.sh` exports `VPNKIT_RULESET_SOURCE_MODE=local-fixture` for `steamdeck-host`; `scripts/vpnkit-test-lab-setup.sh` also defaults local-fixture.
+  - Evidence: `test/containers-test.sh` exports `VPNKIT_RULESET_SOURCE_MODE=local-fixture` for `steamdeck-host`; `scripts/vpnkit/vpnkit-test-lab-setup.sh` also defaults local-fixture.
 - Local fixture preserves policy shape:
   - Status: done
   - Evidence: rendered local entries keep `geoip-ru` / `geosite-category-ru` tags as local/source paths; route rules still point to `direct-out`; final remains `selected-native-out`; adblock/dev-direct unchanged.
@@ -95,7 +95,7 @@
 ### Issue R-03: Client smoke could outlive harness timeout
 - Description: Local OpenVPN client smoke could continue until outer command timeout.
 - Evidence: bounded test attempts hung until outer timeout.
-- Resolution: Added explicit client container timeout and cleanup in `scripts/vpnkit-steamdeck-client-test.sh`; harness passes timeout through.
+- Resolution: Added explicit client container timeout and cleanup in `scripts/deck/vpnkit-steamdeck-client-test.sh`; harness passes timeout through.
 - Depends on: none.
 
 ### Issue R-04: Lab client cert missing X509 key usage

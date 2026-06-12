@@ -82,7 +82,7 @@ For `vpnkit` runtime, routing, OpenVPN, sing-box, DNS, IPv6, or `vibe-vpn` daemo
 
 ## Production deploy/rollback helper
 
-- Use `scripts/vpnkit-prod-deploy.sh` for repeatable production Docker/Compose plan/deploy/verify/rollback flows. Do not create one-off production deploy scripts unless the helper cannot support the required operation.
+- Use `scripts/vpnkit/vpnkit-prod-deploy.sh` for repeatable production Docker/Compose plan/deploy/verify/rollback flows. Do not create one-off production deploy scripts unless the helper cannot support the required operation.
 - Safe review commands are `plan`/`dry-run`; mutating `deploy` and `rollback` require `--yes` and explicit operator approval.
 - The helper must target both production failover endpoints for production rollout, create a remote rollback bundle, rebuild/recreate only the `vpnkit` service, run smoke, and auto-rollback on failed deploy smoke.
 - Real production host aliases and override values belong only in `config/private-endpoints.local.env` or the operator environment; tracked docs must use placeholders.

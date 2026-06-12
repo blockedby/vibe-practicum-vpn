@@ -37,13 +37,13 @@ Two implementation slices preserve ownership and reduce conflict:
 
 ### Slice A: manifest/schema, resolver, profile renderer, matrix integration
 - Owns AC1-AC4 and manifest/profile docs.
-- Likely files: `config/vpnkit-manifest.schema.json`, `config/vpnkit-manifest.example.yaml`, optional local example, `.gitignore`, `scripts/vpnkit-manifest-validate.py`, `scripts/vpnkit-resolve-profile-pair.sh`, `scripts/vpnkit-render-profile-for-pair.sh`, `test/containers-test.sh`, focused fixtures/tests/docs.
+- Likely files: `config/vpnkit-manifest.schema.json`, `config/vpnkit-manifest.example.yaml`, optional local example, `.gitignore`, `scripts/vpnkit/vpnkit-manifest-validate.py`, `scripts/vpnkit-resolve-profile-pair.sh`, `scripts/vpnkit/vpnkit-render-profile-for-pair.sh`, `test/containers-test.sh`, focused fixtures/tests/docs.
 - Must not touch smart routing sing-box policy except if needed for docs cross-links.
 - Report: `reports/slice-a-manifest-profile-matrix.md`.
 
 ### Slice B: smart routing/adblock/dev-direct sing-box policy and route-decision proofs
 - Owns AC5-AC6 and smart-routing docs.
-- Likely files: sing-box templates/rendering under `config/`, `scripts/vpnkit-render-local-configs.sh`, route-set files under `config/sing-box/rule-sets/`, test harness route-decision proofs, docs.
+- Likely files: sing-box templates/rendering under `config/`, `scripts/vpnkit/vpnkit-render-local-configs.sh`, route-set files under `config/sing-box/rule-sets/`, test harness route-decision proofs, docs.
 - Must preserve full-tunnel final `selected-native-out`, existing RU direct behavior, OpenVPN pushes/tun MTU/MSS, and not broaden direct routing beyond conservative dev/package list.
 - Report: `reports/slice-b-smart-routing.md`.
 
@@ -70,7 +70,7 @@ Boundary:
 - Primary verification: repo-local shell/Python tests that parse rendered/template configs and prove expected rule order/decisions without live production mutation.
 
 Existing pattern / reuse:
-- Reuse `config/sing-box/config.json.template`, `config/sing-box/config.tun.json.template`, `scripts/vpnkit-render-local-configs.sh`, existing RU `rule_set` route structure, existing `block-out`, `direct-out`, and final `selected-native-out` outbounds.
+- Reuse `config/sing-box/config.json.template`, `config/sing-box/config.tun.json.template`, `scripts/vpnkit/vpnkit-render-local-configs.sh`, existing RU `rule_set` route structure, existing `block-out`, `direct-out`, and final `selected-native-out` outbounds.
 - Preserve OpenVPN server template `redirect-gateway`, `tun-mtu 1400`, and `mssfix 1360` by not editing them unless verification demands it.
 
 Missing change:
@@ -80,7 +80,7 @@ Missing change:
 
 Scope / likely files:
 - `config/sing-box/` templates and rule-set files.
-- `scripts/vpnkit-render-local-configs.sh` only if rendering must copy/include rule sets.
+- `scripts/vpnkit/vpnkit-render-local-configs.sh` only if rendering must copy/include rule sets.
 - `test/` or `scripts/` local proof harness/tests.
 - `docs/` smart-routing notes only if needed for AC7 cross-reference; do not touch Slice A manifest/profile CLIs.
 
@@ -140,8 +140,8 @@ Scope / do-not-touch boundaries:
 Repo orientation / reuse:
 - Existing tracked public manifest: `config/vpnkit-manifest.example.yaml`.
 - Existing schema: `config/vpnkit-manifest.schema.json`.
-- Existing resolver: `scripts/vpnkit-manifest-validate.py` emits sanitized pair JSON.
-- Existing renderer: `scripts/vpnkit-render-profile-for-pair.sh`, default output `generated/openvpn-profiles`.
+- Existing resolver: `scripts/vpnkit/vpnkit-manifest-validate.py` emits sanitized pair JSON.
+- Existing renderer: `scripts/vpnkit/vpnkit-render-profile-for-pair.sh`, default output `generated/openvpn-profiles`.
 - Existing selected-pair harness: `test/containers-test.sh` with `VPNKIT_TEST_MANIFEST_*` variables.
 - Existing ignored generated profile location: `generated/openvpn-profiles/` from `.gitignore`; real ad-hoc scripts may also use operator-supplied ignored paths, but manifest renderer defaults here and should remain secret-safe.
 
@@ -158,7 +158,7 @@ Acceptance criteria:
 - No generated `.ovpn`, secrets, endpoints, logs, or profile contents are printed/committed.
 
 Test plan:
-- `bash -n scripts/vpnkit-render-profile-for-pair.sh test/containers-test.sh`
+- `bash -n scripts/vpnkit/vpnkit-render-profile-for-pair.sh test/containers-test.sh`
 - Manifest schema/semantic validation for the example.
 - Resolver positive checks for `--profile-intent test` and `--profile-intent production` returning sanitized JSON with distinct intents.
 - Renderer fixture check for test intent into ignored `generated/openvpn-profiles` with mode `600` and no secret stdout.

@@ -45,7 +45,7 @@ require_literal "$compose" 'OVPN_CIDR: "${OVPN_CIDR:-10.89.0.0/24}"' 'compose OV
 require_literal "$docs" 'VPNKIT_ROUTING_MODE=redirect' 'redirect-mode consistency docs mode'
 require_literal "$docs" 'redirect inbound on TCP `2082` and DNS' 'redirect-mode consistency docs inbounds'
 require_literal "$docs" 'OVPN_CIDR' 'OVPN_CIDR compose override docs'
-require_literal "$repo_root/scripts/vpnkit-render-local-configs.sh" 'tun) singbox_template=config/sing-box/config.tun.json.template ;;' 'tun render template selection'
+require_literal "$repo_root/scripts/vpnkit/vpnkit-render-local-configs.sh" 'tun) singbox_template=config/sing-box/config.tun.json.template ;;' 'tun render template selection'
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"type": "tun"' 'tun inbound template'
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"interface_name": "sb-tun0"' 'tun interface matches routing default'
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"address": ["172.19.0.1/30"]' 'tun address matches routing peer default'
@@ -57,7 +57,7 @@ require_literal "$repo_root/config/sing-box/config.json.template" '"type": "tls"
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"type": "tls"' 'tun template new DNS server schema'
 require_literal "$repo_root/config/sing-box/config.json.template" '"default_domain_resolver": "direct-dns"' 'redirect template explicit domain resolver'
 require_literal "$repo_root/config/sing-box/config.tun.json.template" '"default_domain_resolver": "direct-dns"' 'tun template explicit domain resolver'
-if grep -R -n 'ENABLE_DEPRECATED_LEGACY_DNS_SERVERS\|ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER' "$compose" "$repo_root/scripts/vpnkit-steamdeck-podman.sh" "$repo_root/config/sing-box" >/tmp/vpnkit-deprecated-dns-env.out; then
+if grep -R -n 'ENABLE_DEPRECATED_LEGACY_DNS_SERVERS\|ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER' "$compose" "$repo_root/scripts/deck/vpnkit-steamdeck-podman.sh" "$repo_root/config/sing-box" >/tmp/vpnkit-deprecated-dns-env.out; then
   cat /tmp/vpnkit-deprecated-dns-env.out >&2
   echo 'deprecated sing-box DNS compatibility env must not be required by tracked vpnkit runtime wiring' >&2
   exit 1

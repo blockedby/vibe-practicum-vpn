@@ -13,8 +13,8 @@
 ## Spec compliance
 - New DNS schema: done. `config/sing-box/config.json.template` and `config/sing-box/config.tun.json.template` use `type`/`server` for remote DNS and no legacy `address: tls://...`.
 - Explicit domain resolver: done. `route.default_domain_resolver` uses `direct-dns`; `direct-dns` is `type: local` to avoid selected-outbound/bootstrap loops and direct DoT/853 dependence.
-- Deprecated env removal: done. `docker-compose.yml` and `scripts/vpnkit-steamdeck-podman.sh` no longer set `ENABLE_DEPRECATED_LEGACY_DNS_SERVERS` or `ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER`.
-- Deployment helper: done. `scripts/vpnkit-prod-singbox-dns-migration.sh` discovers Compose labels, backs up rollback refs, renders/checks config without deprecated env, recreates only `vpnkit`, and runs runtime smoke.
+- Deprecated env removal: done. `docker-compose.yml` and `scripts/deck/vpnkit-steamdeck-podman.sh` no longer set `ENABLE_DEPRECATED_LEGACY_DNS_SERVERS` or `ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER`.
+- Deployment helper: done. `scripts/vpnkit/vpnkit-prod-singbox-dns-migration.sh` discovers Compose labels, backs up rollback refs, renders/checks config without deprecated env, recreates only `vpnkit`, and runs runtime smoke.
 - PR state: done. PR #25 opened and marked ready.
 
 ## Acceptance verification
