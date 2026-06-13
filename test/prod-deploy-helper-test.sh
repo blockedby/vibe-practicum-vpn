@@ -57,7 +57,26 @@ services:
     env_file:
       - .env
 YAML
-mkdir -p "$remote_root/workdir/scripts/vpnkit"
+mkdir -p "$remote_root/workdir/scripts/vpnkit" "$remote_root/workdir/config/sing-box/rule-sets" "$remote_root/workdir/secrets/vps/sing-box" "$remote_root/workdir/secrets/vps/rendered/sing-box"
+cat >"$remote_root/workdir/config/sing-box/config.tun.json.template" <<'JSON'
+{
+  "outbounds": [
+    {{SELECTED_NATIVE_OUT_JSON}},
+    { "type": "direct", "tag": "direct-out" },
+    { "type": "block", "tag": "block-out" }
+  ],
+  "route": {
+    "rule_set": [
+{{RU_RULE_SETS_JSON}}
+    ],
+    "final": "selected-native-out"
+  }
+}
+JSON
+printf '{"version":1,"rules":[]}
+' >"$remote_root/workdir/config/sing-box/rule-sets/vpnkit-adblock.json"
+printf '{"version":1,"rules":[]}
+' >"$remote_root/workdir/config/sing-box/rule-sets/vpnkit-dev-direct.json"
 cat >"$remote_root/workdir/scripts/vpnkit/vpnkit-render-local-configs.sh" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -107,6 +126,7 @@ VPNKIT_MOCK_ROUTING_MODE="${VPNKIT_MOCK_ROUTING_MODE:-tun}" \
 VPNKIT_MOCK_ROLLBACK_SMOKE_FAIL="${VPNKIT_MOCK_ROLLBACK_SMOKE_FAIL:-0}" \
 VPNKIT_MOCK_REQUIRE_TUN_FAIL="${VPNKIT_MOCK_REQUIRE_TUN_FAIL:-0}" \
 VPNKIT_MOCK_RENDER_FAIL="${VPNKIT_MOCK_RENDER_FAIL:-0}" \
+VPNKIT_MOCK_PREVIOUS_SINGBOX_USABLE="${VPNKIT_MOCK_PREVIOUS_SINGBOX_USABLE:-0}" \
 bash -s -- __remote "$mode" "$target_ref" "$deploy_id" "$rollback_id" <<<"$script"
 MOCK
 chmod +x "$fakebin/ssh"
@@ -151,7 +171,14 @@ case "$1" in
     echo '[{"mock":"inspect"}]' ;;
   cp)
     dest=${3:-}
-    if [[ "$dest" == *previous-sing-box-config.json ]]; then echo '{"mock":"sing-box"}' >"$dest"; fi
+    if [[ "$dest" == *previous-sing-box-config.json ]]; then
+      if [[ "${VPNKIT_MOCK_PREVIOUS_SINGBOX_USABLE:-0}" == 1 ]]; then
+        printf '{"outbounds":[{"type":"direct","tag":"selected-native-out"}]}
+' >"$dest"
+      else
+        echo '{"mock":"sing-box"}' >"$dest"
+      fi
+    fi
     echo docker_cp=ok ;;
   tag) echo "docker_tag=$2 $3" ;;
   exec)
@@ -212,6 +239,7 @@ assert_grep 'local_config_render=start mode=tun'
 assert_grep 'render_invoked_routing_mode=tun token=<redacted>'
 assert_grep 'local_config_render_mock=ok'
 assert_grep 'local_config_render=ok'
+assert_not_grep 'singbox_only_fallback|local_config_render_selected_source'
 assert_order 'source_update=git resolved_ref=abc123resolved' 'local_config_render=start mode=tun'
 assert_order 'local_config_render=ok' 'compose_build=vpnkit'
 assert_grep 'release_dir=.*/releases/20260613T010203Z-deadbeef'
@@ -260,11 +288,63 @@ assert_grep 'deploy_activation_or_config=failed'
 assert_grep 'rollback_start=.*rollback'
 assert_grep 'rollback_activation=no_build'
 
-check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_RENDER_FAIL=1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010205Z-deadbeef host-a
+cat >"$remote_root/workdir/secrets/vps/sing-box/tproxy-canary.json" <<'JSON'
+{
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "selected-native-out",
+      "server": "203.0.113.10",
+      "server_port": 443,
+      "uuid": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}
+JSON
+cat >"$remote_root/workdir/secrets/vps/rendered/sing-box/config.json" <<'JSON'
+{"outbounds":[{"type":"direct","tag":"selected-native-out"}]}
+JSON
+check_ok env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_RENDER_FAIL=1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010205Z-deadbeef host-a
+assert_grep 'local_config_render=start mode=tun'
+assert_grep 'render_invoked_routing_mode=tun token=<redacted>'
+assert_grep 'local_config_render_mock=failed'
+assert_grep 'local_config_render=singbox_only_fallback'
+assert_grep 'local_config_render_selected_source=tproxy_canary'
+assert_order 'local_config_render=singbox_only_fallback' 'compose_build=vpnkit'
+fallback_config="$remote_root/workdir/secrets/vps/rendered/sing-box/config.json"
+assert_grep '"type": "vless"' "$fallback_config"
+assert_grep '"server": "203.0.113.10"' "$fallback_config"
+assert_grep 'runetfreedom/russia-v2ray-rules-dat/.*/geoip-ru.srs' "$fallback_config"
+assert_grep 'runetfreedom/russia-v2ray-rules-dat/.*/geosite-category-ru.srs' "$fallback_config"
+assert_not_grep '\{\{SELECTED_NATIVE_OUT_JSON\}\}|\{\{RU_RULE_SETS_JSON\}\}' "$fallback_config"
+for ruleset in vpnkit-adblock.json vpnkit-dev-direct.json; do
+  if [[ ! -s "$remote_root/workdir/secrets/vps/rendered/sing-box/rule-sets/$ruleset" ]]; then echo "fallback did not copy rule set: $ruleset"; fail=1; fi
+done
+assert_grep 'deploy=ok'
+assert_not_grep 'mock-render-secret|00000000-0000-0000-0000-000000000000'
+
+rm -f "$remote_root/workdir/secrets/vps/sing-box/tproxy-canary.json"
+cat >"$remote_root/workdir/secrets/vps/rendered/sing-box/config.json" <<'JSON'
+{"outbounds":[{"type":"direct","tag":"selected-native-out"}]}
+JSON
+check_ok env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_RENDER_FAIL=1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010206Z-deadbeef host-a
+assert_grep 'local_config_render=singbox_only_fallback'
+assert_grep 'local_config_render_selected_source=rendered_singbox'
+assert_order 'local_config_render=singbox_only_fallback' 'compose_build=vpnkit'
+
+rm -f "$remote_root/workdir/secrets/vps/sing-box/tproxy-canary.json" "$remote_root/workdir/secrets/vps/rendered/sing-box/config.json"
+check_ok env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_RENDER_FAIL=1 VPNKIT_MOCK_PREVIOUS_SINGBOX_USABLE=1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010207Z-deadbeef host-a
+assert_grep 'local_config_render=singbox_only_fallback'
+assert_grep 'local_config_render_selected_source=rollback_previous'
+assert_order 'local_config_render=singbox_only_fallback' 'compose_build=vpnkit'
+
+rm -f "$remote_root/workdir/secrets/vps/sing-box/tproxy-canary.json" "$remote_root/workdir/secrets/vps/rendered/sing-box/config.json"
+check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_RENDER_FAIL=1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010208Z-deadbeef host-a
 assert_grep 'local_config_render=start mode=tun'
 assert_grep 'render_invoked_routing_mode=tun token=<redacted>'
 assert_grep 'local_config_render_mock=failed'
 assert_grep 'local_config_render=failed'
+assert_grep 'singbox_only_fallback=failed'
 assert_grep 'deploy_render=failed'
 assert_not_grep 'compose_build|compose_up|activation=no_build|rollback_activation=no_build'
 assert_not_grep 'mock-render-secret'

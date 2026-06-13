@@ -213,6 +213,126 @@ EOFOVERRIDE
     log "release_dir=$release_dir"
     log "rollback_bundle=$rollback_dir"
   }
+  render_singbox_only_fallback() {
+    local base=${VPNKIT_SECRETS_DIR:-secrets/vps}
+    local rendered="$base/rendered"
+    local singbox_rendered="$rendered/sing-box"
+    local template=config/sing-box/config.tun.json.template
+    local rule_set_source=config/sing-box/rule-sets
+    local source_label_file source_label
+    [ -f "$template" ] || { log singbox_only_fallback_template=missing; return 46; }
+    [ -d "$rule_set_source" ] || { log singbox_only_fallback_rule_sets=missing; return 46; }
+    compgen -G "$rule_set_source/*.json" >/dev/null || { log singbox_only_fallback_rule_sets=empty; return 46; }
+    mkdir -p "$singbox_rendered/rule-sets" || { log singbox_only_fallback_rendered_dir=failed; return 46; }
+    source_label_file=$(mktemp) || { log singbox_only_fallback_source_label=failed; return 46; }
+    if ! python3 - "$template" "$singbox_rendered/config.json" "$source_label_file" "$base/sing-box/tproxy-canary.json" "$singbox_rendered/config.json" "${rollback_dir:-}/previous-sing-box-config.json" <<'PY'
+import ipaddress
+import json
+import os
+import socket
+import sys
+
+tmpl, out, source_label_out, tproxy_canary, rendered_config, rollback_config = sys.argv[1:]
+
+
+def selected_from(path):
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    outbounds = data.get("outbounds")
+    if not isinstance(outbounds, list):
+        return None
+    for outbound in outbounds:
+        if not isinstance(outbound, dict):
+            continue
+        if outbound.get("tag") != "selected-native-out":
+            continue
+        if not isinstance(outbound.get("type"), str) or not outbound["type"]:
+            continue
+        selected = dict(outbound)
+        server = selected.get("server")
+        if server:
+            try:
+                ipaddress.ip_address(server)
+            except ValueError:
+                try:
+                    selected["server"] = socket.getaddrinfo(
+                        server,
+                        selected.get("server_port", 443),
+                        socket.AF_INET,
+                        socket.SOCK_STREAM,
+                    )[0][4][0]
+                except OSError:
+                    continue
+        return selected
+    return None
+
+
+candidates = [
+    ("tproxy_canary", tproxy_canary),
+    ("rendered_singbox", rendered_config),
+    ("rollback_previous", rollback_config),
+]
+selected_label = None
+selected = None
+for label, path in candidates:
+    selected = selected_from(path)
+    if selected is not None:
+        selected_label = label
+        break
+if selected is None:
+    raise SystemExit("selected-native-out source not found")
+
+remote_ru_rule_sets = [
+    {
+        "type": "remote",
+        "tag": "geoip-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
+        "download_detour": "direct-out",
+    },
+    {
+        "type": "remote",
+        "tag": "geosite-category-ru",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs",
+        "download_detour": "direct-out",
+    },
+]
+ru_rule_sets_json = ",\n".join(json.dumps(rule_set, indent=8) for rule_set in remote_ru_rule_sets)
+with open(tmpl) as fh:
+    text = (
+        fh.read()
+        .replace("{{SELECTED_NATIVE_OUT_JSON}}", json.dumps(selected, indent=4))
+        .replace("{{RU_RULE_SETS_JSON}}", ru_rule_sets_json)
+    )
+if "{{SELECTED_NATIVE_OUT_JSON}}" in text or "{{RU_RULE_SETS_JSON}}" in text:
+    raise SystemExit("unresolved sing-box template placeholder")
+rendered = json.loads(text)
+os.makedirs(os.path.dirname(out), exist_ok=True)
+with open(out, "w") as fh:
+    json.dump(rendered, fh, indent=2)
+    fh.write("\n")
+with open(source_label_out, "w") as fh:
+    fh.write(selected_label + "\n")
+PY
+    then
+      rm -f "$source_label_file"
+      log singbox_only_fallback=failed
+      return 46
+    fi
+    cp "$rule_set_source"/*.json "$singbox_rendered/rule-sets/" || { rm -f "$source_label_file"; log singbox_only_fallback_rule_set_copy=failed; return 46; }
+    chmod 600 "$singbox_rendered/config.json" "$singbox_rendered/rule-sets"/*.json || { rm -f "$source_label_file"; log singbox_only_fallback_chmod=failed; return 46; }
+    source_label=$(cat "$source_label_file" 2>/dev/null || true)
+    rm -f "$source_label_file"
+    [ -n "$source_label" ] || { log singbox_only_fallback_source_label=missing; return 46; }
+    log local_config_render=singbox_only_fallback
+    log "local_config_render_selected_source=$source_label"
+  }
   render_local_configs() {
     local renderer=scripts/vpnkit/vpnkit-render-local-configs.sh
     if [ ! -x "$renderer" ]; then
@@ -225,7 +345,7 @@ EOFOVERRIDE
       return 0
     fi
     log local_config_render=failed
-    return 45
+    render_singbox_only_fallback || return 45
   }
   activate_image() {
     image="vpnkit:$deploy_id"
