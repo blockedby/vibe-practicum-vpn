@@ -18,9 +18,7 @@ if [[ ! -r "$OPENVPN_CONFIG" ]]; then
 fi
 
 mkdir -p "$(dirname "$SINGBOX_CONFIG")" "$(dirname "$SINGBOX_RESTART_FILE")"
-if [[ ! -f "$SINGBOX_CONFIG" ]]; then
-  cp "$SINGBOX_SOURCE_CONFIG" "$SINGBOX_CONFIG"
-fi
+vibe-vpn sync-sing-box-config --source "$SINGBOX_SOURCE_CONFIG" --runtime "$SINGBOX_CONFIG"
 
 sing-box check -c "$SINGBOX_CONFIG"
 SINGBOX_PID=""

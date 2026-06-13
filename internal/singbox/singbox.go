@@ -38,6 +38,81 @@ func (r RestartConfig) normalized() RestartConfig {
 
 func Check(bin, configPath string) error { return runCommand(bin, "check", "-c", configPath) }
 
+// SyncFromSourcePreserveSelected refreshes a persisted runtime config from the
+// rendered source config while preserving the runtime selected-native-out
+// outbound. This lets template/routing policy changes (for example new rule_set
+// routes) reach existing containers without discarding the operator-selected
+// proxy outbound managed by vibe-vpn.
+func SyncFromSourcePreserveSelected(sourcePath, runtimePath string) error {
+	b, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return err
+	}
+	var source map[string]any
+	if err := json.Unmarshal(b, &source); err != nil {
+		return fmt.Errorf("read source sing-box config: %w", err)
+	}
+
+	if rb, err := os.ReadFile(runtimePath); err == nil {
+		var runtime map[string]any
+		if err := json.Unmarshal(rb, &runtime); err != nil {
+			return fmt.Errorf("read runtime sing-box config: %w", err)
+		}
+		if selected, ok := findOutbound(runtime, "selected-native-out"); ok {
+			if err := replaceOutbound(source, "selected-native-out", selected); err != nil {
+				return err
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	nb, err := json.MarshalIndent(source, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(runtimePath), 0755); err != nil {
+		return err
+	}
+	return writeFileAtomic(runtimePath, append(nb, '\n'), 0644)
+}
+
+func findOutbound(cfg map[string]any, tag string) (map[string]any, bool) {
+	arr, ok := cfg["outbounds"].([]any)
+	if !ok {
+		return nil, false
+	}
+	for _, v := range arr {
+		m, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if got, _ := m["tag"].(string); got == tag {
+			return m, true
+		}
+	}
+	return nil, false
+}
+
+func replaceOutbound(cfg map[string]any, tag string, outbound map[string]any) error {
+	arr, ok := cfg["outbounds"].([]any)
+	if !ok {
+		return fmt.Errorf("source sing-box config has no outbounds")
+	}
+	for i, v := range arr {
+		m, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if got, _ := m["tag"].(string); got == tag {
+			arr[i] = outbound
+			cfg["outbounds"] = arr
+			return nil
+		}
+	}
+	return fmt.Errorf("source sing-box config missing outbound tag %q", tag)
+}
+
 func Apply(configPath, stateDir, service string, out map[string]any) (string, error) {
 	return ApplyWithRestart(configPath, stateDir, out, RestartConfig{Mode: RestartModeSystemd, Service: service})
 }
