@@ -99,3 +99,30 @@ Executor:
 
 Status:
 - Task 1: pending dispatch.
+
+## Owner verification and final status
+
+Task 1 status: done.
+
+Implementation results:
+- `scripts/vpnkit/vpnkit-prod-deploy.sh` now runs `render_local_configs` in the remote deploy path after `create_release` checkout/metadata and before `activate_image` compose build/up and `require_tun_pair` persisted config copy/check.
+- The render command is bounded via `run_bounded env VPNKIT_ROUTING_MODE=tun scripts/vpnkit/vpnkit-render-local-configs.sh`.
+- Render failure logs bounded status (`local_config_render=failed`, `deploy_render=failed`) and exits before compose build/up/recreate.
+- Plan/dry-run step text now includes `render-local-configs:tun`.
+
+Acceptance verification (owner fresh rerun):
+- AC1 status logging/redaction: passed via `test/prod-deploy-helper-test.sh` assertions for `local_config_render=start mode=tun`, `local_config_render=ok`, `token=<redacted>`, and absence of `mock-render-secret`.
+- AC2 ordering: passed via `test/prod-deploy-helper-test.sh` assertions that git checkout/source update precedes render and render precedes `compose_build=vpnkit`.
+- AC3 failure-before-recreate: passed via `test/prod-deploy-helper-test.sh` render-failure case asserting no `compose_build`, `compose_up`, `activation=no_build`, or rollback activation.
+- AC4 tun invocation: passed via `test/prod-deploy-helper-test.sh` assertion for `render_invoked_routing_mode=tun` and code path using `VPNKIT_ROUTING_MODE=tun`.
+
+Fresh owner verification run:
+- `test/prod-deploy-helper-test.sh`: passed (exit 0, no output).
+- `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh scripts/vpnkit/vpnkit-render-local-configs.sh test/prod-deploy-helper-test.sh`: passed (exit 0, no output).
+- `git diff --check`: passed (exit 0, no output).
+
+Skipped/not run:
+- `go test ./...`: not run; change is shell deploy helper/test only, no Go code path changed.
+- Live deploy/verify to production hosts: intentionally not run per task boundary; future rollout requires explicit live action.
+
+Final done-state: success for code-only slice; ready for operator-reviewed future deploy, with no live mutation performed in this slice.
