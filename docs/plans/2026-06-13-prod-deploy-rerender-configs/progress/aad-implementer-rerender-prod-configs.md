@@ -8,3 +8,4 @@
 - 2026-06-13: `bash -n scripts/vpnkit/vpnkit-prod-deploy.sh scripts/vpnkit/vpnkit-render-local-configs.sh test/prod-deploy-helper-test.sh` passed.
 - 2026-06-13: Wrote local verification artifact with RED/GREEN/syntax evidence. Running whitespace check before commit.
 - 2026-06-13: Pre-commit checks passed (`test/prod-deploy-helper-test.sh`, `bash -n`, `git diff --check`). Creating implementation commit with code/test and task-package verification/progress.
+- 2026-06-13: Implementation commit created: ec2784e `fix(vpnkit): rerender prod configs before deploy activation`. Final report written; committing report/progress update.
