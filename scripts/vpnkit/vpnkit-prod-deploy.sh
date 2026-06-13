@@ -213,6 +213,20 @@ EOFOVERRIDE
     log "release_dir=$release_dir"
     log "rollback_bundle=$rollback_dir"
   }
+  render_local_configs() {
+    local renderer=scripts/vpnkit/vpnkit-render-local-configs.sh
+    if [ ! -x "$renderer" ]; then
+      log "local_config_render=missing path=$renderer"
+      return 45
+    fi
+    log local_config_render=start mode=tun
+    if run_bounded env VPNKIT_ROUTING_MODE=tun "$renderer"; then
+      log local_config_render=ok
+      return 0
+    fi
+    log local_config_render=failed
+    return 45
+  }
   activate_image() {
     image="vpnkit:$deploy_id"
     run_bounded $compose_bin build "$service" || return $?
@@ -245,9 +259,25 @@ EOFOVERRIDE
     [ -n "${new_container:-}" ] || new_container=$container
     if smoke_with_retries "$new_container"; then log rollback=ok; else log rollback_smoke=failed; manual_recovery "$rb"; return 61; fi
   }
-  plan() { discover; log "plan=deploy target_ref=$target_ref deploy_id=$deploy_id"; log "steps=discover,resolve-git-ref,release-dir:$release_root/$deploy_id,rollback-metadata,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure"; }
+  plan() { discover; log "plan=deploy target_ref=$target_ref deploy_id=$deploy_id"; log "steps=discover,resolve-git-ref,release-dir:$release_root/$deploy_id,rollback-metadata,render-local-configs:tun,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure"; }
   verify() { discover; smoke "$container"; }
-  deploy() { discover; create_release; if activate_image && require_tun_pair; then new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}'); [ -n "${new_container:-}" ] || new_container=$container; if smoke_with_retries "$new_container"; then log deploy=ok; return 0; else log deploy_smoke=failed; fi; else log deploy_activation_or_config=failed; fi; rollback_to || true; exit 61; }
+  deploy() {
+    discover
+    create_release
+    if ! render_local_configs; then
+      log deploy_render=failed
+      exit 61
+    fi
+    if activate_image && require_tun_pair; then
+      new_container=$(docker ps --filter label=com.docker.compose.service="$service" --format "{{.ID}}" | awk 'NR==1{print}')
+      [ -n "${new_container:-}" ] || new_container=$container
+      if smoke_with_retries "$new_container"; then log deploy=ok; return 0; else log deploy_smoke=failed; fi
+    else
+      log deploy_activation_or_config=failed
+    fi
+    rollback_to || true
+    exit 61
+  }
   case "$mode" in plan|dry-run) plan ;; verify) verify ;; deploy) deploy ;; rollback) discover; rollback_to ;; *) die "unsupported remote mode: $mode" ;; esac
   exit 0
 fi
@@ -299,7 +329,7 @@ for host in "${hosts[@]}"; do
 mode=$mode host=<host> target_ref=$target_ref deploy_id=$deploy_id
 remote_discovery=labels_or_overrides
 mutation=none
-steps=discover,resolve-git-ref,release-dir:<remote-workdir>/.releases/vpnkit/$deploy_id,rollback-metadata,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure
+steps=discover,resolve-git-ref,release-dir:<remote-workdir>/.releases/vpnkit/$deploy_id,rollback-metadata,render-local-configs:tun,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure
 EOFPLAN
     continue
   fi

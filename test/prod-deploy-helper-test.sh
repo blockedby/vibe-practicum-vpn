@@ -6,6 +6,16 @@ check_fail() { if "$@" >/tmp/vpnkit-prod-deploy-test.out 2>&1; then echo "expect
 check_ok() { if ! "$@" >/tmp/vpnkit-prod-deploy-test.out 2>&1; then echo "expected success: $*"; cat /tmp/vpnkit-prod-deploy-test.out; fail=1; fi; }
 assert_grep() { local pattern=$1 file=${2:-/tmp/vpnkit-prod-deploy-test.out}; if ! grep -Eq -- "$pattern" "$file"; then echo "missing pattern: $pattern"; fail=1; fi; }
 assert_not_grep() { local pattern=$1 file=${2:-/tmp/vpnkit-prod-deploy-test.out}; if grep -Eq -- "$pattern" "$file"; then echo "unexpected pattern: $pattern"; fail=1; fi; }
+assert_order() {
+  local first=$1 second=$2 file=${3:-/tmp/vpnkit-prod-deploy-test.out}
+  local first_line second_line
+  first_line=$(grep -En -- "$first" "$file" | head -1 | cut -d: -f1 || true)
+  second_line=$(grep -En -- "$second" "$file" | head -1 | cut -d: -f1 || true)
+  if [[ -z "$first_line" || -z "$second_line" || "$first_line" -ge "$second_line" ]]; then
+    echo "order assertion failed: $first before $second"
+    fail=1
+  fi
+}
 
 check_fail "$script" deploy --target-ref main example.invalid
 assert_grep "deploy requires --yes"
@@ -17,6 +27,7 @@ check_ok "$script" plan --target-ref main --deploy-id custom-id example.invalid
 assert_grep 'deploy_id=custom-id'
 assert_grep 'release-dir:<remote-workdir>/.releases/vpnkit/custom-id'
 assert_grep 'build-tag:vpnkit:custom-id'
+assert_grep 'render-local-configs:tun'
 assert_grep 'activate-no-build'
 assert_not_grep 'source-before\.tar|source_update=archive|git archive|scp '
 assert_not_grep '([0-9]{1,3}\.){3}[0-9]{1,3}|token=[^<]'
@@ -46,6 +57,20 @@ services:
     env_file:
       - .env
 YAML
+mkdir -p "$remote_root/workdir/scripts/vpnkit"
+cat >"$remote_root/workdir/scripts/vpnkit/vpnkit-render-local-configs.sh" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'render_invoked_routing_mode=%s token=%s\n' "${VPNKIT_ROUTING_MODE:-missing}" 'mock-render-secret'
+if [[ "${VPNKIT_MOCK_RENDER_FAIL:-0}" == 1 ]]; then
+  echo local_config_render_mock=failed
+  exit 73
+fi
+mkdir -p secrets/vps/rendered/sing-box
+printf '{"mock":"rendered"}\n' >secrets/vps/rendered/sing-box/config.json
+echo local_config_render_mock=ok
+MOCK
+chmod +x "$remote_root/workdir/scripts/vpnkit/vpnkit-render-local-configs.sh"
 cat >"$fakebin/timeout" <<'MOCK'
 #!/usr/bin/env bash
 shift
@@ -81,6 +106,7 @@ VPNKIT_PROD_SMOKE_DELAY="${VPNKIT_PROD_SMOKE_DELAY:-0}" \
 VPNKIT_MOCK_ROUTING_MODE="${VPNKIT_MOCK_ROUTING_MODE:-tun}" \
 VPNKIT_MOCK_ROLLBACK_SMOKE_FAIL="${VPNKIT_MOCK_ROLLBACK_SMOKE_FAIL:-0}" \
 VPNKIT_MOCK_REQUIRE_TUN_FAIL="${VPNKIT_MOCK_REQUIRE_TUN_FAIL:-0}" \
+VPNKIT_MOCK_RENDER_FAIL="${VPNKIT_MOCK_RENDER_FAIL:-0}" \
 bash -s -- __remote "$mode" "$target_ref" "$deploy_id" "$rollback_id" <<<"$script"
 MOCK
 chmod +x "$fakebin/ssh"
@@ -182,6 +208,12 @@ check_ok "${mock_env[@]}" "$script" deploy --yes --target-ref main --deploy-id 2
 if [[ $(grep -c 'mock_ssh_host=' /tmp/vpnkit-prod-deploy-test.out) -ne 1 ]]; then echo "mock deploy did not execute host once"; fail=1; fi
 assert_grep 'source_transfer_arg=absent'
 assert_grep 'source_update=git resolved_ref=abc123resolved'
+assert_grep 'local_config_render=start mode=tun'
+assert_grep 'render_invoked_routing_mode=tun token=<redacted>'
+assert_grep 'local_config_render_mock=ok'
+assert_grep 'local_config_render=ok'
+assert_order 'source_update=git resolved_ref=abc123resolved' 'local_config_render=start mode=tun'
+assert_order 'local_config_render=ok' 'compose_build=vpnkit'
 assert_grep 'release_dir=.*/releases/20260613T010203Z-deadbeef'
 assert_grep 'candidate_image=vpnkit:20260613T010203Z-deadbeef'
 assert_grep 'docker_tag=sha256:candidatebuild vpnkit:20260613T010203Z-deadbeef'
@@ -191,6 +223,7 @@ assert_grep 'compose_image_override=.*/compose.image.override.yaml'
 assert_grep 'activation=no_build'
 assert_grep 'persisted_singbox_check=ok'
 assert_grep 'deploy=ok'
+assert_not_grep 'mock-render-secret'
 bundle="$remote_root/releases/20260613T010203Z-deadbeef/rollback"
 for artifact in deploy-id.txt candidate-image.txt git-ref.txt previous-image.txt previous-image-id.txt previous-release-target.txt previous-routing-mode.txt container-inspect.json previous-sing-box-config.json compose-files.txt env-references.txt; do
   if [[ ! -s "$bundle/$artifact" ]]; then echo "missing rollback artifact: $artifact"; fail=1; fi
@@ -226,5 +259,14 @@ check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/ti
 assert_grep 'deploy_activation_or_config=failed'
 assert_grep 'rollback_start=.*rollback'
 assert_grep 'rollback_activation=no_build'
+
+check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_MOCK_RENDER_FAIL=1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010205Z-deadbeef host-a
+assert_grep 'local_config_render=start mode=tun'
+assert_grep 'render_invoked_routing_mode=tun token=<redacted>'
+assert_grep 'local_config_render_mock=failed'
+assert_grep 'local_config_render=failed'
+assert_grep 'deploy_render=failed'
+assert_not_grep 'compose_build|compose_up|activation=no_build|rollback_activation=no_build'
+assert_not_grep 'mock-render-secret'
 
 exit "$fail"
