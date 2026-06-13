@@ -37,6 +37,16 @@ redact() {
 }
 
 die() { echo "error: $*" >&2; exit 2; }
+valid_ipv4_literal() {
+  local ip=${1:-} a b c d extra octet
+  [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  IFS=. read -r a b c d extra <<<"$ip"
+  [[ -z "${extra:-}" ]] || return 1
+  for octet in "$a" "$b" "$c" "$d"; do
+    [[ "$octet" =~ ^[0-9]+$ ]] || return 1
+    (( 10#$octet <= 255 )) || return 1
+  done
+}
 ref_id_re='^[A-Za-z0-9._@:+/~^-]+$'
 deploy_id_re='^[A-Za-z0-9._@:+-]+$'
 
@@ -347,6 +357,73 @@ PY
     log local_config_render=failed
     render_singbox_only_fallback || return 45
   }
+  sync_openvpn_push_dns() {
+    local dns=${VPNKIT_OPENVPN_PUSH_DNS:-1.1.1.1}
+    local conf=secrets/vps/rendered/openvpn/server.conf
+    if ! valid_ipv4_literal "$dns"; then
+      log openvpn_push_dns=invalid
+      return 47
+    fi
+    if [ ! -f "$conf" ]; then
+      log openvpn_push_dns_config=missing
+      return 47
+    fi
+    if ! python3 - "$conf" "$dns" <<'PY'
+import os
+import re
+import sys
+
+conf, dns = sys.argv[1:]
+line_re = re.compile(r'^\s*push\s+"dhcp-option DNS [^"]+"\s*$')
+desired = f'push "dhcp-option DNS {dns}"'
+try:
+    with open(conf, 'r', encoding='utf-8') as fh:
+        lines = fh.read().splitlines(keepends=True)
+except OSError as exc:
+    raise SystemExit(f'read failed: {exc}')
+
+changed = False
+found = False
+updated = []
+for line in lines:
+    newline = '\n' if line.endswith('\n') else ''
+    body = line[:-1] if newline else line
+    if line_re.match(body):
+        found = True
+        replacement = desired + newline
+        updated.append(replacement)
+        changed = changed or replacement != line
+    else:
+        updated.append(line)
+if not found:
+    if updated and not updated[-1].endswith('\n'):
+        updated[-1] += '\n'
+    updated.append(desired + '\n')
+    changed = True
+
+if changed:
+    tmp = conf + '.tmp-openvpn-push-dns'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as fh:
+            fh.writelines(updated)
+        os.replace(tmp, conf)
+    except OSError as exc:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise SystemExit(f'write failed: {exc}')
+PY
+    then
+      log openvpn_push_dns=failed
+      return 47
+    fi
+    if ! grep -Eq '^push "dhcp-option DNS '"$dns"'"$' "$conf"; then
+      log openvpn_push_dns=unverified
+      return 47
+    fi
+    log openvpn_push_dns=updated
+  }
   activate_image() {
     image="vpnkit:$deploy_id"
     run_bounded $compose_bin build "$service" || return $?
@@ -379,13 +456,17 @@ PY
     [ -n "${new_container:-}" ] || new_container=$container
     if smoke_with_retries "$new_container"; then log rollback=ok; else log rollback_smoke=failed; manual_recovery "$rb"; return 61; fi
   }
-  plan() { discover; log "plan=deploy target_ref=$target_ref deploy_id=$deploy_id"; log "steps=discover,resolve-git-ref,release-dir:$release_root/$deploy_id,rollback-metadata,render-local-configs:tun,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure"; }
+  plan() { discover; log "plan=deploy target_ref=$target_ref deploy_id=$deploy_id"; log "steps=discover,resolve-git-ref,release-dir:$release_root/$deploy_id,rollback-metadata,render-local-configs:tun,sync-openvpn-push-dns,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure"; }
   verify() { discover; smoke "$container"; }
   deploy() {
     discover
     create_release
     if ! render_local_configs; then
       log deploy_render=failed
+      exit 61
+    fi
+    if ! sync_openvpn_push_dns; then
+      log deploy_openvpn_push_dns=failed
       exit 61
     fi
     if activate_image && require_tun_pair; then
@@ -435,11 +516,18 @@ esac
 [[ -z "$rollback_id" || "$rollback_id" =~ $ref_id_re ]] || die "rollback id contains unsupported characters"
 if [[ -z "$deploy_id" && ( "$mode" == "plan" || "$mode" == "dry-run" || "$mode" == "deploy" ) ]]; then deploy_id=$(default_deploy_id "$target_ref"); fi
 [[ -z "$deploy_id" || "$deploy_id" =~ $deploy_id_re ]] || die "deploy id contains unsupported characters"
+if [[ "$mode" == "deploy" && -n "${VPNKIT_OPENVPN_PUSH_DNS:-}" ]] && ! valid_ipv4_literal "$VPNKIT_OPENVPN_PUSH_DNS"; then
+  die "VPNKIT_OPENVPN_PUSH_DNS must be a valid IPv4 address"
+fi
 
 run_remote() {
   local host=$1
+  local openvpn_push_dns_env=""
+  if [[ "$mode" == "deploy" && -n "${VPNKIT_OPENVPN_PUSH_DNS:-}" ]]; then
+    openvpn_push_dns_env="VPNKIT_OPENVPN_PUSH_DNS=$VPNKIT_OPENVPN_PUSH_DNS "
+  fi
   "$timeout_bin" "$remote_timeout" "$ssh_cmd" -o BatchMode=yes -o ConnectTimeout="$ssh_timeout" "$host" \
-    "bash -s -- __remote '$mode' '$target_ref' '$deploy_id' '$rollback_id'" <"$0" 2>&1 | redact
+    "${openvpn_push_dns_env}bash -s -- __remote '$mode' '$target_ref' '$deploy_id' '$rollback_id'" <"$0" 2>&1 | redact
 }
 
 for host in "${hosts[@]}"; do
@@ -449,7 +537,7 @@ for host in "${hosts[@]}"; do
 mode=$mode host=<host> target_ref=$target_ref deploy_id=$deploy_id
 remote_discovery=labels_or_overrides
 mutation=none
-steps=discover,resolve-git-ref,release-dir:<remote-workdir>/.releases/vpnkit/$deploy_id,rollback-metadata,render-local-configs:tun,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure
+steps=discover,resolve-git-ref,release-dir:<remote-workdir>/.releases/vpnkit/$deploy_id,rollback-metadata,render-local-configs:tun,sync-openvpn-push-dns,build-tag:vpnkit:$deploy_id,activate-no-build,force-tun-config-mode,smoke,auto-rollback-no-build,manual-recovery-on-rollback-smoke-failure
 EOFPLAN
     continue
   fi

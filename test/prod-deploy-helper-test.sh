@@ -57,7 +57,14 @@ services:
     env_file:
       - .env
 YAML
-mkdir -p "$remote_root/workdir/scripts/vpnkit" "$remote_root/workdir/config/sing-box/rule-sets" "$remote_root/workdir/secrets/vps/sing-box" "$remote_root/workdir/secrets/vps/rendered/sing-box"
+mkdir -p "$remote_root/workdir/scripts/vpnkit" "$remote_root/workdir/config/sing-box/rule-sets" "$remote_root/workdir/secrets/vps/sing-box" "$remote_root/workdir/secrets/vps/rendered/sing-box" "$remote_root/workdir/secrets/vps/rendered/openvpn"
+cat >"$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf" <<'CONF'
+port 1194
+proto udp
+push "redirect-gateway def1 bypass-dhcp"
+push "dhcp-option DNS 9.9.9.9"
+keepalive 10 120
+CONF
 cat >"$remote_root/workdir/config/sing-box/config.tun.json.template" <<'JSON'
 {
   "outbounds": [
@@ -239,9 +246,13 @@ assert_grep 'local_config_render=start mode=tun'
 assert_grep 'render_invoked_routing_mode=tun token=<redacted>'
 assert_grep 'local_config_render_mock=ok'
 assert_grep 'local_config_render=ok'
+assert_grep 'openvpn_push_dns=updated'
 assert_not_grep 'singbox_only_fallback|local_config_render_selected_source'
 assert_order 'source_update=git resolved_ref=abc123resolved' 'local_config_render=start mode=tun'
-assert_order 'local_config_render=ok' 'compose_build=vpnkit'
+assert_order 'local_config_render=ok' 'openvpn_push_dns=updated'
+assert_order 'openvpn_push_dns=updated' 'compose_build=vpnkit'
+assert_grep 'push "dhcp-option DNS 1.1.1.1"' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
+assert_grep 'keepalive 10 120' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
 assert_grep 'release_dir=.*/releases/20260613T010203Z-deadbeef'
 assert_grep 'candidate_image=vpnkit:20260613T010203Z-deadbeef'
 assert_grep 'docker_tag=sha256:candidatebuild vpnkit:20260613T010203Z-deadbeef'
@@ -265,6 +276,29 @@ if [[ "$(readlink -f "$remote_root/links/previous")" != "$remote_root/releases/p
 assert_grep 'image: vpnkit:20260613T010203Z-deadbeef' "$remote_root/releases/20260613T010203Z-deadbeef/compose.image.override.yaml"
 assert_grep 'VPNKIT_ROUTING_MODE: tun' "$remote_root/releases/20260613T010203Z-deadbeef/compose.image.override.yaml"
 assert_not_grep 'secret|token=|password=|PRIVATE|BEGIN ' "$bundle/env-references.txt"
+
+check_ok env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_OPENVPN_PUSH_DNS=8.8.4.4 "$script" deploy --yes --target-ref main --deploy-id 20260613T010203Z-cafebabe host-a
+assert_grep 'openvpn_push_dns=updated'
+assert_order 'local_config_render=ok' 'openvpn_push_dns=updated'
+assert_order 'openvpn_push_dns=updated' 'compose_build=vpnkit'
+assert_grep 'push "dhcp-option DNS 8.8.4.4"' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
+assert_not_grep 'push "dhcp-option DNS 1.1.1.1"' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
+
+check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_OPENVPN_PUSH_DNS=999.1.1.1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010203Z-badbadbad host-a
+assert_grep 'VPNKIT_OPENVPN_PUSH_DNS must be a valid IPv4 address|openvpn_push_dns=invalid'
+assert_not_grep 'compose_build|compose_up|activation=no_build'
+
+rm -f "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
+check_fail "${mock_env[@]}" "$script" deploy --yes --target-ref main --deploy-id 20260613T010203Z-missingdns host-a
+assert_grep 'openvpn_push_dns_config=missing|openvpn_push_dns=failed'
+assert_not_grep 'compose_build|compose_up|activation=no_build'
+cat >"$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf" <<'CONF'
+port 1194
+proto udp
+push "redirect-gateway def1 bypass-dhcp"
+push "dhcp-option DNS 9.9.9.9"
+keepalive 10 120
+CONF
 
 check_ok "${mock_env[@]}" "$script" rollback --yes --rollback-id "$bundle" host-a
 assert_grep 'rollback_start=.*rollback'
