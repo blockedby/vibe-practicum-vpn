@@ -12,7 +12,7 @@ FILES_CHANGED:
 - `docs/plans/2026-06-13-openvpn-push-dns-prod-deploy/progress/aad-implementer-openvpn-push-dns.md`: recorded implementation progress.
 - `docs/plans/2026-06-13-openvpn-push-dns-prod-deploy/reports/aad-implementer-openvpn-push-dns.md`: final implementation evidence.
 AC_VERIFICATION:
-- Default deploy writes/verifies push DNS `1.1.1.1` before compose build/up with safe summary log: `test/prod-deploy-helper-test.sh` asserts `local_config_render=ok` before `openvpn_push_dns=updated`, `openvpn_push_dns=updated` before `compose_build=vpnkit`, and rendered `server.conf` contains `push "dhcp-option DNS 1.1.1.1"` while preserving `keepalive 10 120` — passed.
+- Default deploy writes/verifies push DNS `8.8.8.8` before compose build/up with safe summary log: `test/prod-deploy-helper-test.sh` asserts `local_config_render=ok` before `openvpn_push_dns=updated`, `openvpn_push_dns=updated` before `compose_build=vpnkit`, and rendered `server.conf` contains `push "dhcp-option DNS 8.8.8.8"` while preserving `keepalive 10 120` — passed after the Google pushed DNS policy correction superseded the earlier Cloudflare default.
 - Env override `VPNKIT_OPENVPN_PUSH_DNS` accepts valid IPv4 and writes it: `test/prod-deploy-helper-test.sh` mocked deploy with `VPNKIT_OPENVPN_PUSH_DNS=8.8.4.4` asserts `server.conf` contains the override and no stale default DNS line — passed.
 - Invalid override fails before compose build/up: `test/prod-deploy-helper-test.sh` mocked deploy with `VPNKIT_OPENVPN_PUSH_DNS=999.1.1.1` expects failure and no `compose_build`, `compose_up`, or `activation=no_build` — passed.
 - Missing/non-updatable/unverified config fails before compose build/up: `test/prod-deploy-helper-test.sh` removes `secrets/vps/rendered/openvpn/server.conf`, expects failure, and asserts no build/up/activation — passed for missing config; write/unverified paths use the same pre-activation function and return path.
@@ -30,7 +30,7 @@ QUALITY_NOTES:
 - Error handling/logging: DNS sync returns explicit pre-activation failure statuses (`openvpn_push_dns=invalid`, `openvpn_push_dns_config=missing`, `openvpn_push_dns=failed`, `openvpn_push_dns=unverified`) without dumping config contents or endpoint values.
 - Backend/API/data: not relevant; shell deploy helper only.
 - Frontend/UI: not relevant.
-- DevOps/runtime: deploy mode now syncs only `secrets/vps/rendered/openvpn/server.conf` after local config render/fallback and before compose build/up; default is `1.1.1.1`; valid deploy-mode override is forwarded to the remote command.
+- DevOps/runtime: deploy mode now syncs only `secrets/vps/rendered/openvpn/server.conf` after local config render/fallback and before compose build/up; default is `8.8.8.8`; valid deploy-mode override is forwarded to the remote command.
 - Security: no secrets, raw configs, private endpoints, tokens, or generated profiles logged or committed; local override is IPv4-validated before being embedded in the SSH command.
 - Concurrency/idempotency: repeated deploys are idempotent for the DNS line; existing DNS push lines are rewritten to the target value and absent DNS push is appended.
 - Compatibility/performance: rollback/verify paths are not changed; DNS validation/forwarding is limited to deploy mode; sync is a small single-file operation before existing build/up.

@@ -251,7 +251,7 @@ assert_not_grep 'singbox_only_fallback|local_config_render_selected_source'
 assert_order 'source_update=git resolved_ref=abc123resolved' 'local_config_render=start mode=tun'
 assert_order 'local_config_render=ok' 'openvpn_push_dns=updated'
 assert_order 'openvpn_push_dns=updated' 'compose_build=vpnkit'
-assert_grep 'push "dhcp-option DNS 1.1.1.1"' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
+assert_grep 'push "dhcp-option DNS 8.8.8.8"' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
 assert_grep 'keepalive 10 120' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
 assert_grep 'release_dir=.*/releases/20260613T010203Z-deadbeef'
 assert_grep 'candidate_image=vpnkit:20260613T010203Z-deadbeef'
@@ -282,7 +282,7 @@ assert_grep 'openvpn_push_dns=updated'
 assert_order 'local_config_render=ok' 'openvpn_push_dns=updated'
 assert_order 'openvpn_push_dns=updated' 'compose_build=vpnkit'
 assert_grep 'push "dhcp-option DNS 8.8.4.4"' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
-assert_not_grep 'push "dhcp-option DNS 1.1.1.1"' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
+assert_not_grep 'push "dhcp-option DNS 8.8.8.8"' "$remote_root/workdir/secrets/vps/rendered/openvpn/server.conf"
 
 check_fail env PATH="$fakebin:$PATH" VPNKIT_PROD_DEPLOY_TIMEOUT_BIN="$fakebin/timeout" VPNKIT_PROD_SSH_CMD="$fakebin/ssh" VPNKIT_MOCK_REMOTE_BIN="$remote_root/bin" VPNKIT_MOCK_REMOTE_ROOT="$remote_root" VPNKIT_OPENVPN_PUSH_DNS=999.1.1.1 "$script" deploy --yes --target-ref main --deploy-id 20260613T010203Z-badbadbad host-a
 assert_grep 'VPNKIT_OPENVPN_PUSH_DNS must be a valid IPv4 address|openvpn_push_dns=invalid'

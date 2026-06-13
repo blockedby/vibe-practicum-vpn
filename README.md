@@ -17,6 +17,8 @@ This branch adds three connected pieces of operational tooling:
 - **Unified Steam Deck lab acceptance**: `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle` prepares isolated lab secrets, deploys `vpnkit-test-steamdeck-host`, runs OpenVPN/sing-box checks, outer client smoke, and required nested OpenVPN rows.
 - **Production deploy/rollback tooling**: `scripts/vpnkit/vpnkit-prod-deploy.sh` provides `plan`, `dry-run`, `deploy`, `verify`, and `rollback` for Docker/Compose production endpoints with rollback bundles and smoke checks.
 
+Production/full-tunnel OpenVPN pushed DNS policy: use Google DNS only (`8.8.8.8` default, `8.8.4.4` accepted override/fallback). Do not use Cloudflare `1.1.1.1` for pushed DNS; `1.1.1.1` remains acceptable as a public connectivity probe in route/ICMP checks.
+
 Useful tests added/extended in this branch:
 
 ```bash

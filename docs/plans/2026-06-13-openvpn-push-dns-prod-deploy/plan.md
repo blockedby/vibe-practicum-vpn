@@ -2,7 +2,7 @@
 
 ## Task intake
 - Goal: make `scripts/vpnkit/vpnkit-prod-deploy.sh deploy` ensure production TUN/full-tunnel OpenVPN pushes a public DNS literal before build/recreate.
-- In scope: remote deploy flow only; edit/sync existing `secrets/vps/rendered/openvpn/server.conf`; default pushed DNS `1.1.1.1`; env override `VPNKIT_OPENVPN_PUSH_DNS`; IPv4 validation; safe logs; tests in `test/prod-deploy-helper-test.sh` for order/default/override/invalid pre-build failure.
+- In scope: remote deploy flow only; edit/sync existing `secrets/vps/rendered/openvpn/server.conf`; default pushed DNS `8.8.8.8`; env override `VPNKIT_OPENVPN_PUSH_DNS`; IPv4 validation; safe logs; tests in `test/prod-deploy-helper-test.sh` for order/default/override/invalid pre-build failure. Earlier Cloudflare-default wording in this historical plan was superseded by the Google pushed DNS policy correction.
 - Out of scope: live host actions, source PKI generation, full OpenVPN render, changing public endpoint values or generated secrets.
 - Done state: committed changes on `fix/adblock-routes` with fresh `bash -n`, `test/prod-deploy-helper-test.sh`, and `git diff --check` passing.
 - Blocking unknowns: none.
@@ -19,7 +19,7 @@
 - Existing logs use key=value summaries, avoid raw config, and redact IPs/secrets in local output.
 
 ## Missing pieces
-- Remote helper function to validate `VPNKIT_OPENVPN_PUSH_DNS` as IPv4 (default `1.1.1.1`).
+- Remote helper function to validate `VPNKIT_OPENVPN_PUSH_DNS` as IPv4 (default `8.8.8.8`).
 - Remote helper function to update only `secrets/vps/rendered/openvpn/server.conf`, preserving other content and failing if missing/unverifiable.
 - Deploy ordering between render/fallback and `activate_image`.
 - Plan/dry-run steps updated to mention push DNS sync.
@@ -41,7 +41,7 @@ Scope / likely files:
 - `scripts/vpnkit/vpnkit-prod-deploy.sh`
 - `test/prod-deploy-helper-test.sh`
 Acceptance criteria:
-- Default deploy writes/verifies `push "dhcp-option DNS 1.1.1.1"` in `secrets/vps/rendered/openvpn/server.conf` before compose build/up and logs only `openvpn_push_dns=updated`-style summary.
+- Default deploy writes/verifies `push "dhcp-option DNS 8.8.8.8"` in `secrets/vps/rendered/openvpn/server.conf` before compose build/up and logs only `openvpn_push_dns=updated`-style summary.
 - Env override `VPNKIT_OPENVPN_PUSH_DNS=<valid IPv4>` is accepted and written.
 - Invalid override fails before compose build/up.
 - Missing or non-updatable/unverified config fails before compose build/up.
@@ -77,6 +77,6 @@ Executor:
 - Implementation commits:
   - `daa5fd493998eb9b69fb66053ea46e08264b5106 fix(vpnkit): sync OpenVPN push DNS before prod activation`
   - `4a9dc7b docs: record OpenVPN push DNS implementation evidence`
-- Spec compliance: complete for local deploy helper behavior. The deploy flow syncs existing rendered OpenVPN `server.conf` after render/fallback and before compose build/up, defaults to `1.1.1.1`, accepts valid `VPNKIT_OPENVPN_PUSH_DNS`, validates IPv4, fails before activation on invalid/missing config, and logs summary status only.
+- Spec compliance: complete for local deploy helper behavior. The deploy flow syncs existing rendered OpenVPN `server.conf` after render/fallback and before compose build/up, defaults to `8.8.8.8`, accepts valid `VPNKIT_OPENVPN_PUSH_DNS`, validates IPv4, fails before activation on invalid/missing config, and logs summary status only.
 - System readiness: local helper/mocked remote evidence only; no live hosts touched by request.
 - Open blockers/follow-ups: none for this slice.

@@ -358,7 +358,7 @@ PY
     render_singbox_only_fallback || return 45
   }
   sync_openvpn_push_dns() {
-    local dns=${VPNKIT_OPENVPN_PUSH_DNS:-1.1.1.1}
+    local dns=${VPNKIT_OPENVPN_PUSH_DNS:-8.8.8.8}
     local conf=secrets/vps/rendered/openvpn/server.conf
     if ! valid_ipv4_literal "$dns"; then
       log openvpn_push_dns=invalid

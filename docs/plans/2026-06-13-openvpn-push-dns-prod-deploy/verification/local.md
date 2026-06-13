@@ -12,7 +12,7 @@ Scope: local helper tests only; no live hosts touched.
 ## Evidence notes
 
 - Mocked deploy verifies render completes before `openvpn_push_dns=updated`, and DNS sync completes before `compose_build=vpnkit`.
-- Default mocked deploy rewrites `secrets/vps/rendered/openvpn/server.conf` to `push "dhcp-option DNS 1.1.1.1"` while preserving unrelated lines.
+- Default mocked deploy rewrites `secrets/vps/rendered/openvpn/server.conf` to `push "dhcp-option DNS 8.8.8.8"` while preserving unrelated lines; earlier Cloudflare-default evidence was superseded by the Google pushed DNS policy correction.
 - Override mocked deploy with `VPNKIT_OPENVPN_PUSH_DNS=8.8.4.4` rewrites the same config to the override value.
 - Invalid override and missing `server.conf` fail before mocked compose build/up.
 - Output assertions keep secrets redacted; DNS sync logs only summary status.

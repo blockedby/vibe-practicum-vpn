@@ -48,6 +48,7 @@ For `vpnkit` runtime, routing, OpenVPN, sing-box, DNS, IPv6, or `vibe-vpn` daemo
 - `OVPN_CIDR` must match the actual OpenVPN server client network. If it is wrong, policy routing or redirect rules can match the wrong source range and clients will appear connected but traffic will fail.
 - Persisted sing-box runtime state can drift across deploys or mode changes. When switching modes, ensure the persisted `/var/lib/vpnkit/sing-box/config.json` matches the mounted/rendered sing-box config before recreating the container.
 - The OpenVPN server intentionally pushes `redirect-gateway def1 bypass-dhcp` and a VPN DNS option; the full-tunnel server path must therefore carry DNS, TCP/HTTPS, literal-IP HTTPS, ICMP, and general IP traffic.
+- Production/full-tunnel OpenVPN pushed DNS must use Google DNS only (`8.8.8.8` default; `8.8.4.4` acceptable override/fallback). Do not use Cloudflare `1.1.1.1` as a pushed DNS value; `1.1.1.1` may still appear as a public connectivity probe.
 - The OpenVPN server template intentionally keeps `tun-mtu 1400` and `mssfix 1360`; do not remove them without fresh MTU/MSS evidence.
 
 ## Production deployment and acceptance checklist
