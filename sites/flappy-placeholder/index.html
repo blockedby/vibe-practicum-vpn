@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PeaceData Flappy</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, #29446d, #07101f 65%); color: #e8f3ff; }
+    main { width: min(92vw, 760px); text-align: center; }
+    h1 { margin: 0 0 8px; font-size: clamp(2rem, 7vw, 4rem); letter-spacing: -0.06em; }
+    p { color: #adc2dd; margin: 0 0 18px; }
+    canvas { width: 100%; max-width: 520px; aspect-ratio: 3 / 4; border-radius: 24px; box-shadow: 0 28px 80px #0008; background: #72c7ff; touch-action: manipulation; }
+    .hint { margin-top: 14px; font-size: 0.95rem; }
+    code { color: #8fffd2; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PeaceData Flappy</h1>
+  <p>tiny placeholder while the new edge node warms up</p>
+  <canvas id="game" width="390" height="520" aria-label="Flappy bird mini game"></canvas>
+  <p class="hint">Press <code>Space</code>, click, or tap to flap. Hit restart after a crash.</p>
+</main>
+<script>
+const c = document.getElementById('game'), x = c.getContext('2d');
+let bird, pipes, score, best = 0, over, frame;
+function reset(){ bird={x:92,y:220,v:0,r:14}; pipes=[]; score=0; over=false; frame=0; }
+function flap(){ if(over) reset(); bird.v = -7.2; }
+addEventListener('keydown', e => { if(e.code==='Space'){ e.preventDefault(); flap(); }});
+c.addEventListener('pointerdown', flap);
+function pipe(){ const gap=138, top=70+Math.random()*230; pipes.push({x:c.width+20, top, bottom:top+gap, passed:false}); }
+function drawCloud(cx,cy,s){ x.fillStyle='rgba(255,255,255,.72)'; x.beginPath(); x.arc(cx,cy,s,0,7); x.arc(cx+s,cy-8,s*.8,0,7); x.arc(cx+s*2,cy,s,0,7); x.fill(); }
+function loop(){
+  frame++; if(frame%92===1) pipe();
+  x.clearRect(0,0,c.width,c.height);
+  const g=x.createLinearGradient(0,0,0,c.height); g.addColorStop(0,'#7bd3ff'); g.addColorStop(1,'#b8f3ff'); x.fillStyle=g; x.fillRect(0,0,c.width,c.height);
+  drawCloud(42+(frame*.25)%430,72,18); drawCloud(250-(frame*.18)%430,128,14);
+  x.fillStyle='#4bb66b'; x.fillRect(0,c.height-42,c.width,42); x.fillStyle='#2b8a47'; x.fillRect(0,c.height-42,c.width,8);
+  bird.v += .42; bird.y += bird.v;
+  for(const p of pipes){
+    p.x -= 2.25;
+    x.fillStyle='#168d56'; x.fillRect(p.x,0,54,p.top); x.fillRect(p.x,p.bottom,54,c.height-p.bottom-42);
+    x.fillStyle='#24c875'; x.fillRect(p.x-5,p.top-18,64,18); x.fillRect(p.x-5,p.bottom,64,18);
+    if(!p.passed && p.x+54<bird.x){ p.passed=true; score++; best=Math.max(best,score); }
+    const hitX = bird.x+bird.r>p.x && bird.x-bird.r<p.x+54;
+    const hitY = bird.y-bird.r<p.top || bird.y+bird.r>p.bottom;
+    if(hitX && hitY) over=true;
+  }
+  pipes = pipes.filter(p=>p.x>-80);
+  if(bird.y+bird.r>c.height-42 || bird.y-bird.r<0) over=true;
+  x.save(); x.translate(bird.x,bird.y); x.rotate(Math.max(-.5, Math.min(.8, bird.v/10))); x.fillStyle='#ffd84d'; x.beginPath(); x.arc(0,0,bird.r,0,7); x.fill(); x.fillStyle='#ff9f1c'; x.beginPath(); x.moveTo(10,-3); x.lineTo(28,4); x.lineTo(10,10); x.fill(); x.fillStyle='#111'; x.beginPath(); x.arc(5,-5,2.5,0,7); x.fill(); x.restore();
+  x.fillStyle='#08304a'; x.font='bold 28px system-ui'; x.fillText(score,18,38); x.font='14px system-ui'; x.fillText('best '+best,18,60);
+  if(over){ x.fillStyle='rgba(4,12,24,.62)'; x.fillRect(0,0,c.width,c.height); x.fillStyle='#fff'; x.font='bold 34px system-ui'; x.textAlign='center'; x.fillText('Crash!',c.width/2,220); x.font='18px system-ui'; x.fillText('tap/click/space to restart',c.width/2,252); x.textAlign='left'; }
+  requestAnimationFrame(loop);
+}
+reset(); loop();
+</script>
+</body>
+</html>

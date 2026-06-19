@@ -1,0 +1,69 @@
+services:
+  hysteria2:
+    image: ${HY2_IMAGE:-tobyxdd/hysteria:v2}
+    container_name: ${HY2_CONTAINER_NAME:-hysteria2-udp443}
+    restart: unless-stopped
+    ports:
+      # Hysteria2 is UDP-based. Publish only UDP/443 so Caddy can keep
+      # TCP/80 and TCP/443. Caddy HTTP/3/QUIC must not bind UDP/443.
+      - "${HY2_HOST_UDP_PORT:-443}:443/udp"
+    volumes:
+      - ${HY2_DATA_DIR:-./data}:/var/lib/hysteria
+      # Default live setup reuses Caddy's existing Let's Encrypt certificate.
+      # The .env file points HY2_TLS_CERT/HY2_TLS_KEY at paths under /caddy-certs.
+      - ${HY2_CADDY_CERTS_DIR:-/var/lib/caddy/.local/share/caddy/certificates}:/caddy-certs:ro
+    environment:
+      HY2_SERVER_NAME: ${HY2_SERVER_NAME:?set HY2_SERVER_NAME in .env}
+      HY2_TLS_CERT: ${HY2_TLS_CERT:?set HY2_TLS_CERT in .env}
+      HY2_TLS_KEY: ${HY2_TLS_KEY:?set HY2_TLS_KEY in .env}
+      HY2_AUTH_MOSCOW_TIGER_USER: ${HY2_AUTH_MOSCOW_TIGER_USER:-moscow-tiger}
+      HY2_AUTH_MOSCOW_TIGER_PASSWORD: ${HY2_AUTH_MOSCOW_TIGER_PASSWORD:?set HY2_AUTH_MOSCOW_TIGER_PASSWORD in .env}
+      HY2_AUTH_VIBE_PRACTICUM_USER: ${HY2_AUTH_VIBE_PRACTICUM_USER:-vibe-practicum}
+      HY2_AUTH_VIBE_PRACTICUM_PASSWORD: ${HY2_AUTH_VIBE_PRACTICUM_PASSWORD:?set HY2_AUTH_VIBE_PRACTICUM_PASSWORD in .env}
+      HY2_AUTH_PERSONAL_USER: ${HY2_AUTH_PERSONAL_USER:-personal}
+      HY2_AUTH_PERSONAL_PASSWORD: ${HY2_AUTH_PERSONAL_PASSWORD:?set HY2_AUTH_PERSONAL_PASSWORD in .env}
+      HY2_OBFS_PASSWORD: ${HY2_OBFS_PASSWORD:?set HY2_OBFS_PASSWORD in .env}
+      HY2_MASQUERADE_URL: ${HY2_MASQUERADE_URL:-https://www.example.com/}
+    entrypoint:
+      - /bin/sh
+      - -eu
+      - -c
+    command:
+      - |
+        umask 077
+        : "$${HY2_SERVER_NAME:?missing HY2_SERVER_NAME}"
+        : "$${HY2_TLS_CERT:?missing HY2_TLS_CERT}"
+        : "$${HY2_TLS_KEY:?missing HY2_TLS_KEY}"
+        : "$${HY2_AUTH_MOSCOW_TIGER_PASSWORD:?missing HY2_AUTH_MOSCOW_TIGER_PASSWORD}"
+        : "$${HY2_AUTH_VIBE_PRACTICUM_PASSWORD:?missing HY2_AUTH_VIBE_PRACTICUM_PASSWORD}"
+        : "$${HY2_AUTH_PERSONAL_PASSWORD:?missing HY2_AUTH_PERSONAL_PASSWORD}"
+        : "$${HY2_OBFS_PASSWORD:?missing HY2_OBFS_PASSWORD}"
+        test -r "$${HY2_TLS_CERT}"
+        test -r "$${HY2_TLS_KEY}"
+        cat > /tmp/hysteria2-server.yaml <<EOF_CONFIG
+        listen: :443
+
+        tls:
+          cert: "$${HY2_TLS_CERT}"
+          key: "$${HY2_TLS_KEY}"
+          sniGuard: strict
+
+        auth:
+          type: userpass
+          userpass:
+            "$${HY2_AUTH_MOSCOW_TIGER_USER}": "$${HY2_AUTH_MOSCOW_TIGER_PASSWORD}"
+            "$${HY2_AUTH_VIBE_PRACTICUM_USER}": "$${HY2_AUTH_VIBE_PRACTICUM_PASSWORD}"
+            "$${HY2_AUTH_PERSONAL_USER}": "$${HY2_AUTH_PERSONAL_PASSWORD}"
+
+        obfs:
+          type: salamander
+          salamander:
+            password: "$${HY2_OBFS_PASSWORD}"
+
+        masquerade:
+          type: proxy
+          proxy:
+            url: "$${HY2_MASQUERADE_URL}"
+            rewriteHost: true
+        EOF_CONFIG
+        exec hysteria server -c /tmp/hysteria2-server.yaml

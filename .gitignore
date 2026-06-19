@@ -23,6 +23,7 @@ logs/
 /reports/
 docs/
 snapshots/
+tmp/
 *.log
 *.pcap
 *.dump
@@ -69,3 +70,10 @@ steam-deck/hotspot-client/runtime/
 config/vpnkit-manifest.local.yaml
 config/vpnkit-bindings.local.env
 generated/openvpn-profiles/
+# Hysteria2 deploy local operator inputs and runtime artifacts
+deploy/hysteria2/.env
+deploy/hysteria2/data/
+deploy/hysteria2/logs/
+deploy/hysteria2/config.yaml
+deploy/hysteria2/*.local.yaml
+!deploy/hysteria2/.env.example
