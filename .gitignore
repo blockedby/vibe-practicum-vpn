@@ -77,3 +77,13 @@ deploy/hysteria2/logs/
 deploy/hysteria2/config.yaml
 deploy/hysteria2/*.local.yaml
 !deploy/hysteria2/.env.example
+
+# Steam Deck singnox hotspot client local operator inputs and runtime artifacts
+steam-deck/singnox-hotspot-client/.env
+steam-deck/singnox-hotspot-client/local/
+steam-deck/singnox-hotspot-client/secrets/
+steam-deck/singnox-hotspot-client/runtime/
+steam-deck/singnox-hotspot-client/logs/
+steam-deck/singnox-hotspot-client/reports/
+steam-deck/singnox-hotspot-client/generated/
+!steam-deck/singnox-hotspot-client/.env.example
