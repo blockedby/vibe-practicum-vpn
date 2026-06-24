@@ -104,6 +104,12 @@ template_path = os.environ['BASE_TEMPLATE']
 tun_iface = os.environ['TUN_IFACE']
 tun_addr = os.environ['TUN_ADDR']
 
+def obfs_password(obfs):
+    salamander = (obfs or {}).get('salamander')
+    if isinstance(salamander, dict):
+        return str(salamander.get('password') or '').strip()
+    return str(salamander or '').strip()
+
 def parse_yaml(path):
     try:
         import yaml
@@ -125,7 +131,7 @@ def parse_yaml(path):
         'auth': str(d['auth']).strip(),
         'sni': str(tls.get('sni') or host).strip(),
         'insecure': bool(tls.get('insecure')),
-        'obfs': str(obfs.get('salamander') or '').strip(),
+        'obfs': obfs_password(obfs),
     }
 
 def parse_uri(path):
