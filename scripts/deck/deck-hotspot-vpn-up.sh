@@ -16,6 +16,7 @@ HOTSPOT_CIDR=${DECK_HOTSPOT_CIDR:-10.42.0.1/24}
 HOTSPOT_IP=${HOTSPOT_CIDR%%/*}
 HOTSPOT_SUBNET=${DECK_HOTSPOT_SUBNET:-10.42.0.0/24}
 DHCP_RANGE=${DECK_HOTSPOT_DHCP_RANGE:-10.42.0.10,10.42.0.100,255.255.255.0,12h}
+HOTSPOT_IPV6_POLICY=${DECK_HOTSPOT_IPV6_POLICY:-block}
 REPORT_PATH=${DECK_HOTSPOT_REPORT_PATH:-}
 DRY_RUN=1
 YES=0
@@ -38,6 +39,7 @@ Options:
   --ssid SSID            Hotspot SSID (default vpnkit-deck)
   --password PASS        Hotspot WPA password (not printed)
   --vpn-iface IFACE      VPN tunnel iface expected for egress (default tun0)
+  --ipv6-policy MODE     IPv6 policy for hotspot clients: block|allow (default block)
   --nft-table NAME       Dedicated nft inet table name
   --report PATH          Report path under reports/
   --dry-run              Plan only, no mutation (default)
@@ -48,12 +50,14 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --ssh-target) SSH_TARGET=${2:?}; shift 2;; --remote-dir) REMOTE_DIR=${2:?}; shift 2;; --podman) PODMAN_CMD=${2:?}; shift 2;;
   --uplink-iface) UPLINK_IFACE=${2:?}; shift 2;; --hotspot-iface) HOTSPOT_IFACE=${2:?}; shift 2;;
   --ssid) SSID=${2:?}; shift 2;; --password) PASSWORD=${2:?}; shift 2;; --vpn-iface) VPN_IFACE=${2:?}; shift 2;;
+  --ipv6-policy) HOTSPOT_IPV6_POLICY=${2:?}; shift 2;;
   --nft-table) NFT_TABLE=${2:?}; shift 2;; --report) REPORT_PATH=${2:?}; shift 2;;
   --dry-run) DRY_RUN=1; shift;; --apply) DRY_RUN=0; shift;; --yes) YES=1; shift;;
   --ssh-option) read -r -a opt <<< "${2:?}"; SSH_OPTS+=("${opt[@]}"); shift 2;;
   -h|--help) usage; exit 0;; *) echo "unknown argument: $1" >&2; usage >&2; exit 2;;
 esac; done
 [[ "$UPLINK_IFACE$HOTSPOT_IFACE$VPN_IFACE" =~ ^[A-Za-z0-9_.:-]+$ && "$NFT_TABLE" =~ ^[A-Za-z0-9_:-]+$ ]] || { echo "unsafe interface/table name" >&2; exit 2; }
+case "$HOTSPOT_IPV6_POLICY" in block|allow) ;; *) echo "unsupported IPv6 policy: $HOTSPOT_IPV6_POLICY (expected block or allow)" >&2; exit 2 ;; esac
 if [[ $DRY_RUN -eq 0 ]]; then
   [[ $YES -eq 1 || ${DECK_HOTSPOT_CONFIRM:-} == YES ]] || { echo "refusing mutation without --yes or DECK_HOTSPOT_CONFIRM=YES" >&2; exit 3; }
   [[ ${#PASSWORD} -ge 8 ]] || { echo "hotspot password must be at least 8 chars for --apply" >&2; exit 2; }
@@ -76,10 +80,11 @@ shell_quote(){ printf '%q' "$1"; }
   echo "- SSH target: <redacted>"
   echo "- Mode: $([[ $DRY_RUN -eq 1 ]] && echo dry-run || echo apply)"
   echo "- Topology: $UPLINK_IFACE uplink, $HOTSPOT_IFACE hostapd AP, $VPN_IFACE VPN egress"
+  echo "- IPv6 policy: $HOTSPOT_IPV6_POLICY"
   echo
   echo '```text'
   ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
-    "DRY_RUN=$(shell_quote "$DRY_RUN") REMOTE_DIR=$(shell_quote "$REMOTE_DIR") PODMAN_CMD=$(shell_quote "$PODMAN_CMD") UPLINK_IFACE=$(shell_quote "$UPLINK_IFACE") HOTSPOT_IFACE=$(shell_quote "$HOTSPOT_IFACE") SSID=$(shell_quote "$SSID") PASSWORD=$(shell_quote "$PASSWORD") VPN_IFACE=$(shell_quote "$VPN_IFACE") NFT_TABLE=$(shell_quote "$NFT_TABLE") HOTSPOT_CONTAINER=$(shell_quote "$HOTSPOT_CONTAINER") HOTSPOT_IMAGE=$(shell_quote "$HOTSPOT_IMAGE") HOTSPOT_CIDR=$(shell_quote "$HOTSPOT_CIDR") HOTSPOT_IP=$(shell_quote "$HOTSPOT_IP") HOTSPOT_SUBNET=$(shell_quote "$HOTSPOT_SUBNET") DHCP_RANGE=$(shell_quote "$DHCP_RANGE") bash -s" <<'REMOTE'
+    "DRY_RUN=$(shell_quote "$DRY_RUN") REMOTE_DIR=$(shell_quote "$REMOTE_DIR") PODMAN_CMD=$(shell_quote "$PODMAN_CMD") UPLINK_IFACE=$(shell_quote "$UPLINK_IFACE") HOTSPOT_IFACE=$(shell_quote "$HOTSPOT_IFACE") SSID=$(shell_quote "$SSID") PASSWORD=$(shell_quote "$PASSWORD") VPN_IFACE=$(shell_quote "$VPN_IFACE") NFT_TABLE=$(shell_quote "$NFT_TABLE") HOTSPOT_CONTAINER=$(shell_quote "$HOTSPOT_CONTAINER") HOTSPOT_IMAGE=$(shell_quote "$HOTSPOT_IMAGE") HOTSPOT_CIDR=$(shell_quote "$HOTSPOT_CIDR") HOTSPOT_IP=$(shell_quote "$HOTSPOT_IP") HOTSPOT_SUBNET=$(shell_quote "$HOTSPOT_SUBNET") DHCP_RANGE=$(shell_quote "$DHCP_RANGE") HOTSPOT_IPV6_POLICY=$(shell_quote "$HOTSPOT_IPV6_POLICY") bash -s" <<'REMOTE'
 set -Eeuo pipefail
 read -r -a PODMAN <<<"$PODMAN_CMD"
 log(){ printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
@@ -87,6 +92,53 @@ run(){ log "+ $*"; "$@"; }
 podman_cmd(){ "${PODMAN[@]}" "$@"; }
 need(){ command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" >&2; exit 10; }; }
 need ip; need iw; need sudo; need nft
+ensure_ip6tables_rule(){
+  local table=$1 chain=$2
+  shift 2
+  if sudo ip6tables -t "$table" -C "$chain" "$@" 2>/dev/null; then
+    return 0
+  fi
+  run sudo ip6tables -t "$table" -A "$chain" "$@"
+}
+remove_ip6tables_rule(){
+  local table=$1 chain=$2
+  shift 2
+  while sudo ip6tables -t "$table" -C "$chain" "$@" 2>/dev/null; do
+    sudo ip6tables -t "$table" -D "$chain" "$@" || break
+  done
+}
+clear_ipv6_block_rules(){
+  if ! command -v ip6tables >/dev/null 2>&1; then
+    log "ip6tables unavailable; no managed IPv6 block rules to clear"
+    return 0
+  fi
+  remove_ip6tables_rule filter INPUT -i "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK
+  remove_ip6tables_rule filter FORWARD -i "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK
+  remove_ip6tables_rule filter OUTPUT -o "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK
+  remove_ip6tables_rule filter FORWARD -o "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK
+  run sudo ip6tables -t filter -F VPNKIT_DECK_IPV6_BLOCK 2>/dev/null || true
+  run sudo ip6tables -t filter -X VPNKIT_DECK_IPV6_BLOCK 2>/dev/null || true
+}
+install_ipv6_block_rules(){
+  if ! command -v ip6tables >/dev/null 2>&1; then
+    echo "DECK_HOTSPOT_IPV6_POLICY=block requires ip6tables, but ip6tables is unavailable" >&2
+    return 2
+  fi
+  run sudo ip6tables -t filter -N VPNKIT_DECK_IPV6_BLOCK 2>/dev/null || true
+  run sudo ip6tables -t filter -F VPNKIT_DECK_IPV6_BLOCK
+  ensure_ip6tables_rule filter INPUT -i "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK
+  ensure_ip6tables_rule filter FORWARD -i "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK
+  ensure_ip6tables_rule filter OUTPUT -o "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK
+  ensure_ip6tables_rule filter FORWARD -o "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK
+  run sudo ip6tables -t filter -A VPNKIT_DECK_IPV6_BLOCK -j DROP
+  run sudo ip6tables -t filter -L VPNKIT_DECK_IPV6_BLOCK -v -n -x
+}
+install_ipv6_policy(){
+  case "$HOTSPOT_IPV6_POLICY" in
+    block) install_ipv6_block_rules ;;
+    allow) clear_ipv6_block_rules ;;
+  esac
+}
 log "preflight"
 command -v nmcli >/dev/null 2>&1 && nmcli -f DEVICE,TYPE,STATE dev status || true
 ip -br addr || true
@@ -100,11 +152,12 @@ if [[ "$DRY_RUN" = 1 ]]; then
   log "dry-run plan: would create virtual AP iface $HOTSPOT_IFACE from $UPLINK_IFACE"
   log "dry-run plan: would assign $HOTSPOT_CIDR to $HOTSPOT_IFACE"
   log "dry-run plan: would build/run hostapd+dnsmasq container $HOTSPOT_CONTAINER ($HOTSPOT_IMAGE)"
+  log "dry-run plan: would set IPv6 policy $HOTSPOT_IPV6_POLICY for hotspot clients"
   log "dry-run plan: would put $HOTSPOT_IFACE into firewalld trusted zone when firewalld is active"
   log "dry-run plan: would enable net.ipv4.ip_forward=1 and nft NAT $HOTSPOT_SUBNET -> $VPN_IFACE"
   exit 0
 fi
-cleanup_on_fail(){ rc=$?; if [[ $rc -ne 0 ]]; then log "failure rc=$rc; cleanup"; podman_cmd rm -f "$HOTSPOT_CONTAINER" || true; sudo nft delete table inet "$NFT_TABLE" || true; if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then sudo firewall-cmd --zone=trusted --remove-interface="$HOTSPOT_IFACE" || true; fi; sudo iw dev "$HOTSPOT_IFACE" del || true; fi; exit $rc; }
+cleanup_on_fail(){ rc=$?; if [[ $rc -ne 0 ]]; then log "failure rc=$rc; cleanup"; podman_cmd rm -f "$HOTSPOT_CONTAINER" || true; clear_ipv6_block_rules || true; sudo nft delete table inet "$NFT_TABLE" || true; if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then sudo firewall-cmd --zone=trusted --remove-interface="$HOTSPOT_IFACE" || true; fi; sudo iw dev "$HOTSPOT_IFACE" del || true; fi; exit $rc; }
 trap cleanup_on_fail EXIT
 podman_cmd rm -f "$HOTSPOT_CONTAINER" >/dev/null 2>&1 || true
 sudo nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || true
@@ -140,6 +193,8 @@ dhcp-authoritative
 dhcp-range=$DHCP_RANGE
 dhcp-option=3,$HOTSPOT_IP
 dhcp-option=6,$HOTSPOT_IP
+no-resolv
+filter-AAAA
 server=1.1.1.1
 server=8.8.8.8
 log-dhcp
@@ -148,6 +203,7 @@ log-facility=/var/log/vpnkit-hotspot/dnsmasq.log
 EOF_DNSMASQ
 run podman_cmd build -t "$HOTSPOT_IMAGE" -f "$REMOTE_DIR/Containerfile.hotspot" "$REMOTE_DIR"
 run sudo sysctl -w net.ipv4.ip_forward=1
+install_ipv6_policy
 cat >"$RUNTIME_DIR/${NFT_TABLE}.nft" <<EOF_NFT
 table inet $NFT_TABLE {
  chain forward {

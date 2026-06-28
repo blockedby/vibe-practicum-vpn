@@ -171,5 +171,7 @@ idempotent. It does not mutate unrelated production `vpnkit` containers.
 
 - Static validation for this package is `bash -n scripts/*.sh` plus a secret scan
   of tracked package files.
+- Hotspot IPv6 is blocked by default; set `DECK_HOTSPOT_IPV6_POLICY=allow` only
+  if you explicitly need IPv6 on the Deck hotspot path.
 - Live Deck mutation is intentionally not part of static validation.
 - Keep generated configs, local secrets, logs, and reports out of git.

@@ -76,6 +76,12 @@ def parse_host_port(server):
     host, port = server.rsplit(':', 1)
     return host, int(port)
 
+def obfs_password(obfs):
+    salamander = (obfs or {}).get('salamander')
+    if isinstance(salamander, dict):
+        return str(salamander.get('password') or '').strip()
+    return str(salamander or '').strip()
+
 def parse_yaml_client(path):
     data = load_yaml(path)
     tls = data.get('tls') or {}
@@ -88,7 +94,7 @@ def parse_yaml_client(path):
         'auth': str(data['auth']).strip(),
         'sni': str(tls.get('sni') or host).strip(),
         'insecure': insecure,
-        'obfs': str(obfs.get('salamander') or '').strip(),
+        'obfs': obfs_password(obfs),
     }
 
 def parse_uri_client(path):
@@ -146,20 +152,21 @@ for inbound in config.get('inbounds', []):
         inbound['strict_route'] = False
         inbound['stack'] = 'system'
 config['inbounds'] = [inbound for inbound in config.get('inbounds', []) if inbound.get('type') != 'socks']
-route = config.setdefault('route', {})
-rules = route.get('rules') or []
-route['rules'] = [{'port': 53, 'action': 'hijack-dns'}] + rules
-for rule_set in route.get('rule_set') or []:
+for rule_set in config.setdefault('route', {}).get('rule_set') or []:
     path = Path(rule_set.get('path', ''))
     if path.name:
         rule_set['path'] = str(rule_set_dir / path.name)
 
 output_path.parent.mkdir(parents=True, exist_ok=True)
-rule_set_dir.mkdir(parents=True, exist_ok=True)
-for name in ('vpnkit-adblock.json', 'vpnkit-dev-direct.json', 'geoip-ru.json', 'geosite-category-ru.json'):
-    target = rule_set_dir / name
-    if not target.exists():
-        target.write_text('{"version":1,"rules":[]}\n')
+# Only create local rule-set placeholders for package-relative/local output paths.
+# Remote absolute paths are valid inside the Deck config but must not be created
+# on the workstation while rendering.
+if str(rule_set_dir).startswith(str(Path.cwd())) or not rule_set_dir.is_absolute():
+    rule_set_dir.mkdir(parents=True, exist_ok=True)
+    for name in ('vpnkit-adblock.json', 'vpnkit-dev-direct.json', 'geoip-ru.json', 'geosite-category-ru.json'):
+        target = rule_set_dir / name
+        if not target.exists():
+            target.write_text('{"version":1,"rules":[]}\n')
 output_path.write_text(json.dumps(config, indent=2) + '\n')
 output_path.chmod(0o600)
 PY

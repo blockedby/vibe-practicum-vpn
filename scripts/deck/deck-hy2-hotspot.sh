@@ -13,10 +13,19 @@ SINGBOX_IMAGE=${DECK_HY2_SINGBOX_IMAGE:-docker.io/library/containerized-vpnkit-o
 SINGBOX_CONTAINER=${DECK_HY2_SINGBOX_CONTAINER:-vpnkit-deck-hy2-singbox}
 HOTSPOT_CONTAINER=${DECK_HY2_HOTSPOT_CONTAINER:-vpnkit-deck-hy2-hotspot-ap}
 HOTSPOT_IMAGE=${DECK_HY2_HOTSPOT_IMAGE:-localhost/vpnkit-deck-hy2-hotspot-ap:latest}
+HOTSPOT_REMOTE_DIR=${DECK_HY2_HOTSPOT_REMOTE_DIR:-/home/deck/code/tools/vibe-practicum-vpn/steam-deck/hotspot-client}
+UPLINK_IFACE=${DECK_HY2_UPLINK_IFACE:-${DECK_HOTSPOT_UPLINK_IFACE:-wlan0}}
+HOTSPOT_IFACE=${DECK_HY2_HOTSPOT_IFACE:-${DECK_HOTSPOT_IFACE:-ap0}}
+HOTSPOT_SSID=${DECK_HY2_HOTSPOT_SSID:-${DECK_HOTSPOT_SSID:-vpnkit-deck}}
 TUN_IFACE=${DECK_HY2_TUN_IFACE:-sb-tun0}
 TUN_ADDR=${DECK_HY2_TUN_ADDR:-172.19.0.1/30}
 HOTSPOT_PASSWORD=${DECK_HOTSPOT_PASSWORD:-}
+HOTSPOT_CIDR=${DECK_HY2_HOTSPOT_CIDR:-${DECK_HOTSPOT_CIDR:-10.42.0.1/24}}
+HOTSPOT_IP=${HOTSPOT_CIDR%%/*}
 HOTSPOT_SUBNET=${DECK_HOTSPOT_SUBNET:-10.42.0.0/24}
+HOTSPOT_DHCP_RANGE=${DECK_HY2_HOTSPOT_DHCP_RANGE:-10.42.0.10,10.42.0.100,255.255.255.0,12h}
+HOTSPOT_DNS_SERVERS=${DECK_HY2_HOTSPOT_DNS_SERVERS:-8.8.8.8,8.8.4.4}
+HOTSPOT_NFT_TABLE=${DECK_HY2_HOTSPOT_NFT_TABLE:-vpnkit_deck_hotspot}
 HOTSPOT_TABLE=${DECK_HY2_HOTSPOT_TABLE:-51902}
 HOTSPOT_RULE_PRIO=${DECK_HY2_HOTSPOT_RULE_PRIO:-10002}
 REPORT_DIR=${DECK_HY2_REPORT_DIR:-docs/plans/2026-06-22-steamdeck-hy2-hotspot-runtime/verification}
@@ -85,7 +94,9 @@ redact() {
     -e 's/([0-9]{1,3}\.){3}[0-9]{1,3}/<IP>/g' \
     -e 's/([0-9a-f]{2}:){5}[0-9a-f]{2}/<MAC>/Ig' \
     -e 's/[0-9a-f]{4}(:[0-9a-f]{0,4}){2,7}/<IPv6>/Ig' \
-    -e 's/(password|auth|obfs[^:=]*)([":= ]+)[^", }]+/\1\2<redacted>/Ig' \
+    -e 's/(password|pass|wpa_passphrase|auth|obfs[^:=]*)([":= ]+)[^", }]+/\1\2<redacted>/Ig' \
+    -e 's/(PASS=)[^[:space:]]+/\1<redacted>/g' \
+    -e 's/(wpa_passphrase=)[^[:space:]]+/\1<redacted>/g' \
     -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/<redacted-userhost>/g'
 }
 q() { printf '%q' "$1"; }
@@ -188,10 +199,6 @@ for inbound in c.get('inbounds', []):
         inbound['stack'] = 'system'
 # Avoid host port conflicts and avoid SOCKS path crashes in this Deck lab helper.
 c['inbounds'] = [i for i in c.get('inbounds', []) if i.get('type') != 'socks']
-# Make DNS hijack match raw client UDP/TCP 53 packets before sniff/final routing.
-route = c.setdefault('route', {})
-rules = route.get('rules') or []
-route['rules'] = [{'port': 53, 'action': 'hijack-dns'}] + rules
 print(json.dumps(c, indent=2))
 PY
 }
@@ -203,6 +210,122 @@ write_empty_rules() {
   printf '{"version":1,"rules":[]}\n' > "$dir/vpnkit-dev-direct.json"
   printf '{"version":1,"rules":[]}\n' > "$dir/geoip-ru.json"
   printf '{"version":1,"rules":[]}\n' > "$dir/geosite-category-ru.json"
+}
+
+up_dumb_hotspot() {
+  remote "set -euo pipefail
+    read -r -a PODMAN <<< $(q "$PODMAN_CMD")
+    RUNTIME_DIR=$(q "$REMOTE_STATE")/hotspot
+    LOG_DIR=$(q "$REMOTE_STATE")/hotspot-logs
+    CON=$(q "$HOTSPOT_CONTAINER")
+    IMG=$(q "$HOTSPOT_IMAGE")
+    REMOTE_HOTSPOT_DIR=$(q "$HOTSPOT_REMOTE_DIR")
+    SSID=$(q "$HOTSPOT_SSID")
+    PASS=$(q "$HOTSPOT_PASSWORD")
+    UPLINK=$(q "$UPLINK_IFACE")
+    AP=$(q "$HOTSPOT_IFACE")
+    VPN=$(q "$TUN_IFACE")
+    HOTSPOT_CIDR=$(q "$HOTSPOT_CIDR")
+    HOTSPOT_IP=$(q "$HOTSPOT_IP")
+    HOTSPOT_SUBNET=$(q "$HOTSPOT_SUBNET")
+    DHCP_RANGE=$(q "$HOTSPOT_DHCP_RANGE")
+    DNS_SERVERS=$(q "$HOTSPOT_DNS_SERVERS")
+    TABLE_ID=$(q "$HOTSPOT_TABLE")
+    RULE_PRIO=$(q "$HOTSPOT_RULE_PRIO")
+    NFT_TABLE=$(q "$HOTSPOT_NFT_TABLE")
+
+    command -v iw >/dev/null
+    command -v nft >/dev/null
+    ip link show \"\$UPLINK\" >/dev/null
+    ip link show \"\$VPN\" >/dev/null
+
+    # This is intentionally dumb and robust: the AP container provides only
+    # hostapd + DHCP. Client DNS is public Google DNS from DHCP; no local DNS
+    # proxy and no host-level DNS DNAT/hijack.
+    sudo pkill hostapd >/dev/null 2>&1 || true
+    sudo pkill dnsmasq >/dev/null 2>&1 || true
+    \"\${PODMAN[@]}\" rm -f \"\$CON\" vpnkit-deck-hy2-hotspot-ap singnox-hotspot-ap singnox-hotspot-ap-urgent singnox-hotspot-ap-dumb >/dev/null 2>&1 || true
+    sudo nft delete table ip singnox_dns_hijack >/dev/null 2>&1 || true
+    sudo nft delete table inet singnox_client_fix >/dev/null 2>&1 || true
+    sudo nft delete table inet singnox_debug >/dev/null 2>&1 || true
+    sudo nft delete table inet singnox_flowdebug >/dev/null 2>&1 || true
+    sudo nft delete table inet \"\$NFT_TABLE\" >/dev/null 2>&1 || true
+    sudo iw dev \"\$AP\" del >/dev/null 2>&1 || true
+
+    command -v hostapd >/dev/null
+    command -v dnsmasq >/dev/null
+    HOSTAPD_UNIT=\"\${CON}-hostapd.service\"
+    DNSMASQ_UNIT=\"\${CON}-dnsmasq.service\"
+    sudo systemctl stop \"\$HOSTAPD_UNIT\" \"\$DNSMASQ_UNIT\" >/dev/null 2>&1 || true
+    sudo systemctl reset-failed \"\$HOSTAPD_UNIT\" \"\$DNSMASQ_UNIT\" >/dev/null 2>&1 || true
+
+    sudo iw dev \"\$UPLINK\" interface add \"\$AP\" type __ap
+    sudo ip addr flush dev \"\$AP\" || true
+    sudo ip addr add \"\$HOTSPOT_CIDR\" dev \"\$AP\"
+    sudo ip link set dev \"\$AP\" mtu 1400 up
+    sudo ip link set dev \"\$VPN\" mtu 1400 || true
+
+    mkdir -p \"\$RUNTIME_DIR\" \"\$LOG_DIR\"
+    cat >\"\$RUNTIME_DIR/hostapd.conf\" <<EOF_HOSTAPD
+interface=$HOTSPOT_IFACE
+driver=nl80211
+ssid=$HOTSPOT_SSID
+hw_mode=g
+channel=6
+wmm_enabled=1
+auth_algs=1
+wpa=2
+wpa_passphrase=$HOTSPOT_PASSWORD
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+EOF_HOSTAPD
+    cat >\"\$RUNTIME_DIR/dnsmasq.conf\" <<EOF_DNSMASQ
+interface=$HOTSPOT_IFACE
+bind-interfaces
+port=0
+dhcp-authoritative
+dhcp-range=$HOTSPOT_DHCP_RANGE
+dhcp-option=option:router,$HOTSPOT_IP
+dhcp-option=option:dns-server,$HOTSPOT_DNS_SERVERS
+log-dhcp
+log-facility=-
+EOF_DNSMASQ
+
+    sudo systemd-run --unit=\"\$HOSTAPD_UNIT\" --description=singnox-hotspot-hostapd /usr/bin/hostapd \"\$RUNTIME_DIR/hostapd.conf\" >/dev/null
+    sudo systemd-run --unit=\"\$DNSMASQ_UNIT\" --description=singnox-hotspot-dnsmasq /usr/bin/dnsmasq --no-daemon --conf-file=\"\$RUNTIME_DIR/dnsmasq.conf\" >/dev/null
+    sleep 4
+
+    sudo sysctl -w net.ipv4.ip_forward=1 net.ipv4.conf.all.rp_filter=0 net.ipv4.conf.\"\$AP\".rp_filter=0 net.ipv4.conf.\"\$VPN\".rp_filter=0 >/dev/null
+    sudo ip route replace default dev \"\$VPN\" table \"\$TABLE_ID\"
+    sudo ip rule del from \"\$HOTSPOT_SUBNET\" table \"\$TABLE_ID\" priority \"\$RULE_PRIO\" >/dev/null 2>&1 || true
+    sudo ip rule add from \"\$HOTSPOT_SUBNET\" table \"\$TABLE_ID\" priority \"\$RULE_PRIO\"
+
+    cat >/tmp/deck-hy2-hotspot.nft <<EOF_NFT
+ table inet $HOTSPOT_NFT_TABLE {
+  chain forward_chain {
+   type filter hook forward priority -5; policy accept;
+   iifname "$HOTSPOT_IFACE" oifname "$TUN_IFACE" accept
+   iifname "$TUN_IFACE" oifname "$HOTSPOT_IFACE" ct state established,related accept
+   iifname "$HOTSPOT_IFACE" oifname "$UPLINK_IFACE" reject
+  }
+  chain postrouting_chain {
+   type nat hook postrouting priority srcnat; policy accept;
+   ip saddr $HOTSPOT_SUBNET oifname "$TUN_IFACE" masquerade
+  }
+ }
+EOF_NFT
+    sudo nft -f /tmp/deck-hy2-hotspot.nft
+
+    echo hotspot_hostapd_status=\$(systemctl is-active \"\$HOSTAPD_UNIT\" 2>/dev/null || true)
+    echo hotspot_dnsmasq_status=\$(systemctl is-active \"\$DNSMASQ_UNIT\" 2>/dev/null || true)
+    pgrep -a hostapd || true
+    pgrep -a dnsmasq || true
+    sudo ss -lunp | grep -E ':(67)\\b|dnsmasq' || true
+    ip -br addr | grep -E \"(\$UPLINK|\$AP|\$VPN)\" || true
+    ip rule show | grep \"\$TABLE_ID\" || true
+    ip route show table \"\$TABLE_ID\" || true
+    ip route get 8.8.8.8 from 10.42.0.10 iif \"\$AP\" || true
+  "
 }
 
 up() {
@@ -231,9 +354,8 @@ up() {
     else
       remote "set -e; read -r -a PODMAN <<< $(q "$PODMAN_CMD"); \${PODMAN[@]} rm -f $(q "$SINGBOX_CONTAINER") >/dev/null 2>&1 || true; sudo ip link del $(q "$TUN_IFACE") >/dev/null 2>&1 || true; \${PODMAN[@]} run --rm --network host --privileged -e ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true -e ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER=true -v $(q "$REMOTE_STATE")/config.json:/etc/sing-box/config.json:ro -v $(q "$REMOTE_STATE")/rule-sets:/etc/sing-box/rule-sets:ro --entrypoint /usr/local/bin/sing-box $(q "$SINGBOX_IMAGE") check -c /etc/sing-box/config.json >/tmp/deck-hy2-singbox-check.out 2>&1 || { sed -E 's/([0-9]{1,3}\.){3}[0-9]{1,3}/<IP>/g' /tmp/deck-hy2-singbox-check.out; exit 1; }; \${PODMAN[@]} run -d --name $(q "$SINGBOX_CONTAINER") --replace --network host --privileged -e ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true -e ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER=true -v $(q "$REMOTE_STATE")/config.json:/etc/sing-box/config.json:ro -v $(q "$REMOTE_STATE")/rule-sets:/etc/sing-box/rule-sets:ro --entrypoint /usr/local/bin/sing-box $(q "$SINGBOX_IMAGE") run -c /etc/sing-box/config.json >/dev/null; sleep 5; echo singbox_status=\$(\${PODMAN[@]} ps -a --filter name=$(q "$SINGBOX_CONTAINER") --format '{{.Status}}' | head -1); ip link show $(q "$TUN_IFACE") >/dev/null && echo tun=present || echo tun=absent"
     fi
-    DECK_HOTSPOT_PASSWORD="$HOTSPOT_PASSWORD" DECK_HOTSPOT_CONTAINER="$HOTSPOT_CONTAINER" DECK_HOTSPOT_IMAGE="$HOTSPOT_IMAGE" scripts/deck/deck-hotspot-vpn-up.sh --ssh-target "$SSH_TARGET" --vpn-iface "$TUN_IFACE" --apply --yes --report "$REPORT_DIR/deck-hy2-hotspot-inner-up-$(date -u +%Y%m%dT%H%M%SZ).md"
-    remote "set -e; sudo ip route replace default dev $(q "$TUN_IFACE") table $(q "$HOTSPOT_TABLE"); sudo ip rule del from $(q "$HOTSPOT_SUBNET") table $(q "$HOTSPOT_TABLE") priority $(q "$HOTSPOT_RULE_PRIO") >/dev/null 2>&1 || true; sudo ip rule add from $(q "$HOTSPOT_SUBNET") table $(q "$HOTSPOT_TABLE") priority $(q "$HOTSPOT_RULE_PRIO"); echo hotspot_policy_route=installed"
-    remote "ip -br addr | grep -E '$(q "$TUN_IFACE")|ap0|wlan0' || true; sudo nft list table inet vpnkit_deck_hotspot || true"
+    up_dumb_hotspot
+    remote "ip -br addr | grep -E '$(q "$TUN_IFACE")|$(q "$HOTSPOT_IFACE")|$(q "$UPLINK_IFACE")' || true; sudo nft list table inet $(q "$HOTSPOT_NFT_TABLE") || true"
     echo '```'
   } 2>&1 | redact | tee "$report"
   echo "report_path=$report"
@@ -246,15 +368,14 @@ down() {
     echo
     echo "- Timestamp: $(date -u +%FT%TZ)"
     echo '```text'
-    DECK_HOTSPOT_CONTAINER="$HOTSPOT_CONTAINER" scripts/deck/deck-hotspot-vpn-down.sh --ssh-target "$SSH_TARGET" --report "$REPORT_DIR/deck-hy2-hotspot-inner-down-$(date -u +%Y%m%dT%H%M%SZ).md" || true
-    remote "set +e; read -r -a PODMAN <<< $(q "$PODMAN_CMD"); sudo ip rule del from $(q "$HOTSPOT_SUBNET") table $(q "$HOTSPOT_TABLE") priority $(q "$HOTSPOT_RULE_PRIO") 2>/dev/null; sudo ip route flush table $(q "$HOTSPOT_TABLE") 2>/dev/null; sudo systemctl stop $(q "$SINGBOX_UNIT") 2>/dev/null; sudo systemctl reset-failed $(q "$SINGBOX_UNIT") 2>/dev/null; \${PODMAN[@]} rm -f $(q "$SINGBOX_CONTAINER") 2>/dev/null; sudo ip link del $(q "$TUN_IFACE") 2>/dev/null; echo down_done"
+    remote "set +e; read -r -a PODMAN <<< $(q "$PODMAN_CMD"); \${PODMAN[@]} rm -f $(q "$HOTSPOT_CONTAINER") vpnkit-deck-hy2-hotspot-ap singnox-hotspot-ap singnox-hotspot-ap-urgent singnox-hotspot-ap-dumb 2>/dev/null; sudo pkill hostapd 2>/dev/null; sudo pkill dnsmasq 2>/dev/null; sudo nft delete table inet $(q "$HOTSPOT_NFT_TABLE") 2>/dev/null; sudo nft delete table ip singnox_dns_hijack 2>/dev/null; sudo nft delete table inet singnox_client_fix 2>/dev/null; sudo nft delete table inet singnox_debug 2>/dev/null; sudo nft delete table inet singnox_flowdebug 2>/dev/null; sudo ip rule del from $(q "$HOTSPOT_SUBNET") table $(q "$HOTSPOT_TABLE") priority $(q "$HOTSPOT_RULE_PRIO") 2>/dev/null; sudo ip route flush table $(q "$HOTSPOT_TABLE") 2>/dev/null; sudo systemctl stop $(q "$SINGBOX_UNIT") 2>/dev/null; sudo systemctl reset-failed $(q "$SINGBOX_UNIT") 2>/dev/null; \${PODMAN[@]} rm -f $(q "$SINGBOX_CONTAINER") 2>/dev/null; sudo ip link del $(q "$TUN_IFACE") 2>/dev/null; sudo ip link del $(q "$HOTSPOT_IFACE") 2>/dev/null; echo down_done"
     echo '```'
   } 2>&1 | redact | tee "$report"
   echo "report_path=$report"
 }
 
 status() {
-  remote "set +e; read -r -a PODMAN <<< $(q "$PODMAN_CMD"); echo systemd; systemctl is-active $(q "$SINGBOX_UNIT") 2>/dev/null || true; echo containers; \${PODMAN[@]} ps -a --filter name=vpnkit-deck --format '{{.Names}} {{.Status}} {{.Image}}'; echo interfaces; ip -br addr | grep -E '$(q "$TUN_IFACE")|ap0|wlan0' || true; echo rules; ip rule show | grep -E '$(q "$HOTSPOT_TABLE")|$(q "$HOTSPOT_SUBNET")' || true; echo nft; sudo nft list tables | grep vpnkit || true" | redact
+  remote "set +e; read -r -a PODMAN <<< $(q "$PODMAN_CMD"); echo systemd; systemctl is-active $(q "$SINGBOX_UNIT") 2>/dev/null || true; echo containers; \${PODMAN[@]} ps -a --filter name=$(q "$HOTSPOT_CONTAINER") --format '{{.Names}} {{.Status}} {{.Image}}'; \${PODMAN[@]} ps -a --filter name=$(q "$SINGBOX_CONTAINER") --format '{{.Names}} {{.Status}} {{.Image}}'; echo processes; ps -ef | grep -E '[h]ostapd|[d]nsmasq' || true; echo interfaces; ip -br addr | grep -E '$(q "$TUN_IFACE")|$(q "$HOTSPOT_IFACE")|$(q "$UPLINK_IFACE")' || true; echo rules; ip rule show | grep -E '$(q "$HOTSPOT_TABLE")|$(q "$HOTSPOT_SUBNET")' || true; echo routes; ip route show table $(q "$HOTSPOT_TABLE") || true; echo nft; sudo nft list table inet $(q "$HOTSPOT_NFT_TABLE") 2>/dev/null || true; sudo nft list table ip singnox_dns_hijack 2>/dev/null || true" | redact
 }
 
 test_gateway() {

@@ -2,11 +2,9 @@
   "log": { "level": "debug", "timestamp": true },
   "dns": {
     "servers": [
-      { "tag": "remote-dns", "type": "tls", "server": "8.8.8.8", "detour": "selected-native-out" },
-      { "tag": "remote-dns-fallback", "type": "tls", "server": "8.8.4.4", "detour": "selected-native-out" },
-      { "tag": "direct-dns", "type": "local" }
+      { "tag": "local-dns", "type": "local" }
     ],
-    "final": "remote-dns",
+    "final": "local-dns",
     "strategy": "ipv4_only"
   },
   "inbounds": [
@@ -32,30 +30,11 @@
     { "type": "block", "tag": "block-out" }
   ],
   "route": {
-    "default_domain_resolver": "direct-dns",
+    "default_domain_resolver": "local-dns",
     "rules": [
-      { "protocol": "dns", "action": "hijack-dns" },
-      { "inbound": ["vpnkit-tun-in", "vpnkit-socks-in"], "action": "sniff", "timeout": "1s" },
-      { "rule_set": "vpnkit-adblock", "outbound": "block-out" },
-      { "rule_set": "vpnkit-dev-direct", "outbound": "direct-out" },
-      { "rule_set": "geoip-ru", "outbound": "direct-out" },
-      { "rule_set": "geosite-category-ru", "outbound": "direct-out" }
+      { "inbound": ["vpnkit-tun-in", "vpnkit-socks-in"], "action": "sniff", "timeout": "1s" }
     ],
-    "rule_set": [
-      {
-        "type": "local",
-        "tag": "vpnkit-adblock",
-        "format": "source",
-        "path": "/etc/sing-box/rule-sets/vpnkit-adblock.json"
-      },
-      {
-        "type": "local",
-        "tag": "vpnkit-dev-direct",
-        "format": "source",
-        "path": "/etc/sing-box/rule-sets/vpnkit-dev-direct.json"
-      },
-{{RU_RULE_SETS_JSON}}
-    ],
+    "rule_set": [],
     "final": "selected-native-out"
   }
 }

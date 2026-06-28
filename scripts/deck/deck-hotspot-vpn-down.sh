@@ -44,9 +44,29 @@ set -Eeuo pipefail
 read -r -a PODMAN <<<"$PODMAN_CMD"
 log(){ printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*"; }
 podman_cmd(){ "${PODMAN[@]}" "$@"; }
+clear_ipv6_block_rules(){
+  if ! command -v ip6tables >/dev/null 2>&1; then
+    return 0
+  fi
+  while sudo ip6tables -t filter -C INPUT -i "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK 2>/dev/null; do
+    sudo ip6tables -t filter -D INPUT -i "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK || break
+  done
+  while sudo ip6tables -t filter -C FORWARD -i "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK 2>/dev/null; do
+    sudo ip6tables -t filter -D FORWARD -i "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK || break
+  done
+  while sudo ip6tables -t filter -C OUTPUT -o "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK 2>/dev/null; do
+    sudo ip6tables -t filter -D OUTPUT -o "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK || break
+  done
+  while sudo ip6tables -t filter -C FORWARD -o "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK 2>/dev/null; do
+    sudo ip6tables -t filter -D FORWARD -o "$HOTSPOT_IFACE" -j VPNKIT_DECK_IPV6_BLOCK || break
+  done
+  sudo ip6tables -t filter -F VPNKIT_DECK_IPV6_BLOCK 2>/dev/null || true
+  sudo ip6tables -t filter -X VPNKIT_DECK_IPV6_BLOCK 2>/dev/null || true
+}
 log "down start"
 log "removing hotspot AP container $HOTSPOT_CONTAINER"
 podman_cmd rm -f "$HOTSPOT_CONTAINER" || true
+clear_ipv6_block_rules || true
 if command -v nft >/dev/null 2>&1; then
   if sudo nft list table inet "$NFT_TABLE" >/dev/null 2>&1; then
     log "deleting nft table inet $NFT_TABLE"
