@@ -1,6 +1,7 @@
 package singbox
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -8,12 +9,26 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/kcnc/vibe-practicum-vpn/internal/state"
 )
 
 var runCommand = func(name string, args ...string) error { return exec.Command(name, args...).Run() }
 var runSystemctl = func(args ...string) error { return exec.Command("systemctl", args...).Run() }
 var lookupIP = net.LookupIP
+
+var restartSequence uint64
+
+const (
+	// These bounds keep a misconfigured local supervisor from making a manual
+	// apply or rollback wait forever. An unset acknowledgement path remains
+	// intentionally asynchronous for backwards compatibility.
+	DefaultAckTimeout = 30 * time.Second
+	MaxAckTimeout     = 5 * time.Minute
+)
 
 type RestartMode string
 
@@ -23,15 +38,31 @@ const (
 )
 
 type RestartConfig struct {
-	Mode        RestartMode
-	Service     string
-	RequestFile string
-	SingBoxBin  string
+	Mode              RestartMode
+	Service           string
+	RequestFile       string
+	AckGenerationFile string
+	// AckFile is a compatibility alias for AckGenerationFile.
+	AckFile    string
+	AckTimeout time.Duration
+	SingBoxBin string
 }
 
 func (r RestartConfig) normalized() RestartConfig {
 	if r.Mode == "" {
 		r.Mode = RestartModeSystemd
+	}
+	if r.AckGenerationFile == "" {
+		r.AckGenerationFile = r.AckFile
+	}
+	r.AckGenerationFile = strings.TrimSpace(r.AckGenerationFile)
+	if r.AckGenerationFile != "" {
+		if r.AckTimeout == 0 {
+			r.AckTimeout = DefaultAckTimeout
+		}
+		if r.AckTimeout > MaxAckTimeout {
+			r.AckTimeout = MaxAckTimeout
+		}
 	}
 	return r
 }
@@ -40,10 +71,33 @@ func Check(bin, configPath string) error { return runCommand(bin, "check", "-c",
 
 // SyncFromSourcePreserveSelected refreshes a persisted runtime config from the
 // rendered source config while preserving the runtime selected-native-out
-// outbound. This lets template/routing policy changes (for example new rule_set
-// routes) reach existing containers without discarding the operator-selected
-// proxy outbound managed by vibe-vpn.
+// outbound. This pure wrapper is retained for callers that only need the file
+// transformation. The CLI uses SyncFromSourcePreserveSelectedWithLock so sync
+// participates in the same state-dir transaction lock as apply/rollback/prune.
 func SyncFromSourcePreserveSelected(sourcePath, runtimePath string) error {
+	return syncFromSourcePreserveSelected(sourcePath, runtimePath)
+}
+
+// SyncFromSourcePreserveSelectedWithLock is the process-safe sync entrypoint.
+func SyncFromSourcePreserveSelectedWithLock(ctx context.Context, sourcePath, runtimePath, stateDir string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lock, err := state.AcquireLock(ctx, stateDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	return syncFromSourcePreserveSelected(sourcePath, runtimePath)
+}
+
+// SyncFromSourcePreserveSelectedLocked performs the transformation for a
+// caller that already owns stateDir's lock.
+func SyncFromSourcePreserveSelectedLocked(sourcePath, runtimePath string) error {
+	return syncFromSourcePreserveSelected(sourcePath, runtimePath)
+}
+
+func syncFromSourcePreserveSelected(sourcePath, runtimePath string) error {
 	b, err := os.ReadFile(sourcePath)
 	if err != nil {
 		return err
@@ -121,10 +175,47 @@ func Rollback(configPath, stateDir, service string) (string, error) {
 	return RollbackWithRestart(configPath, stateDir, RestartConfig{Mode: RestartModeSystemd, Service: service})
 }
 
+// ApplyWithRestart takes the state-dir process lock for callers that do not
+// already own the transaction boundary.
 func ApplyWithRestart(configPath, stateDir string, out map[string]any, restart RestartConfig) (string, error) {
+	return ApplyWithRestartContext(context.Background(), configPath, stateDir, out, restart)
+}
+
+func ApplyWithRestartContext(ctx context.Context, configPath, stateDir string, out map[string]any, restart RestartConfig) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lock, err := state.AcquireLock(ctx, stateDir)
+	if err != nil {
+		return "", err
+	}
+	defer lock.Close()
+	return ApplyWithRestartLockedContext(ctx, configPath, stateDir, out, restart)
+}
+
+// ApplyWithRestartLocked performs the runtime mutation for a caller that
+// already owns state-dir's lock (daemon transaction paths use this form).
+func ApplyWithRestartLocked(configPath, stateDir string, out map[string]any, restart RestartConfig) (string, error) {
+	return ApplyWithRestartLockedContext(context.Background(), configPath, stateDir, out, restart)
+}
+
+func ApplyWithRestartLockedContext(ctx context.Context, configPath, stateDir string, out map[string]any, restart RestartConfig) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	restart = restart.normalized()
+	if err := state.MigrateLegacySnapshots(stateDir); err != nil {
+		return "", err
+	}
 	backupDir := filepath.Join(stateDir, "backups")
 	if err := os.MkdirAll(backupDir, 0700); err != nil {
+		return "", err
+	}
+	snapshot, err := state.Capture(stateDir)
+	if err != nil {
 		return "", err
 	}
 	b, err := os.ReadFile(configPath)
@@ -157,39 +248,150 @@ func ApplyWithRestart(configPath, stateDir string, out map[string]any, restart R
 	if err := os.WriteFile(backup, b, 0600); err != nil {
 		return "", err
 	}
-	if err := writeFileAtomic(configPath, append(nb, '\n'), 0644); err != nil {
+	cleanupUncommitted := func() {
+		_ = os.Remove(backup)
+		_ = state.RemoveSnapshotForBackup(stateDir, backup)
+	}
+	// The sidecar is written before the runtime file is changed, so a failure
+	// here cannot leave a new runtime active without its exact prior state.
+	if err := state.SaveSnapshotForBackup(stateDir, backup, snapshot); err != nil {
+		cleanupUncommitted()
 		return "", err
 	}
-	if err := restartSingBox(restart); err != nil {
+	if err := ctx.Err(); err != nil {
+		cleanupUncommitted()
+		return "", err
+	}
+	if err := writeFileAtomic(configPath, append(nb, '\n'), 0644); err != nil {
+		cleanupUncommitted()
+		return "", err
+	}
+	if err := restartSingBoxContext(ctx, restart); err != nil {
+		// A failed request-file acknowledgement must not leave the candidate
+		// config selected. Send the old config back asynchronously during the
+		// error path; waiting again could turn one bounded failure into two.
 		restoreErr := writeFileAtomic(configPath, b, 0644)
-		restartOldErr := restartSingBox(restart)
+		restartOldErr := error(nil)
+		if restoreErr == nil {
+			restartOldErr = restartSingBoxContext(context.Background(), withoutAck(restart))
+		}
 		if restoreErr != nil || restartOldErr != nil {
 			return backup, fmt.Errorf("restart after apply failed: %w; restore failed: %v; restart restored config: %v", err, restoreErr, restartOldErr)
 		}
-		return backup, fmt.Errorf("restart after apply failed: %w; restored backup %s", err, backup)
+		return backup, fmt.Errorf("restart after apply failed: %w; restored backup", err)
 	}
 	return backup, nil
 }
 
 func RollbackWithRestart(configPath, stateDir string, restart RestartConfig) (string, error) {
-	restart = restart.normalized()
-	files, _ := filepath.Glob(filepath.Join(stateDir, "backups", "sing-box-*.json"))
-	if len(files) == 0 {
-		return "", fmt.Errorf("no backups")
+	return RollbackWithRestartContext(context.Background(), configPath, stateDir, restart)
+}
+
+func RollbackWithRestartContext(ctx context.Context, configPath, stateDir string, restart RestartConfig) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	sort.Strings(files)
-	last := files[len(files)-1]
-	b, err := os.ReadFile(last)
+	lock, err := state.AcquireLock(ctx, stateDir)
 	if err != nil {
 		return "", err
 	}
-	if err := validateCandidate(configPath, stateDir, b, restart); err != nil {
+	defer lock.Close()
+	return RollbackWithRestartLockedContext(ctx, configPath, stateDir, restart)
+}
+
+func RollbackWithRestartLocked(configPath, stateDir string, restart RestartConfig) (string, error) {
+	return RollbackWithRestartLockedContext(context.Background(), configPath, stateDir, restart)
+}
+
+func RollbackWithRestartLockedContext(ctx context.Context, configPath, stateDir string, restart RestartConfig) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := state.MigrateLegacySnapshots(stateDir); err != nil {
 		return "", err
+	}
+	files, err := state.PairedRuntimeBackups(stateDir, "sing-box-")
+	if err != nil {
+		return "", err
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf("no paired backups")
+	}
+	sort.Strings(files)
+	last := files[len(files)-1]
+	// Parse the exact sidecar before changing the runtime. A corrupt state
+	// sidecar must fail closed rather than leaving runtime and state mismatched.
+	snap, err := state.LoadSnapshotForBackup(stateDir, last)
+	if err != nil {
+		return "", err
+	}
+	if err := RestoreBackupWithRestartLockedContext(ctx, configPath, stateDir, last, restart); err != nil {
+		return "", err
+	}
+	if err := snap.Restore(stateDir); err != nil {
+		return "", fmt.Errorf("runtime rollback succeeded but state restore failed: %w", err)
+	}
+	return last, nil
+}
+
+// RestoreBackupWithRestart restores one exact runtime backup and uses the same
+// restart/request-file supervision path as a normal apply. It is intentionally
+// separate from selecting the latest backup so a transaction can restore the
+// backup it just created without exposing node material in logs.
+func RestoreBackupWithRestart(configPath, stateDir, backupPath string, restart RestartConfig) error {
+	return RestoreBackupWithRestartContext(context.Background(), configPath, stateDir, backupPath, restart)
+}
+
+func RestoreBackupWithRestartContext(ctx context.Context, configPath, stateDir, backupPath string, restart RestartConfig) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lock, err := state.AcquireLock(ctx, stateDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	return RestoreBackupWithRestartLockedContext(ctx, configPath, stateDir, backupPath, restart)
+}
+
+func RestoreBackupWithRestartLocked(configPath, stateDir, backupPath string, restart RestartConfig) error {
+	return RestoreBackupWithRestartLockedContext(context.Background(), configPath, stateDir, backupPath, restart)
+}
+
+func RestoreBackupWithRestartLockedContext(ctx context.Context, configPath, stateDir, backupPath string, restart RestartConfig) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	restart = restart.normalized()
+	current, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	b, err := os.ReadFile(backupPath)
+	if err != nil {
+		return err
+	}
+	if err := validateCandidate(configPath, stateDir, b, restart); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := writeFileAtomic(configPath, append(bytesTrimFinalNewline(b), '\n'), 0644); err != nil {
-		return "", err
+		return err
 	}
-	return last, restartSingBox(restart)
+	if err := restartSingBoxContext(ctx, restart); err != nil {
+		restoreErr := writeFileAtomic(configPath, current, 0644)
+		restartOldErr := error(nil)
+		if restoreErr == nil {
+			restartOldErr = restartSingBoxContext(context.Background(), withoutAck(restart))
+		}
+		if restoreErr != nil || restartOldErr != nil {
+			return fmt.Errorf("restart after rollback failed: %w; restore failed: %v; restart restored config: %v", err, restoreErr, restartOldErr)
+		}
+		return fmt.Errorf("restart after rollback failed: %w; restored prior config", err)
+	}
+	return nil
 }
 
 func validateCandidate(configPath, stateDir string, b []byte, restart RestartConfig) error {
@@ -210,11 +412,11 @@ func validateCandidate(configPath, stateDir string, b []byte, restart RestartCon
 	tmp := f.Name()
 	defer os.Remove(tmp)
 	if _, err := f.Write(append(bytesTrimFinalNewline(b), '\n')); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Chmod(0644); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
@@ -226,7 +428,20 @@ func validateCandidate(configPath, stateDir string, b []byte, restart RestartCon
 	return nil
 }
 
+// restartSingBox preserves the original synchronous helper for package-local
+// callers; runtime paths that propagate cancellation use the context variant.
 func restartSingBox(restart RestartConfig) error {
+	return restartSingBoxContext(context.Background(), restart)
+}
+
+func restartSingBoxContext(ctx context.Context, restart RestartConfig) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	restart = restart.normalized()
 	switch restart.Mode {
 	case "", RestartModeSystemd:
 		_ = runSystemctl("reset-failed", restart.Service)
@@ -235,12 +450,94 @@ func restartSingBox(restart RestartConfig) error {
 		if restart.RequestFile == "" {
 			return fmt.Errorf("restart request file is empty")
 		}
+		if restart.AckTimeout < 0 {
+			return fmt.Errorf("restart acknowledgement timeout is negative")
+		}
+		var before string
+		var err error
+		if restart.AckGenerationFile != "" {
+			before, err = readGeneration(restart.AckGenerationFile)
+			if err != nil {
+				return err
+			}
+		}
 		if err := os.MkdirAll(filepath.Dir(restart.RequestFile), 0755); err != nil {
 			return err
 		}
-		return os.WriteFile(restart.RequestFile, []byte(time.Now().Format(time.RFC3339Nano)+"\n"), 0644)
+		// The request body is deliberately nonempty and unique so two quick
+		// applies cannot collapse into one supervisor observation.
+		token := fmt.Sprintf("restart-%d-%d\n", time.Now().UnixNano(), atomic.AddUint64(&restartSequence, 1))
+		if err := writeFileAtomic(restart.RequestFile, []byte(token), 0600); err != nil {
+			return err
+		}
+		if restart.AckGenerationFile == "" {
+			return nil
+		}
+		return waitForRestartAck(ctx, restart.RequestFile, restart.AckGenerationFile, before, restart.AckTimeout)
 	default:
 		return fmt.Errorf("unsupported restart mode %q", restart.Mode)
+	}
+}
+
+func withoutAck(restart RestartConfig) RestartConfig {
+	restart.AckGenerationFile = ""
+	restart.AckFile = ""
+	restart.AckTimeout = 0
+	return restart
+}
+
+func readGeneration(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func requestConsumed(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return false, nil
+	}
+	if os.IsNotExist(err) {
+		return true, nil
+	}
+	return false, err
+}
+
+func waitForRestartAck(ctx context.Context, requestFile, generationFile, before string, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = DefaultAckTimeout
+	}
+	if timeout > MaxAckTimeout {
+		timeout = MaxAckTimeout
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		consumed, err := requestConsumed(requestFile)
+		if err != nil {
+			return err
+		}
+		current, err := readGeneration(generationFile)
+		if err != nil {
+			return err
+		}
+		if consumed && current != "" && current != before {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("restart acknowledgement timed out")
+		case <-tick.C:
+		}
 	}
 }
 
@@ -262,6 +559,7 @@ func firstProxyOutbound(arr []any) int {
 	}
 	return 0
 }
+
 func outboundForApply(out map[string]any, old any, restart RestartConfig) (map[string]any, error) {
 	next := outboundWithPreservedTag(out, old)
 	if restart.Mode != RestartModeRequestFile {
@@ -308,11 +606,14 @@ func preResolveOutboundServer(out map[string]any) (map[string]any, error) {
 		out["server"] = ips[0].String()
 		return out, nil
 	}
-	return nil, fmt.Errorf("resolve selected outbound server for container apply: no addresses for %s", server)
+	return nil, fmt.Errorf("resolve selected outbound server for container apply: no addresses")
 }
 
 func writeFileAtomic(path string, b []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
 	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
@@ -320,11 +621,11 @@ func writeFileAtomic(path string, b []byte, perm os.FileMode) error {
 	tmp := f.Name()
 	defer os.Remove(tmp)
 	if _, err := f.Write(b); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Chmod(perm); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {

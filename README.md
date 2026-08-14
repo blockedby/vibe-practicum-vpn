@@ -19,9 +19,53 @@ This branch adds three connected pieces of operational tooling:
 
 Production/full-tunnel OpenVPN pushed DNS policy: use Google DNS only (`8.8.8.8` default, `8.8.4.4` accepted override/fallback). Do not use Cloudflare `1.1.1.1` for pushed DNS; `1.1.1.1` remains acceptable as a public connectivity probe in route/ICMP checks.
 
+## Local CachyOS/KDE vpnkit (issue #40)
+
+The local mode runs an isolated Docker project bound to `127.0.0.1`, generates an independent local OpenVPN PKI/profile under ignored `secrets/vpnkit-local/`, benchmarks the private subscription before OpenVPN readiness, and exposes strict/smart routing through a small TUI. It does not reuse or mutate production `vpnkit` resources.
+
+Prepare local settings and enter the subscription through the hidden TUI input; never put the URL in tracked config or shell history:
+
+```bash
+cp config/vpnkit-local.env.example config/vpnkit-local.local.env
+python3 scripts/vpnkit/vpnkit_local_kde_tui.py
+```
+
+The same-host OpenVPN path requires a one-time root policy-routing helper to keep Docker upstream traffic on the physical uplink and prevent recursion. Review its redacted plan first; `install`/`uninstall` require direct root plus `--yes`:
+
+```bash
+scripts/vpnkit/vpnkit-local-underlay-routing.sh plan
+sudo scripts/vpnkit/vpnkit-local-underlay-routing.sh install --yes
+scripts/vpnkit/vpnkit-local-underlay-routing.sh verify
+```
+
+After verified installation, TUI Start/Stop manages only the fixed NetworkManager connection `vpnkit-local`. For container-only testing before that gate, set `VPNKIT_LOCAL_MANAGE_NETWORKMANAGER=false` in the ignored local env. Rollback is bounded:
+
+```bash
+scripts/vpnkit/vpnkit-local-networkmanager.sh disconnect --yes
+scripts/vpnkit/vpnkit-local.sh stop
+sudo scripts/vpnkit/vpnkit-local-underlay-routing.sh uninstall --yes
+```
+
+### Public-safe issue-40 integration slice
+
+The local Docker runner is a bounded integration slice, not a generic fixture claim. It uses the isolated project `vpnkit-local-lab`, a loopback-only UDP publication (even with environment variables unset), throwaway lab material under `secrets/vpnkit-labs/local-docker/`, a direct fixture outbound, and an OpenVPN client on a separate Docker subnet. It does not import a KDE profile, run NetworkManager/underlay routing, consume a real subscription, or prove a real proxy exit.
+
+Run the non-privileged slice with:
+
+```bash
+test/containers-test.sh --scenario local-docker --action cycle
+```
+
+The runner refuses protected projects `vpnkit` and `vpnkit-local`, protected real secret/log roots, arbitrary artifact roots, and unowned Docker resources. The local renderer accepts only the real local root, the isolated lab subtree, or a temporary directory. Before `down` or client cleanup the runner checks the Compose project, owner, and working-directory labels. Test-runner logs default to the per-project user-owned `/tmp/vpnkit-containers-test/<project>/` root; container logs use Compose-managed named volumes rather than host bind paths.
+
+The full-tunnel client rows require the OpenVPN route via `tun0`, hostname and literal-IP HTTPS, ICMP to `1.1.1.1` and `8.8.8.8`, and UDP DNS coverage to `8.8.8.8`. IPv6 is fail-closed: an IPv6 default route or successful IPv6 HTTPS/ICMP is a failure. An arbitrary-UDP echo row is reported as a bounded `SKIP` because the public test has no deterministic UDP echo service.
+
+sing-box 1.13 does not natively health-check and fail over between configured DNS servers. The local Compose wrapper therefore probes Cloudflare DoH (`1.1.1.1`) through the local SOCKS inbound and, only when that probe fails and Google DoH (`8.8.8.8`) succeeds, switches the persisted `dns.final` tag to the exercised fallback and requests the normal validated sing-box restart. Recovery switches back to Cloudflare. The pushed OpenVPN DNS remains Google-only as required by the production policy.
+
 Useful tests added/extended in this branch:
 
 ```bash
+test/issue40-review-fixes-test.sh
 python3 test/sing-box-smart-routing-proof.py
 test/manifest-profile-intents-test.sh
 test/prod-deploy-helper-test.sh

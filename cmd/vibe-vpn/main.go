@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -39,8 +41,9 @@ func main() {
 const defaultConfigPath = "/etc/vibe-vpn/config.json"
 
 type cliOptions struct {
-	configPath string
-	filter     picker.FilterOptions
+	configPath   string
+	restartAsync bool
+	filter       picker.FilterOptions
 }
 
 func newRootCommand() *cobra.Command {
@@ -88,6 +91,7 @@ func newRootCommand() *cobra.Command {
 	pick.Flags().Int("duration-sec", -1, "download duration per node in seconds; 0 disables duration mode")
 	pick.Flags().Bool("verbose", false, "print every node while testing")
 	pick.Flags().Bool("debug", false, "show temporary benchmark backend logs")
+	pick.Flags().BoolVar(&o.restartAsync, "restart-async", false, "do not wait for request-file runtime acknowledgement (bootstrap only)")
 	addFilters(pick)
 	root.AddCommand(pick)
 
@@ -113,7 +117,11 @@ func newRootCommand() *cobra.Command {
 	syncSingBox := &cobra.Command{Use: "sync-sing-box-config", Short: "Refresh runtime sing-box config from source while preserving selected outbound", Hidden: true, RunE: func(cmd *cobra.Command, args []string) error {
 		source, _ := cmd.Flags().GetString("source")
 		runtime, _ := cmd.Flags().GetString("runtime")
-		return singbox.SyncFromSourcePreserveSelected(source, runtime)
+		c, err := loadConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		return singbox.SyncFromSourcePreserveSelectedWithLock(context.Background(), source, runtime, c.StateDir)
 	}}
 	syncSingBox.Flags().String("source", "/etc/sing-box/config.json", "rendered source sing-box config")
 	syncSingBox.Flags().String("runtime", "/var/lib/vpnkit/sing-box/config.json", "persisted runtime sing-box config")
@@ -147,10 +155,13 @@ func cmdDaemon(o *cliOptions) error {
 		return err
 	}
 	lg := logging.New(c.Logging.Path, c.Logging.AlsoJournal, os.Stdout)
-	tester := func(ctx context.Context) error { return runScheduledTest(o, c) }
-	apply := func(ctx context.Context, c config.Config, r picker.NodeResult) error { return applyResult(c, r) }
-	fo := service.BuildFailover(c, lg, failover.ApplyFunc(apply))
-	rotation := service.BuildScheduledRotation(c, lg, failover.ApplyFunc(apply))
+	tester := func(ctx context.Context) error { return runScheduledTestContext(ctx, o, c) }
+	apply := func(ctx context.Context, c config.Config, r picker.NodeResult) error {
+		return applyResultLocked(ctx, c, r)
+	}
+	restore := func(ctx context.Context, c config.Config) error { return restoreRuntime(c) }
+	fo := service.BuildFailoverWithRestore(c, lg, failover.ApplyFunc(apply), failover.RestoreFunc(restore))
+	rotation := service.BuildScheduledRotationWithRestore(c, lg, failover.ApplyFunc(apply), failover.RestoreFunc(restore))
 	svc := service.New(c, lg, tester, fo, rotation)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -158,9 +169,16 @@ func cmdDaemon(o *cliOptions) error {
 }
 
 func runScheduledTest(o *cliOptions, c config.Config) error {
+	return runScheduledTestContext(context.Background(), o, c)
+}
+
+func runScheduledTestContext(ctx context.Context, o *cliOptions, c config.Config) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	path := filepath.Join(c.StateDir, "last-results.json")
 	old, readErr := os.ReadFile(path)
-	err := runTest(o, false, 0, 0, -1, false, false)
+	err := runTestContext(ctx, o, false, 0, 0, -1, false, false)
 	if err != nil && readErr == nil {
 		_ = os.MkdirAll(c.StateDir, 0700)
 		_ = os.WriteFile(path, old, 0600)
@@ -181,6 +199,16 @@ func loadConfig(path string) (config.Config, error) {
 }
 
 func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) error {
+	return runTestContext(context.Background(), o, apply, max, lim, dur, verbose, debug)
+}
+
+func runTestContext(ctx context.Context, o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
@@ -195,11 +223,14 @@ func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) 
 	if err != nil {
 		return err
 	}
-	links, warnings, err := loadSubscriptionLinks(c)
+	links, warnings, err := loadSubscriptionLinksContext(ctx, c)
 	for _, w := range warnings {
 		fmt.Fprintf(os.Stderr, "WARN %v\n", w)
 	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if len(extra) == 0 {
 			return err
 		}
@@ -240,7 +271,9 @@ func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) 
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
 		if n := cleanupStaleTestBackends(); n > 0 {
 			fmt.Printf("Test SOCKS address %s is busy; cleaned up %d stale temporary benchmark backend process(es).\n", c.TestSocks, n)
-			time.Sleep(300 * time.Millisecond)
+			if err := waitContext(ctx, 300*time.Millisecond); err != nil {
+				return err
+			}
 		}
 	}
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
@@ -267,8 +300,11 @@ func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) 
 	}
 	results := append([]picker.NodeResult{}, parseFailures...)
 	for j, cand := range candidates {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		n := cand.node
-		r, err := testOne(c, n, debug)
+		r, err := testOneContext(ctx, c, n, debug)
 		if err != nil {
 			if verbose {
 				fmt.Printf("[%03d/%03d] FAIL %v\n", j+1, len(candidates), err)
@@ -288,6 +324,9 @@ func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) 
 			fmt.Printf("[%03d/%03d] %7.2f Mbps %5.2fs #%03d %s\n", j+1, len(candidates), r.Mbps, r.Seconds, cand.idx, n.Name)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	results = o.filter.Apply(results)
 	if err := state.SaveJSON(c.StateDir, "last-results.json", results); err != nil {
 		return err
@@ -299,12 +338,22 @@ func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) 
 	}
 	fmt.Printf("\nBEST:\n  #%03d %s\n  %.2f Mbps\n", b.Index, b.Name, b.Mbps)
 	if apply {
-		return applyResult(c, *b)
+		return applyResultWithOptions(ctx, c, *b, o.restartAsync)
 	}
 	fmt.Println("Dry run only. Use 'vibe-vpn pick' to apply winner.")
 	return nil
 }
 func testOne(c config.Config, n vless.Node, debug bool) (nettest.Result, error) {
+	return testOneContext(context.Background(), c, n, debug)
+}
+
+func testOneContext(ctx context.Context, c config.Config, n vless.Node, debug bool) (nettest.Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nettest.Result{}, err
+	}
 	if tcpOpen(c.TestSocks, 200*time.Millisecond) {
 		return nettest.Result{}, fmt.Errorf("test SOCKS address %s became busy during run", c.TestSocks)
 	}
@@ -313,9 +362,9 @@ func testOne(c config.Config, n vless.Node, debug bool) (nettest.Result, error) 
 		return nettest.Result{}, err
 	}
 	defer os.Remove(backend.configPath)
-	ctx, cancel := context.WithCancel(context.Background())
+	backendCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, backend.bin, backend.args...)
+	cmd := exec.CommandContext(backendCtx, backend.bin, backend.args...)
 	if debug {
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
@@ -324,13 +373,34 @@ func testOne(c config.Config, n vless.Node, debug bool) (nettest.Result, error) 
 		return nettest.Result{}, err
 	}
 	defer func() { cancel(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-	if err := waitTCP(c.TestSocks, 3*time.Second); err != nil {
+	if err := waitTCPContext(backendCtx, c.TestSocks, 3*time.Second); err != nil {
 		return nettest.Result{}, err
 	}
-	if c.TestDurationSeconds > 0 {
-		return nettest.DownloadFor(c.TestSocks, c.TestURL, time.Duration(c.TestDurationSeconds)*time.Second, time.Duration(c.TimeoutSeconds)*time.Second)
+	resultCh := make(chan struct {
+		result nettest.Result
+		err    error
+	}, 1)
+	go func() {
+		var result nettest.Result
+		var err error
+		if c.TestDurationSeconds > 0 {
+			result, err = nettest.DownloadFor(c.TestSocks, c.TestURL, time.Duration(c.TestDurationSeconds)*time.Second, time.Duration(c.TimeoutSeconds)*time.Second)
+		} else {
+			result, err = nettest.Download(c.TestSocks, c.TestURL, int64(c.TestLimitKiB)*1024, time.Duration(c.TimeoutSeconds)*time.Second)
+		}
+		resultCh <- struct {
+			result nettest.Result
+			err    error
+		}{result: result, err: err}
+	}()
+	select {
+	case result := <-resultCh:
+		return result.result, result.err
+	case <-ctx.Done():
+		// CommandContext tears down the isolated backend. The buffered result
+		// channel lets the short-lived network worker exit without blocking.
+		return nettest.Result{}, ctx.Err()
 	}
-	return nettest.Download(c.TestSocks, c.TestURL, int64(c.TestLimitKiB)*1024, time.Duration(c.TimeoutSeconds)*time.Second)
 }
 
 type benchmarkBackend struct {
@@ -478,15 +548,44 @@ func tcpOpen(addr string, timeout time.Duration) bool {
 	return true
 }
 
+func waitContext(ctx context.Context, d time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
 func waitTCP(addr string, d time.Duration) error {
-	end := time.Now().Add(d)
-	for time.Now().Before(end) {
+	return waitTCPContext(context.Background(), addr, d)
+}
+
+func waitTCPContext(ctx context.Context, addr string, d time.Duration) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.NewTimer(d)
+	defer deadline.Stop()
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
 		if tcpOpen(addr, 200*time.Millisecond) {
 			return nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("temp benchmark backend did not open %s", addr)
+		case <-tick.C:
+		}
 	}
-	return fmt.Errorf("temp benchmark backend did not open %s", addr)
 }
 func cmdStatus(o *cliOptions) error {
 	c, err := loadConfig(o.configPath)
@@ -583,19 +682,39 @@ func cmdRollback(o *cliOptions) error {
 	if err != nil {
 		return err
 	}
+	lock, err := state.AcquireLock(context.Background(), c.StateDir)
+	if err != nil {
+		return fmt.Errorf("rollback state lock: %w", err)
+	}
+	defer lock.Close()
 	var b string
 	var rollbackErr error
 	if normalizedRuntime(c) == "xray" {
-		b, rollbackErr = xray.Rollback(c.XrayConfig, c.StateDir)
+		b, rollbackErr = xray.RollbackLocked(c.XrayConfig, c.StateDir)
 	} else {
-		b, rollbackErr = singbox.RollbackWithRestart(c.SingBoxConfig, c.StateDir, singboxRestartConfig(c))
+		b, rollbackErr = singbox.RollbackWithRestartLocked(c.SingBoxConfig, c.StateDir, singboxRestartConfig(c))
 	}
-	if rollbackErr == nil {
-		fmt.Println("Rolled back", b)
+	if rollbackErr != nil {
+		return rollbackErr
 	}
-	return rollbackErr
+	if snap, snapErr := state.LoadSnapshotForBackup(c.StateDir, b); snapErr == nil {
+		if err := snap.Restore(c.StateDir); err != nil {
+			return fmt.Errorf("runtime rolled back but selected-node state restore failed: %w", err)
+		}
+	} else if !os.IsNotExist(snapErr) {
+		return fmt.Errorf("runtime rolled back but selected-node state snapshot is corrupt: %w", snapErr)
+	}
+	fmt.Println("Rolled back", b)
+	return nil
 }
 func loadSubscriptionLinks(c config.Config) ([]string, []error, error) {
+	return loadSubscriptionLinksContext(context.Background(), c)
+}
+
+func loadSubscriptionLinksContext(ctx context.Context, c config.Config) ([]string, []error, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	b, err := os.ReadFile(c.SubscriptionFile)
 	if err != nil {
 		return nil, nil, err
@@ -604,11 +723,62 @@ func loadSubscriptionLinks(c config.Config) ([]string, []error, error) {
 	if len(urls) == 0 {
 		return nil, nil, fmt.Errorf("%s contains no subscription URLs", c.SubscriptionFile)
 	}
-	links, warnings := subscription.FetchMany(urls, time.Duration(c.TimeoutSeconds)*time.Second)
+	links := []string{}
+	warnings := []error{}
+	for i, rawURL := range urls {
+		var fetched []string
+		var fetchErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			fetched, fetchErr = fetchSubscriptionContext(ctx, rawURL, time.Duration(c.TimeoutSeconds)*time.Second)
+			if fetchErr == nil {
+				break
+			}
+			if ctx.Err() != nil {
+				return nil, warnings, ctx.Err()
+			}
+			if attempt < 2 {
+				t := time.NewTimer(time.Duration(attempt+1) * 250 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					t.Stop()
+					return nil, warnings, ctx.Err()
+				case <-t.C:
+				}
+			}
+		}
+		if fetchErr != nil {
+			// Do not include the subscription URL or response body in warnings.
+			warnings = append(warnings, fmt.Errorf("subscription %d fetch failed", i+1))
+			continue
+		}
+		links = append(links, fetched...)
+	}
 	if len(links) == 0 && len(warnings) > 0 {
 		return nil, warnings, fmt.Errorf("all %d subscription URLs failed", len(urls))
 	}
 	return links, warnings, nil
+}
+
+func fetchSubscriptionContext(ctx context.Context, rawURL string, timeout time.Duration) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid subscription request")
+	}
+	req.Header.Set("User-Agent", "vibe-vpn/1")
+	client := http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("subscription request failed")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("subscription response status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	if err != nil {
+		return nil, fmt.Errorf("subscription response read failed")
+	}
+	return subscription.Parse(string(body))
 }
 
 func sortedOK(results []picker.NodeResult) []picker.NodeResult {
@@ -646,38 +816,139 @@ func truncate(s string, max int) string {
 	return string(r[:max-1]) + "…"
 }
 
+func redactedNodeResults(results []picker.NodeResult) []picker.NodeResult {
+	out := make([]picker.NodeResult, len(results))
+	copy(out, results)
+	for i := range out {
+		out[i].Link = ""
+		out[i].Outbound = nil
+	}
+	return out
+}
+
 func applyResult(c config.Config, b picker.NodeResult) error {
+	return applyResultContext(context.Background(), c, b)
+}
+
+func applyResultWithOptions(ctx context.Context, c config.Config, b picker.NodeResult, asyncRestart bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lock, err := state.AcquireLock(ctx, c.StateDir)
+	if err != nil {
+		return fmt.Errorf("apply state lock: %w", err)
+	}
+	defer lock.Close()
+	return applyResultLockedWithOptions(ctx, c, b, asyncRestart)
+}
+
+// applyResultContext is the manual/CLI transaction boundary. Daemon callers
+// already hold the state-dir lock in the failover/rotation manager and use
+// applyResultLocked directly to avoid nested file locks.
+func applyResultContext(ctx context.Context, c config.Config, b picker.NodeResult) error {
+	return applyResultWithOptions(ctx, c, b, false)
+}
+
+func applyResultLocked(ctx context.Context, c config.Config, b picker.NodeResult) error {
+	return applyResultLockedWithOptions(ctx, c, b, false)
+}
+
+func applyResultLockedWithOptions(ctx context.Context, c config.Config, b picker.NodeResult, asyncRestart bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	snapshot, err := state.Capture(c.StateDir)
+	if err != nil {
+		return fmt.Errorf("capture current state: %w", err)
+	}
 	var backup string
-	var err error
 	if normalizedRuntime(c) == "xray" {
-		backup, err = xray.Apply(c.XrayConfig, c.StateDir, b.Outbound)
+		backup, err = xray.ApplyLockedContext(ctx, c.XrayConfig, c.StateDir, b.Outbound)
 	} else {
 		out, convErr := singBoxOutboundForResult(b)
 		if convErr != nil {
 			return fmt.Errorf("build sing-box outbound from selected result: %w", convErr)
 		}
-		backup, err = singbox.ApplyWithRestart(c.SingBoxConfig, c.StateDir, out, singboxRestartConfig(c))
+		restart := singboxRestartConfig(c)
+		if asyncRestart {
+			// Bootstrap pick runs before the supervisor loop exists. This is the
+			// only caller that explicitly requests the legacy asynchronous path.
+			restart.AckGenerationFile = ""
+			restart.AckTimeout = 0
+		}
+		backup, err = singbox.ApplyWithRestartLockedContext(ctx, c.SingBoxConfig, c.StateDir, out, restart)
 	}
 	if err != nil {
 		return err
 	}
-	cur := state.Current{Name: b.Name, Host: b.Host, Port: b.Port, Network: b.Network, Security: b.Security, Link: b.Link, Mbps: b.Mbps, TestedAt: time.Now().Format(time.RFC3339)}
-	if err := state.SaveJSON(c.StateDir, "current-node.json", cur); err != nil {
-		return fmt.Errorf("production applied but state update failed: %w", err)
+	rollbackApplied := func(cause error) error {
+		restoreErr := restoreRuntimeBackup(c, backup)
+		stateErr := snapshot.Restore(c.StateDir)
+		if restoreErr != nil || stateErr != nil {
+			return fmt.Errorf("%w; runtime restore: %v; state restore: %v", cause, restoreErr, stateErr)
+		}
+		return cause
 	}
-	if err := os.WriteFile(filepath.Join(c.StateDir, "current-link.txt"), []byte(b.Link+"\n"), 0600); err != nil {
-		return fmt.Errorf("production applied but current-link update failed: %w", err)
+	if err := ctx.Err(); err != nil {
+		return rollbackApplied(err)
+	}
+	cur := state.Current{Name: b.Name, Host: b.Host, Port: b.Port, Network: b.Network, Security: b.Security, Link: b.Link, Mbps: b.Mbps, TestedAt: time.Now().Format(time.RFC3339)}
+	if err := state.SaveCurrent(c.StateDir, cur); err != nil {
+		return rollbackApplied(fmt.Errorf("production applied but state update failed: %w", err))
+	}
+	if err := ctx.Err(); err != nil {
+		return rollbackApplied(err)
 	}
 	fmt.Printf("Applied to production %s. Backup: %s\n", normalizedRuntime(c), backup)
 	return nil
 }
 
+func restoreRuntimeBackup(c config.Config, backup string) error {
+	if backup == "" {
+		return restoreRuntime(c)
+	}
+	if normalizedRuntime(c) == "xray" {
+		return xray.RestoreBackupLocked(c.XrayConfig, c.StateDir, backup)
+	}
+	return singbox.RestoreBackupWithRestartLocked(c.SingBoxConfig, c.StateDir, backup, singboxRestartConfig(c))
+}
+
+func restoreRuntime(c config.Config) error {
+	if normalizedRuntime(c) == "xray" {
+		_, err := xray.RollbackLocked(c.XrayConfig, c.StateDir)
+		return err
+	}
+	_, err := singbox.RollbackWithRestartLocked(c.SingBoxConfig, c.StateDir, singboxRestartConfig(c))
+	return err
+}
+
 func singboxRestartConfig(c config.Config) singbox.RestartConfig {
+	ackFile := c.SingBoxRestartAckFile
+	if ackFile == "" {
+		ackFile = c.SingBoxRestartAckGenerationFile
+	}
+	// Existing local request-file configs predate the explicit ack key. Keep
+	// those configs supervised by the generation marker without changing the
+	// async compatibility contract for arbitrary request files.
+	if ackFile == "" && strings.EqualFold(strings.TrimSpace(c.SingBoxRestartMode), string(singbox.RestartModeRequestFile)) {
+		ackFile = strings.TrimSpace(os.Getenv("SINGBOX_GENERATION_FILE"))
+		if ackFile == "" {
+			ackFile = strings.TrimSpace(os.Getenv("VPNKIT_SINGBOX_GENERATION_FILE"))
+		}
+		if ackFile == "" && filepath.Clean(c.SingBoxRestartFile) == "/run/vpnkit/restart-sing-box" {
+			ackFile = "/run/vpnkit/sing-box-generation"
+		}
+	}
 	return singbox.RestartConfig{
-		Mode:        singbox.RestartMode(c.SingBoxRestartMode),
-		Service:     c.SingBoxService,
-		RequestFile: c.SingBoxRestartFile,
-		SingBoxBin:  c.SingBoxBin,
+		Mode:              singbox.RestartMode(c.SingBoxRestartMode),
+		Service:           c.SingBoxService,
+		RequestFile:       c.SingBoxRestartFile,
+		AckGenerationFile: ackFile,
+		AckTimeout:        c.SingBoxRestartAckTimeout.Duration,
+		SingBoxBin:        c.SingBoxBin,
 	}
 }
 
@@ -715,7 +986,7 @@ func cmdList(o *cliOptions, cmd *cobra.Command) error {
 	}
 	results = o.filter.Apply(results)
 	if jsonOut {
-		enc, _ := json.MarshalIndent(results, "", "  ")
+		enc, _ := json.MarshalIndent(redactedNodeResults(results), "", "  ")
 		fmt.Println(string(enc))
 		return nil
 	}
@@ -912,12 +1183,13 @@ func cmdLogs(o *cliOptions, failedLimit int, jsonOut bool) error {
 	if err != nil {
 		return err
 	}
-	if jsonOut {
-		fmt.Print(string(b))
-		return nil
-	}
 	if err := json.Unmarshal(b, &results); err != nil {
 		return err
+	}
+	if jsonOut {
+		enc, _ := json.MarshalIndent(redactedNodeResults(results), "", "  ")
+		fmt.Println(string(enc))
+		return nil
 	}
 	if cur, source, err := loadCurrentWithLegacy(c.StateDir); err == nil {
 		fmt.Printf("current:\n  name: %s\n  server: %s:%d\n  transport: %s/%s\n  last_speed: %.2f Mbps\n  state: %s\n\n", valueOr(cur.Name, "unknown"), valueOr(cur.Host, "unknown"), cur.Port, valueOr(cur.Network, "unknown"), valueOr(cur.Security, "unknown"), cur.Mbps, source)
@@ -947,12 +1219,32 @@ func cmdLogs(o *cliOptions, failedLimit int, jsonOut bool) error {
 }
 
 func cmdPrune(o *cliOptions, dryRun bool, keep int) error {
+	return cmdPruneContext(context.Background(), o, dryRun, keep)
+}
+
+func cmdPruneContext(ctx context.Context, o *cliOptions, dryRun bool, keep int) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
 	}
 	if keep < 0 {
 		return fmt.Errorf("--keep must be non-negative")
+	}
+	var lock *state.Lock
+	if !dryRun {
+		lock, err = state.AcquireLock(ctx, c.StateDir)
+		if err != nil {
+			return fmt.Errorf("prune state lock: %w", err)
+		}
+		defer lock.Close()
+		// Migration is a write and therefore deliberately does not happen in
+		// dry-run mode. It runs under the same lock as apply/rollback/sync.
+		if err := state.MigrateLegacySnapshots(c.StateDir); err != nil {
+			return fmt.Errorf("migrate state snapshots: %w", err)
+		}
 	}
 	killedSingBox, killedXray := 0, 0
 	if dryRun {
@@ -964,14 +1256,60 @@ func cmdPrune(o *cliOptions, dryRun bool, keep int) error {
 	}
 	removedSingBox := pruneTempFiles("vibe-vpn-singbox-*.json", dryRun)
 	removedXray := pruneTempFiles("vibe-vpn-xray-*.json", dryRun)
-	backs, _ := filepath.Glob(filepath.Join(c.StateDir, "backups", "xray-*.json"))
-	sort.Strings(backs)
+
+	singBackups, err := state.RuntimeBackupFiles(c.StateDir, "sing-box-")
+	if err != nil {
+		return err
+	}
+	xrayBackups, err := state.RuntimeBackupFiles(c.StateDir, "xray-")
+	if err != nil {
+		return err
+	}
+	backupsByBase := make(map[string]struct{}, len(singBackups)+len(xrayBackups))
+	for _, f := range append(append([]string{}, singBackups...), xrayBackups...) {
+		backupsByBase[filepath.Base(f)] = struct{}{}
+	}
 	brem := 0
-	if len(backs) > keep {
-		for _, f := range backs[:len(backs)-keep] {
+	removeOld := func(files []string) error {
+		if len(files) <= keep {
+			return nil
+		}
+		for _, f := range files[:len(files)-keep] {
 			brem++
-			if !dryRun {
-				_ = os.Remove(f)
+			if dryRun {
+				continue
+			}
+			if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			if err := state.RemoveSnapshotForBackup(c.StateDir, f); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := removeOld(singBackups); err != nil {
+		return err
+	}
+	if err := removeOld(xrayBackups); err != nil {
+		return err
+	}
+
+	// Remove sidecars that no longer have their exact runtime basename. This
+	// also cleans crash leftovers without ever feeding them to a runtime glob.
+	orphanSnapshots, err := state.SnapshotFiles(c.StateDir)
+	if err != nil {
+		return err
+	}
+	orem := 0
+	for _, snap := range orphanSnapshots {
+		if _, ok := backupsByBase[state.RuntimeBackupBaseForSnapshot(snap)]; ok {
+			continue
+		}
+		orem++
+		if !dryRun {
+			if err := os.Remove(snap); err != nil && !os.IsNotExist(err) {
+				return err
 			}
 		}
 	}
@@ -979,7 +1317,7 @@ func cmdPrune(o *cliOptions, dryRun bool, keep int) error {
 	if dryRun {
 		prefix = "would_remove"
 	}
-	fmt.Printf("%s: stale_singbox=%d stale_xray=%d singbox_temp_files=%d xray_temp_files=%d backups=%d keep=%d\n", prefix, killedSingBox, killedXray, removedSingBox, removedXray, brem, keep)
+	fmt.Printf("%s: stale_singbox=%d stale_xray=%d singbox_temp_files=%d xray_temp_files=%d backups=%d orphan_state_snapshots=%d keep=%d\n", prefix, killedSingBox, killedXray, removedSingBox, removedXray, brem, orem, keep)
 	return nil
 }
 

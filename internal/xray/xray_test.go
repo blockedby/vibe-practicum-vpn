@@ -54,6 +54,37 @@ func TestApplyRestoresConfigWhenRestartFails(t *testing.T) {
 	}
 }
 
+func TestRollbackUsesExactPairedBackupInsteadOfUnpairedRuntimeFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"outbounds":[{"protocol":"freedom","marker":"old"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	old := runSystemctl
+	runSystemctl = func(args ...string) error { return nil }
+	t.Cleanup(func() { runSystemctl = old })
+	if _, err := Apply(cfgPath, dir, map[string]any{"protocol": "blackhole", "marker": "one"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(cfgPath, dir, map[string]any{"protocol": "blackhole", "marker": "two"}); err != nil {
+		t.Fatal(err)
+	}
+	unpaired := filepath.Join(dir, "backups", "xray-99999999-999999999.json")
+	if err := os.WriteFile(unpaired, []byte(`{"outbounds":[{"marker":"unpaired"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Rollback(cfgPath, dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `"marker": "one"`) || strings.Contains(string(got), "unpaired") {
+		t.Fatalf("rollback selected wrong runtime backup: %s", got)
+	}
+}
+
 func TestApplyWritesWinnerOnRestartSuccess(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")

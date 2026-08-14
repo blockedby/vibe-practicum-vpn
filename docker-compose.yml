@@ -5,7 +5,7 @@ services:
       dockerfile: docker/vpnkit/Dockerfile
     restart: unless-stopped
     ports:
-      - "${VPNKIT_OPENVPN_PORT:-1194}:1194/udp"
+      - "${VPNKIT_OPENVPN_BIND_ADDRESS:-0.0.0.0}:${VPNKIT_OPENVPN_PORT:-1194}:1194/udp"
     environment:
       VPNKIT_ROUTING_MODE: "${VPNKIT_ROUTING_MODE:-redirect}"
       OVPN_CIDR: "${OVPN_CIDR:-10.89.0.0/24}"
@@ -26,13 +26,19 @@ services:
       net.ipv4.conf.all.rp_filter: "0"
       net.ipv4.conf.default.rp_filter: "0"
     volumes:
-      - ./secrets/vps/rendered/openvpn:/etc/openvpn:ro
-      - ./secrets/vps/rendered/sing-box:/etc/sing-box:ro
-      - ./secrets/vps/rendered/vibe-vpn:/etc/vibe-vpn:ro
+      - ${VPNKIT_RENDERED_ROOT:-./secrets/vps/rendered}/openvpn:/etc/openvpn:ro
+      - ${VPNKIT_RENDERED_ROOT:-./secrets/vps/rendered}/sing-box:/etc/sing-box:ro
+      - ${VPNKIT_RENDERED_ROOT:-./secrets/vps/rendered}/vibe-vpn:/etc/vibe-vpn:ro
       - vpnkit-vibe-vpn-state:/var/lib/vibe-vpn
       - vpnkit-sing-box-state:/var/lib/vpnkit/sing-box
-      - ./logs:/var/log/vpnkit
-      - ./logs/vibe-vpn:/var/log/vibe-vpn
+      - ${VPNKIT_LOG_ROOT:-./logs}:/var/log/vpnkit
+      - ${VPNKIT_LOG_ROOT:-./logs}/vibe-vpn:/var/log/vibe-vpn
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/vpnkit-healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
 
   ovpn-client-test:
     build: ./docker/ovpn-client-test
@@ -45,8 +51,8 @@ services:
     devices:
       - /dev/net/tun:/dev/net/tun
     volumes:
-      - ./secrets/vps/openvpn/client:/etc/openvpn/client:ro
-      - ./logs:/var/log/vpnkit
+      - ${VPNKIT_CLIENT_PROFILE_ROOT:-./secrets/vps/openvpn/client}:/etc/openvpn/client:ro
+      - ${VPNKIT_LOG_ROOT:-./logs}:/var/log/vpnkit
     command: ["/etc/openvpn/client/test-client.ovpn"]
 
 volumes:

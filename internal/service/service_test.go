@@ -160,6 +160,9 @@ func TestScheduledRotationProbesThenAppliesFastestWorkingNode(t *testing.T) {
 	if err := state.SaveJSON(c.StateDir, "last-results.json", json.RawMessage(b)); err != nil {
 		t.Fatal(err)
 	}
+	if err := state.SaveJSON(c.StateDir, "current-node.json", state.Current{Name: "slow", Host: "slow", Port: 443, Mbps: 10}); err != nil {
+		t.Fatal(err)
+	}
 	probes := 0
 	applied := []picker.NodeResult{}
 	rotation := buildScheduledRotation(c, nil, func(ctx context.Context, cfg config.Config, r picker.NodeResult) error {
@@ -176,8 +179,8 @@ func TestScheduledRotationProbesThenAppliesFastestWorkingNode(t *testing.T) {
 	if err := rotation(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if probes != 1 || len(applied) != 1 || applied[0].Name != "fast" {
-		t.Fatalf("probes=%d applied=%+v, want probed once and applied fast", probes, applied)
+	if probes != 2 || len(applied) != 1 || applied[0].Name != "fast" {
+		t.Fatalf("probes=%d applied=%+v, want pre/post health probes and applied fast", probes, applied)
 	}
 }
 
@@ -200,5 +203,268 @@ func TestScheduledRotationSkipsAlreadyCurrentFastest(t *testing.T) {
 	}
 	if applies != 0 {
 		t.Fatalf("applies=%d, want 0 when fastest is current", applies)
+	}
+}
+
+func TestScheduledRotationRequiresMinimumImprovement(t *testing.T) {
+	c := testConfig()
+	c.StateDir = t.TempDir()
+	c.Service.FastestRotation.MinImprovementPercent = 10
+	c.Service.FastestRotation.Cooldown = config.NewDuration(0)
+	results := []picker.NodeResult{{Index: 1, OK: true, Name: "candidate", Host: "candidate", Port: 443, Mbps: 109}}
+	b, _ := json.Marshal(results)
+	if err := state.SaveJSON(c.StateDir, "last-results.json", json.RawMessage(b)); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SaveJSON(c.StateDir, "current-node.json", state.Current{Name: "current", Host: "current", Port: 443, Mbps: 100}); err != nil {
+		t.Fatal(err)
+	}
+	applies := 0
+	rotation := buildScheduledRotation(c, nil, func(context.Context, config.Config, picker.NodeResult) error {
+		applies++
+		return nil
+	}, func(context.Context) health.Result { return health.Result{} })
+
+	if err := rotation(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if applies != 0 {
+		t.Fatalf("applies=%d, want no marginal performance rotation", applies)
+	}
+
+	results[0].Mbps = 111
+	b, _ = json.Marshal(results)
+	if err := state.SaveJSON(c.StateDir, "last-results.json", json.RawMessage(b)); err != nil {
+		t.Fatal(err)
+	}
+	if err := rotation(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if applies != 1 {
+		t.Fatalf("applies=%d, want rotation after sufficient improvement", applies)
+	}
+}
+
+func TestScheduledRotationCooldownUsesSuccessfulApplicationsOnly(t *testing.T) {
+	c := testConfig()
+	c.StateDir = t.TempDir()
+	c.Service.FastestRotation.MinImprovementPercent = 0
+	c.Service.FastestRotation.Cooldown = config.NewDuration(time.Hour)
+	results := []picker.NodeResult{{Index: 1, OK: true, Name: "candidate", Host: "candidate", Port: 443, Mbps: 200}}
+	b, _ := json.Marshal(results)
+	if err := state.SaveJSON(c.StateDir, "last-results.json", json.RawMessage(b)); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SaveJSON(c.StateDir, "current-node.json", state.Current{Name: "current", Host: "current", Port: 443, Mbps: 100}); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Unix(100, 0)
+	probes, applies := 0, 0
+	failNext := true
+	rotation := buildScheduledRotationWithClock(c, nil, func(context.Context, config.Config, picker.NodeResult) error {
+		applies++
+		if failNext {
+			failNext = false
+			return context.Canceled
+		}
+		return nil
+	}, func(context.Context) health.Result {
+		probes++
+		return health.Result{}
+	}, func() time.Time { return at })
+
+	if err := rotation(context.Background()); err == nil {
+		t.Fatal("expected first apply to fail")
+	}
+	if err := rotation(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := rotation(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if applies != 2 || probes != 3 {
+		t.Fatalf("before cooldown expiry: applies=%d probes=%d, want 2/3", applies, probes)
+	}
+
+	at = at.Add(time.Hour)
+	if err := rotation(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if applies != 3 || probes != 5 {
+		t.Fatalf("after cooldown expiry: applies=%d probes=%d, want 3/5", applies, probes)
+	}
+}
+
+func TestScheduledBenchmarkAndHealthFailoverAreSerialized(t *testing.T) {
+	c := testConfig()
+	c.Health.FailureRetryDelays = nil
+	c.Health.RequiredURLs = []string{"https://required.invalid/"}
+	rotationStarted := make(chan struct{})
+	releaseRotation := make(chan struct{})
+	failoverEntered := make(chan struct{})
+	healthProbed := make(chan struct{})
+	var probeOnce sync.Once
+	runTestDone := make(chan struct{})
+	failoverDone := make(chan struct{})
+
+	s := &Service{
+		Config: c,
+		Health: health.Runner{
+			RequiredURLs: c.Health.RequiredURLs,
+			Probe: func(context.Context, string, string, time.Duration) health.ProbeResult {
+				probeOnce.Do(func() { close(healthProbed) })
+				return health.ProbeResult{OK: false}
+			},
+		},
+		Test: func(context.Context) error { return nil },
+		ScheduledRotation: func(context.Context) error {
+			close(rotationStarted)
+			<-releaseRotation
+			return nil
+		},
+		Failover: func(context.Context) error {
+			close(failoverEntered)
+			close(failoverDone)
+			return nil
+		},
+	}
+
+	go func() {
+		s.runTest(context.Background())
+		close(runTestDone)
+	}()
+	select {
+	case <-rotationStarted:
+	case <-time.After(time.Second):
+		t.Fatal("scheduled rotation did not start")
+	}
+
+	go s.checkHealth(context.Background())
+	select {
+	case <-failoverEntered:
+		t.Fatal("health failover entered while scheduled operation was running")
+	default:
+	}
+
+	close(releaseRotation)
+	select {
+	case <-runTestDone:
+	case <-time.After(time.Second):
+		t.Fatal("scheduled operation did not finish")
+	}
+	select {
+	case <-healthProbed:
+	case <-time.After(time.Second):
+		t.Fatal("health confirmation did not run after scheduled operation released")
+	}
+	select {
+	case <-failoverDone:
+	case <-time.After(time.Second):
+		t.Fatal("health failover did not run after scheduled operation released")
+	}
+}
+
+func TestScheduledBenchmarksPropagateCancellationAndCoalesceTicks(t *testing.T) {
+	c := testConfig()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan struct{})
+	var once sync.Once
+	var mu sync.Mutex
+	calls := 0
+	var got context.Context
+	s := New(c, nil, func(gotCtx context.Context) error {
+		mu.Lock()
+		calls++
+		got = gotCtx
+		mu.Unlock()
+		once.Do(func() { close(started) })
+		<-gotCtx.Done()
+		return gotCtx.Err()
+	}, nil, nil)
+
+	s.scheduleTest(ctx)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("scheduled benchmark did not start")
+	}
+	for i := 0; i < 25; i++ {
+		s.scheduleTest(ctx)
+	}
+	cancel()
+	s.waitForTests()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if got != ctx {
+		t.Fatal("scheduled benchmark did not receive the daemon context")
+	}
+	if calls != 1 {
+		t.Fatalf("benchmark calls=%d, want one in-flight call with coalesced cancellation", calls)
+	}
+	s.testMu.Lock()
+	defer s.testMu.Unlock()
+	if s.testRunning || s.testPending {
+		t.Fatalf("stale scheduled work remains: running=%t pending=%t", s.testRunning, s.testPending)
+	}
+}
+
+func TestHealthPriorityDoesNotWaitBehindNonMutatingBenchmark(t *testing.T) {
+	c := testConfig()
+	c.Health.FailureRetryDelays = nil
+	c.Health.RequiredURLs = []string{"https://required.invalid/"}
+	benchmarkStarted := make(chan struct{})
+	releaseBenchmark := make(chan struct{})
+	failoverEntered := make(chan struct{})
+	benchmarkDone := make(chan struct{})
+	s := &Service{
+		Config: c,
+		Health: health.Runner{
+			RequiredURLs: c.Health.RequiredURLs,
+			Probe: func(context.Context, string, string, time.Duration) health.ProbeResult {
+				return health.ProbeResult{OK: false}
+			},
+		},
+		Test: func(context.Context) error {
+			close(benchmarkStarted)
+			<-releaseBenchmark
+			return nil
+		},
+		Failover: func(context.Context) error {
+			close(failoverEntered)
+			return nil
+		},
+	}
+	go func() {
+		s.runTest(context.Background())
+		close(benchmarkDone)
+	}()
+	select {
+	case <-benchmarkStarted:
+	case <-time.After(time.Second):
+		t.Fatal("benchmark did not start")
+	}
+
+	healthDone := make(chan struct{})
+	go func() {
+		s.checkHealth(context.Background())
+		close(healthDone)
+	}()
+	select {
+	case <-failoverEntered:
+	case <-time.After(time.Second):
+		t.Fatal("health failover waited behind non-mutating benchmark")
+	}
+	select {
+	case <-benchmarkDone:
+		t.Fatal("benchmark unexpectedly completed before health priority assertion")
+	default:
+	}
+	close(releaseBenchmark)
+	select {
+	case <-healthDone:
+	case <-time.After(time.Second):
+		t.Fatal("health check did not finish")
 	}
 }

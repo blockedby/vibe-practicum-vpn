@@ -1,6 +1,7 @@
 package singbox
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDockerTemplateRoutingInvariants(t *testing.T) {
@@ -285,6 +287,120 @@ func TestApplySystemdDoesNotPreResolveDomainServer(t *testing.T) {
 	out := got["outbounds"].([]any)[0].(map[string]any)
 	if out["server"] != "node.example" {
 		t.Fatalf("systemd apply changed server: %#v", out)
+	}
+}
+
+func TestRequestFileWaitsForGenerationAcknowledgement(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfg, []byte(`{"outbounds":[{"tag":"selected-native-out","type":"direct"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	req := filepath.Join(dir, "run", "restart")
+	generation := filepath.Join(dir, "run", "generation")
+	if err := os.MkdirAll(filepath.Dir(generation), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(generation, []byte("7\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldLookup := lookupIP
+	lookupIP = func(string) ([]net.IP, error) { return nil, nil }
+	t.Cleanup(func() { lookupIP = oldLookup })
+	go func() {
+		deadline := time.Now().Add(time.Second)
+		for time.Now().Before(deadline) {
+			if b, err := os.ReadFile(req); err == nil && len(strings.TrimSpace(string(b))) > 0 {
+				_ = os.Remove(req)
+				_ = os.WriteFile(generation, []byte("8\n"), 0600)
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
+	if _, err := ApplyWithRestartContext(context.Background(), cfg, dir, map[string]any{"type": "vless", "server": "203.0.113.10"}, RestartConfig{
+		Mode:              RestartModeRequestFile,
+		RequestFile:       req,
+		AckGenerationFile: generation,
+		AckTimeout:        time.Second,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(req); !os.IsNotExist(err) {
+		t.Fatalf("request file was not consumed: %v", err)
+	}
+	got, err := os.ReadFile(generation)
+	if err != nil || strings.TrimSpace(string(got)) != "8" {
+		t.Fatalf("generation=%q err=%v, want 8", got, err)
+	}
+}
+
+func TestRequestFileAckTimeoutRestoresConfigAndLeavesAsyncRollbackRequest(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	old := []byte(`{"outbounds":[{"tag":"selected-native-out","type":"direct"}]}`)
+	if err := os.WriteFile(cfg, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	req := filepath.Join(dir, "run", "restart")
+	generation := filepath.Join(dir, "run", "generation")
+	if err := os.MkdirAll(filepath.Dir(generation), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(generation, []byte("1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err := ApplyWithRestartContext(context.Background(), cfg, dir, map[string]any{"type": "vless", "server": "203.0.113.11"}, RestartConfig{
+		Mode:              RestartModeRequestFile,
+		RequestFile:       req,
+		AckGenerationFile: generation,
+		AckTimeout:        20 * time.Millisecond,
+	})
+	if err == nil || !strings.Contains(err.Error(), "acknowledgement timed out") {
+		t.Fatalf("expected bounded acknowledgement failure, got %v", err)
+	}
+	if time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("acknowledgement wait was not bounded: %v", time.Since(start))
+	}
+	got, readErr := os.ReadFile(cfg)
+	if readErr != nil || string(got) != string(old) {
+		t.Fatalf("config was not restored: %q err=%v", got, readErr)
+	}
+	request, readErr := os.ReadFile(req)
+	if readErr != nil || strings.TrimSpace(string(request)) == "" {
+		t.Fatalf("rollback request is missing or empty: %q err=%v", request, readErr)
+	}
+}
+
+func TestRollbackUsesExactPairedBackupInsteadOfUnpairedRuntimeFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(cfg, []byte(`{"outbounds":[{"tag":"selected-native-out","marker":"old"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldSystemctl := runSystemctl
+	runSystemctl = func(args ...string) error { return nil }
+	t.Cleanup(func() { runSystemctl = oldSystemctl })
+	if _, err := Apply(cfg, dir, "sing-box", map[string]any{"type": "direct", "marker": "one"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(cfg, dir, "sing-box", map[string]any{"type": "direct", "marker": "two"}); err != nil {
+		t.Fatal(err)
+	}
+	unpaired := filepath.Join(dir, "backups", "sing-box-99999999-999999999.json")
+	if err := os.WriteFile(unpaired, []byte(`{"outbounds":[{"marker":"unpaired"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Rollback(cfg, dir, "unused"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `"marker": "one"`) || strings.Contains(string(got), "unpaired") {
+		t.Fatalf("rollback selected wrong runtime backup: %s", got)
 	}
 }
 

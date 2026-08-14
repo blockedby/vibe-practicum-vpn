@@ -16,6 +16,24 @@ VPNKIT_COMPAT_BYPASS_ALLOW_ICMP=${VPNKIT_COMPAT_BYPASS_ALLOW_ICMP:-false}
 VPNKIT_IPV6_POLICY=${VPNKIT_IPV6_POLICY:-block}
 VPNKIT_IPV6_POLICY=${VPNKIT_IPV6_POLICY,,}
 VPNKIT_ROUTING_DRY_RUN=${VPNKIT_ROUTING_DRY_RUN:-false}
+OPENVPN_FAIL_CLOSED_CHAIN=${OPENVPN_FAIL_CLOSED_CHAIN:-OVPN_FAIL_CLOSED}
+OPENVPN_FAIL_CLOSED_OWNER_FILE=${VPNKIT_FAIL_CLOSED_OWNER_FILE:-/run/vpnkit/fail-closed-chain.owner}
+SINGBOX_GENERATION_FILE=${VPNKIT_SINGBOX_GENERATION_FILE:-${SINGBOX_GENERATION_FILE:-/run/vpnkit/sing-box-generation}}
+ACTION=apply
+case "${1:-}" in
+  "") ;;
+  --install-fail-closed-barrier) ACTION=install-barrier ;;
+  --remove-fail-closed-barrier) ACTION=remove-barrier ;;
+  --help|-h)
+    printf '%s\n' 'Usage: setup-routing.sh [--install-fail-closed-barrier|--remove-fail-closed-barrier]'
+    exit 0
+    ;;
+  *)
+    echo 'unsupported setup-routing action' >&2
+    exit 2
+    ;;
+esac
+[[ $# -le 1 ]] || { echo 'unsupported setup-routing arguments' >&2; exit 2; }
 
 is_truthy() {
   case "${1,,}" in
@@ -50,6 +68,37 @@ ensure_iptables_rule() {
 
   iptables -t "$table" -C "$chain" "$@" 2>/dev/null \
     || iptables -t "$table" -A "$chain" "$@"
+}
+
+ensure_iptables_rule_at_head() {
+  local table=$1
+  local chain=$2
+  shift 2
+
+  if is_dry_run; then
+    run iptables -t "$table" -I "$chain" 1 "$@"
+    return 0
+  fi
+
+  # Always insert at position one. `iptables -C` can prove existence but not
+  # position; re-inserting prevents an earlier ACCEPT from bypassing an older
+  # copy of this exact barrier. Cleanup removes all duplicates by exact match.
+  iptables -t "$table" -I "$chain" 1 "$@"
+}
+
+remove_iptables_rule_exact() {
+  local table=$1
+  local chain=$2
+  shift 2
+
+  if is_dry_run; then
+    run iptables -t "$table" -D "$chain" "$@"
+    return 0
+  fi
+
+  while iptables -t "$table" -C "$chain" "$@" 2>/dev/null; do
+    iptables -t "$table" -D "$chain" "$@"
+  done
 }
 
 ensure_ip6tables_rule() {
@@ -160,6 +209,111 @@ valid_ipv4_literal() {
     [[ $octet =~ ^[0-9]+$ ]] || return 1
     (( 10#$octet <= 255 )) || return 1
   done
+}
+
+valid_ipv4_cidr() {
+  local value=$1 address prefix
+  [[ "$value" == */* ]] || return 1
+  address=${value%/*}
+  prefix=${value##*/}
+  valid_ipv4_literal "$address" || return 1
+  [[ "$prefix" =~ ^[0-9]{1,2}$ ]] || return 1
+  (( prefix >= 1 && prefix <= 32 )) || return 1
+}
+
+validate_fail_closed_chain() {
+  # This fixed application-reserved name can never alias a built-in or an
+  # operator-selected foreign chain.
+  [[ "$OPENVPN_FAIL_CLOSED_CHAIN" == OVPN_FAIL_CLOSED ]] \
+    || { echo 'fail-closed chain override is not permitted' >&2; return 2; }
+  [[ "$OPENVPN_FAIL_CLOSED_OWNER_FILE" == /run/* && "$OPENVPN_FAIL_CLOSED_OWNER_FILE" != *'/../'* ]] \
+    || { echo 'fail-closed owner marker must remain below /run' >&2; return 2; }
+}
+
+fail_closed_chain_owned() {
+  [[ -f "$OPENVPN_FAIL_CLOSED_OWNER_FILE" && ! -L "$OPENVPN_FAIL_CLOSED_OWNER_FILE" ]] || return 1
+  [[ $(stat -c %h -- "$OPENVPN_FAIL_CLOSED_OWNER_FILE" 2>/dev/null) == 1 ]] || return 1
+  [[ $(<"$OPENVPN_FAIL_CLOSED_OWNER_FILE") == "$OPENVPN_FAIL_CLOSED_CHAIN" ]]
+}
+
+record_fail_closed_chain_ownership() {
+  local dir tmp
+  dir=${OPENVPN_FAIL_CLOSED_OWNER_FILE%/*}
+  install -d -m 0700 "$dir"
+  tmp=$(mktemp "$dir/.fail-closed-owner.XXXXXX") || return 1
+  chmod 0600 "$tmp" || { rm -f -- "$tmp"; return 1; }
+  printf '%s\n' "$OPENVPN_FAIL_CLOSED_CHAIN" >"$tmp" || { rm -f -- "$tmp"; return 1; }
+  mv -T -- "$tmp" "$OPENVPN_FAIL_CLOSED_OWNER_FILE" || { rm -f -- "$tmp"; return 1; }
+}
+
+install_fail_closed_barrier() {
+  valid_ipv4_cidr "$OVPN_CIDR" || { echo 'invalid OpenVPN CIDR for fail-closed barrier' >&2; return 2; }
+  validate_fail_closed_chain || return
+  command -v iptables >/dev/null 2>&1 || { echo 'iptables is unavailable for fail-closed barrier' >&2; return 10; }
+
+  # Use an explicitly owned chain rather than xt_comment: minimal/container
+  # kernels may not provide the comment match extension. Never adopt a
+  # pre-existing same-name chain unless our private capability marker exists.
+  if is_dry_run; then
+    run iptables -t filter -N "$OPENVPN_FAIL_CLOSED_CHAIN"
+  elif iptables -t filter -N "$OPENVPN_FAIL_CLOSED_CHAIN" 2>/dev/null; then
+    record_fail_closed_chain_ownership || {
+      iptables -t filter -X "$OPENVPN_FAIL_CLOSED_CHAIN" 2>/dev/null || true
+      echo 'could not record fail-closed chain ownership' >&2
+      return 11
+    }
+  elif ! fail_closed_chain_owned; then
+    echo 'refusing pre-existing unowned fail-closed chain' >&2
+    return 11
+  fi
+  ensure_iptables_rule filter "$OPENVPN_FAIL_CLOSED_CHAIN" -j DROP
+
+  # Do not require tun0 to exist: this barrier is installed before OpenVPN.
+  ensure_iptables_rule_at_head filter INPUT -s "$OVPN_CIDR" -j "$OPENVPN_FAIL_CLOSED_CHAIN"
+  ensure_iptables_rule_at_head filter FORWARD -s "$OVPN_CIDR" -j "$OPENVPN_FAIL_CLOSED_CHAIN"
+}
+
+remove_fail_closed_barrier() {
+  validate_fail_closed_chain || return
+  command -v iptables >/dev/null 2>&1 || return 10
+  if ! is_dry_run && ! fail_closed_chain_owned; then
+    echo 'refusing cleanup of unowned fail-closed chain' >&2
+    return 11
+  fi
+  remove_iptables_rule_exact filter INPUT -s "$OVPN_CIDR" -j "$OPENVPN_FAIL_CLOSED_CHAIN"
+  remove_iptables_rule_exact filter FORWARD -s "$OVPN_CIDR" -j "$OPENVPN_FAIL_CLOSED_CHAIN"
+  if is_dry_run; then
+    run iptables -t filter -F "$OPENVPN_FAIL_CLOSED_CHAIN"
+    run iptables -t filter -X "$OPENVPN_FAIL_CLOSED_CHAIN"
+  else
+    if iptables -t filter -S "$OPENVPN_FAIL_CLOSED_CHAIN" >/dev/null 2>&1; then
+      iptables -t filter -F "$OPENVPN_FAIL_CLOSED_CHAIN" \
+        || { echo 'could not flush owned fail-closed chain' >&2; return 12; }
+      iptables -t filter -X "$OPENVPN_FAIL_CLOSED_CHAIN" \
+        || { echo 'could not delete owned fail-closed chain' >&2; return 12; }
+    fi
+    rm -f -- "$OPENVPN_FAIL_CLOSED_OWNER_FILE"
+  fi
+}
+
+write_runtime_generation() {
+  local current=0 tmp dir
+  if is_dry_run; then
+    printf '%s\n' '+ runtime generation advanced'
+    return 0
+  fi
+  if [[ -r "$SINGBOX_GENERATION_FILE" ]]; then
+    current=$(<"$SINGBOX_GENERATION_FILE")
+    [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  fi
+  current=$((current + 1))
+  dir=${SINGBOX_GENERATION_FILE%/*}
+  [[ "$dir" != "$SINGBOX_GENERATION_FILE" ]] || dir=.
+  mkdir -p "$dir"
+  tmp=$(mktemp "${SINGBOX_GENERATION_FILE}.tmp.XXXXXX")
+  printf '%s\n' "$current" >"$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$SINGBOX_GENERATION_FILE"
 }
 
 validate_proto() {
@@ -294,6 +448,23 @@ install_compat_bypass_rules() {
   done
 }
 
+case "$ACTION" in
+  install-barrier)
+    install_fail_closed_barrier
+    exit 0
+    ;;
+  remove-barrier)
+    remove_fail_closed_barrier
+    exit 0
+    ;;
+  apply) ;;
+esac
+
+# A normal routing apply is itself guarded. The entrypoint installs this exact
+# barrier before OpenVPN starts; keeping this first makes restarts fail closed
+# even when setup-routing is invoked independently.
+install_fail_closed_barrier
+
 run sysctl -w net.ipv4.ip_forward=1 >/dev/null || true
 run sysctl -w net.ipv4.conf.all.src_valid_mark=1 >/dev/null || true
 run sysctl -w net.ipv4.conf.all.rp_filter=0 >/dev/null || true
@@ -319,8 +490,11 @@ case "$VPNKIT_ROUTING_MODE" in
     # Scoped local-delivery accept for marked TPROXY packets. This is not broad NAT;
     # it only prevents restrictive filter policies from dropping packets already
     # selected for local transparent proxy delivery.
-    iptables -C INPUT -i tun0 -s "$OVPN_CIDR" -m mark --mark "$MARK" -m comment --comment "vpnkit:tproxy-input-accept" -j ACCEPT 2>/dev/null \
-      || run iptables -I INPUT 1 -i tun0 -s "$OVPN_CIDR" -m mark --mark "$MARK" -m comment --comment "vpnkit:tproxy-input-accept" -j ACCEPT
+    # Keep the temporary source-CIDR DROP at INPUT position one while
+    # setup-routing is still in progress; this scoped accept is inserted just
+    # behind it and is safe only after the barrier is removed at the end.
+    iptables -C INPUT -i tun0 -s "$OVPN_CIDR" -m mark --mark "$MARK" -j ACCEPT 2>/dev/null \
+      || run iptables -I INPUT 2 -i tun0 -s "$OVPN_CIDR" -m mark --mark "$MARK" -j ACCEPT
 
     ip rule show
     ip route show table "$TABLE"
@@ -360,3 +534,9 @@ case "$VPNKIT_ROUTING_MODE" in
     exit 2
     ;;
 esac
+
+# Advance the generation before removing the barrier. A caller waiting on a
+# request-file restart can therefore prove both setup completion and barrier
+# replacement; any earlier failure leaves the DROP rules installed.
+write_runtime_generation
+remove_fail_closed_barrier

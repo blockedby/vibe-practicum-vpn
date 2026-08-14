@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,27 +40,34 @@ func (d *Duration) parse(s string) error {
 }
 
 type Config struct {
-	SubscriptionFile    string        `json:"subscription_file" yaml:"subscription_file"`
-	ExtraNodesFile      string        `json:"extra_nodes_file" yaml:"extra_nodes_file"`
-	Runtime             string        `json:"runtime" yaml:"runtime"`
-	XrayBin             string        `json:"xray_bin" yaml:"xray_bin"`
-	XrayConfig          string        `json:"xray_config" yaml:"xray_config"`
-	SingBoxBin          string        `json:"sing_box_bin" yaml:"sing_box_bin"`
-	SingBoxConfig       string        `json:"sing_box_config" yaml:"sing_box_config"`
-	SingBoxService      string        `json:"sing_box_service" yaml:"sing_box_service"`
-	SingBoxRestartMode  string        `json:"sing_box_restart_mode" yaml:"sing_box_restart_mode"`
-	SingBoxRestartFile  string        `json:"sing_box_restart_file" yaml:"sing_box_restart_file"`
-	StateDir            string        `json:"state_dir" yaml:"state_dir"`
-	ProductionSocks     string        `json:"production_socks" yaml:"production_socks"`
-	TestSocks           string        `json:"test_socks" yaml:"test_socks"`
-	TestURL             string        `json:"test_url" yaml:"test_url"`
-	TestLimitKiB        int           `json:"test_limit_kib" yaml:"test_limit_kib"`
-	TestDurationSeconds int           `json:"test_duration_seconds" yaml:"test_duration_seconds"`
-	TimeoutSeconds      int           `json:"timeout_seconds" yaml:"timeout_seconds"`
-	Service             ServiceConfig `json:"service" yaml:"service"`
-	Test                TestConfig    `json:"test" yaml:"test"`
-	Health              HealthConfig  `json:"health" yaml:"health"`
-	Logging             LoggingConfig `json:"logging" yaml:"logging"`
+	SubscriptionFile         string   `json:"subscription_file" yaml:"subscription_file"`
+	ExtraNodesFile           string   `json:"extra_nodes_file" yaml:"extra_nodes_file"`
+	Runtime                  string   `json:"runtime" yaml:"runtime"`
+	XrayBin                  string   `json:"xray_bin" yaml:"xray_bin"`
+	XrayConfig               string   `json:"xray_config" yaml:"xray_config"`
+	SingBoxBin               string   `json:"sing_box_bin" yaml:"sing_box_bin"`
+	SingBoxConfig            string   `json:"sing_box_config" yaml:"sing_box_config"`
+	SingBoxService           string   `json:"sing_box_service" yaml:"sing_box_service"`
+	SingBoxRestartMode       string   `json:"sing_box_restart_mode" yaml:"sing_box_restart_mode"`
+	SingBoxRestartFile       string   `json:"sing_box_restart_file" yaml:"sing_box_restart_file"`
+	SingBoxRestartAckFile    string   `json:"sing_box_restart_ack_file" yaml:"sing_box_restart_ack_file"`
+	SingBoxRestartAckTimeout Duration `json:"sing_box_restart_ack_timeout" yaml:"sing_box_restart_ack_timeout"`
+	// SingBoxRestartAckGenerationFile is an explicit-name alias for configs
+	// that prefer to describe the acknowledgement marker rather than the
+	// request/ack protocol. The runtime uses it when SingBoxRestartAckFile is
+	// empty.
+	SingBoxRestartAckGenerationFile string        `json:"sing_box_restart_ack_generation_file,omitempty" yaml:"sing_box_restart_ack_generation_file,omitempty"`
+	StateDir                        string        `json:"state_dir" yaml:"state_dir"`
+	ProductionSocks                 string        `json:"production_socks" yaml:"production_socks"`
+	TestSocks                       string        `json:"test_socks" yaml:"test_socks"`
+	TestURL                         string        `json:"test_url" yaml:"test_url"`
+	TestLimitKiB                    int           `json:"test_limit_kib" yaml:"test_limit_kib"`
+	TestDurationSeconds             int           `json:"test_duration_seconds" yaml:"test_duration_seconds"`
+	TimeoutSeconds                  int           `json:"timeout_seconds" yaml:"timeout_seconds"`
+	Service                         ServiceConfig `json:"service" yaml:"service"`
+	Test                            TestConfig    `json:"test" yaml:"test"`
+	Health                          HealthConfig  `json:"health" yaml:"health"`
+	Logging                         LoggingConfig `json:"logging" yaml:"logging"`
 	// IKEv2 is optional and kept as a pointer so an absent section is
 	// distinguishable from an explicitly configured-but-disabled section.
 	IKEv2 *IKEv2Config `json:"ikev2,omitempty" yaml:"ikev2,omitempty"`
@@ -74,10 +82,22 @@ const (
 )
 
 type ServiceConfig struct {
-	Enabled     bool        `json:"enabled" yaml:"enabled"`
-	StartupTest bool        `json:"startup_test" yaml:"startup_test"`
-	Mode        ServiceMode `json:"mode" yaml:"mode"`
+	Enabled         bool                  `json:"enabled" yaml:"enabled"`
+	StartupTest     bool                  `json:"startup_test" yaml:"startup_test"`
+	Mode            ServiceMode           `json:"mode" yaml:"mode"`
+	FastestRotation FastestRotationConfig `json:"fastest_rotation" yaml:"fastest_rotation"`
 }
+
+type FastestRotationConfig struct {
+	// MinImprovementPercent prevents scheduled performance rotations for
+	// marginal benchmark wins. Zero disables this threshold for
+	// programmatically constructed configs.
+	MinImprovementPercent float64 `json:"min_improvement_percent" yaml:"min_improvement_percent"`
+	// Cooldown is the minimum time between successful scheduled rotations.
+	// A zero value disables the cooldown.
+	Cooldown Duration `json:"cooldown" yaml:"cooldown"`
+}
+
 type TestConfig struct {
 	Interval Duration `json:"interval" yaml:"interval"`
 }
@@ -115,6 +135,9 @@ type IKEv2Config struct {
 }
 
 const (
+	DefaultFastestRotationMinImprovementPercent = 10
+	DefaultFastestRotationCooldown              = 30 * time.Minute
+
 	DefaultIKEv2VPNSubnet         = "10.88.0.0/24"
 	DefaultIKEv2GatewayIP         = "10.88.0.1"
 	DefaultIKEv2XFRMInterface     = "ipsec0"
@@ -132,23 +155,32 @@ const (
 
 func Default() Config {
 	return Config{
-		SubscriptionFile:   "/etc/vibe-vpn/sub_url",
-		ExtraNodesFile:     "/etc/vibe-vpn/extra-nodes.json",
-		Runtime:            "singbox",
-		XrayBin:            "/usr/local/bin/xray",
-		XrayConfig:         "/usr/local/etc/xray/config.json",
-		SingBoxBin:         "/usr/bin/sing-box",
-		SingBoxConfig:      "/etc/sing-box-vibe/tproxy-canary.json",
-		SingBoxService:     "sing-box-vibe-router",
-		SingBoxRestartMode: "systemd",
-		StateDir:           "/var/lib/vibe-vpn",
-		ProductionSocks:    "127.0.0.1:2080",
-		TestSocks:          "127.0.0.1:18080",
-		TestURL:            "https://proof.ovh.net/files/10Mb.dat",
-		TestLimitKiB:       512,
-		TimeoutSeconds:     12,
-		Service:            ServiceConfig{Enabled: true, StartupTest: true, Mode: DefaultServiceMode},
-		Test:               TestConfig{Interval: NewDuration(30 * time.Minute)},
+		SubscriptionFile:         "/etc/vibe-vpn/sub_url",
+		ExtraNodesFile:           "/etc/vibe-vpn/extra-nodes.json",
+		Runtime:                  "singbox",
+		XrayBin:                  "/usr/local/bin/xray",
+		XrayConfig:               "/usr/local/etc/xray/config.json",
+		SingBoxBin:               "/usr/bin/sing-box",
+		SingBoxConfig:            "/etc/sing-box-vibe/tproxy-canary.json",
+		SingBoxService:           "sing-box-vibe-router",
+		SingBoxRestartMode:       "systemd",
+		SingBoxRestartAckTimeout: NewDuration(30 * time.Second),
+		StateDir:                 "/var/lib/vibe-vpn",
+		ProductionSocks:          "127.0.0.1:2080",
+		TestSocks:                "127.0.0.1:18080",
+		TestURL:                  "https://proof.ovh.net/files/10Mb.dat",
+		TestLimitKiB:             512,
+		TimeoutSeconds:           12,
+		Service: ServiceConfig{
+			Enabled:     true,
+			StartupTest: true,
+			Mode:        DefaultServiceMode,
+			FastestRotation: FastestRotationConfig{
+				MinImprovementPercent: DefaultFastestRotationMinImprovementPercent,
+				Cooldown:              NewDuration(DefaultFastestRotationCooldown),
+			},
+		},
+		Test: TestConfig{Interval: NewDuration(30 * time.Minute)},
 		Health: HealthConfig{
 			NormalInterval:     NewDuration(5 * time.Second),
 			FailureRetryDelays: []Duration{NewDuration(time.Second), NewDuration(2 * time.Second), NewDuration(3 * time.Second)},
@@ -257,6 +289,9 @@ func (c Config) Validate() error {
 		if c.SingBoxService == "" {
 			return fmt.Errorf("sing_box_service is empty")
 		}
+		if strings.EqualFold(strings.TrimSpace(c.SingBoxRestartMode), "request-file") && c.SingBoxRestartFile == "" {
+			return fmt.Errorf("sing_box_restart_file is required for request-file mode")
+		}
 	case "xray":
 		if c.XrayBin == "" {
 			return fmt.Errorf("xray_bin is empty")
@@ -295,6 +330,18 @@ func (c Config) Validate() error {
 	}
 	if c.Service.Mode != ServiceModeFailoverOnly && c.Service.Mode != ServiceModeFastestRotation {
 		return fmt.Errorf("service.mode must be %q or %q", ServiceModeFailoverOnly, ServiceModeFastestRotation)
+	}
+	if math.IsNaN(c.Service.FastestRotation.MinImprovementPercent) || math.IsInf(c.Service.FastestRotation.MinImprovementPercent, 0) {
+		return fmt.Errorf("service.fastest_rotation.min_improvement_percent must be finite")
+	}
+	if c.Service.FastestRotation.MinImprovementPercent < 0 {
+		return fmt.Errorf("service.fastest_rotation.min_improvement_percent must be non-negative")
+	}
+	if c.Service.FastestRotation.Cooldown.Duration < 0 {
+		return fmt.Errorf("service.fastest_rotation.cooldown must be non-negative")
+	}
+	if c.SingBoxRestartAckTimeout.Duration < 0 {
+		return fmt.Errorf("sing_box_restart_ack_timeout must be non-negative")
 	}
 	if c.Test.Interval.Duration <= 0 {
 		return fmt.Errorf("test.interval must be positive")

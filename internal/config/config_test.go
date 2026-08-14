@@ -1,11 +1,41 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestLoadRestartAcknowledgementSettings(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	body := []byte(`sing_box_restart_mode: request-file
+sing_box_restart_file: /run/vpnkit/restart-sing-box
+sing_box_restart_ack_generation_file: /run/vpnkit/sing-box-generation
+sing_box_restart_ack_timeout: 17s
+`)
+	if err := os.WriteFile(p, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SingBoxRestartAckGenerationFile != "/run/vpnkit/sing-box-generation" || c.SingBoxRestartAckTimeout.Duration != 17*time.Second {
+		t.Fatalf("restart acknowledgement settings not loaded: %+v", c)
+	}
+}
+
+func TestLoadRestartAcknowledgementTimeoutRejectsNegative(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(p, []byte(`{"sing_box_restart_ack_timeout":"-1s"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected negative acknowledgement timeout to fail validation")
+	}
+}
 
 func TestLoadSnakeCaseOverridesDefaults(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
@@ -28,6 +58,9 @@ func TestLoadServiceFoundationDefaults(t *testing.T) {
 	c := Default()
 	if !c.Service.Enabled || !c.Service.StartupTest || c.Service.Mode != ServiceModeFastestRotation {
 		t.Fatalf("service defaults wrong: %+v", c.Service)
+	}
+	if c.Service.FastestRotation.MinImprovementPercent != DefaultFastestRotationMinImprovementPercent || c.Service.FastestRotation.Cooldown.Duration != DefaultFastestRotationCooldown {
+		t.Fatalf("fastest rotation defaults wrong: %+v", c.Service.FastestRotation)
 	}
 	if c.Test.Interval.Duration != 30*time.Minute {
 		t.Fatalf("test interval default wrong: %v", c.Test.Interval)
@@ -98,6 +131,9 @@ func TestLoadJSONServiceExampleDefaultsMode(t *testing.T) {
 	if c.Service.Mode != ServiceModeFastestRotation {
 		t.Fatalf("omitted service mode default = %q, want %q", c.Service.Mode, ServiceModeFastestRotation)
 	}
+	if c.Service.FastestRotation.MinImprovementPercent != DefaultFastestRotationMinImprovementPercent || c.Service.FastestRotation.Cooldown.Duration != DefaultFastestRotationCooldown {
+		t.Fatalf("omitted fastest rotation settings lost defaults: %+v", c.Service.FastestRotation)
+	}
 }
 
 func TestLoadBlankServiceModeDefaultsToFastestRotation(t *testing.T) {
@@ -112,6 +148,65 @@ func TestLoadBlankServiceModeDefaultsToFastestRotation(t *testing.T) {
 	}
 	if c.Service.Mode != ServiceModeFastestRotation {
 		t.Fatalf("blank service mode default = %q, want %q", c.Service.Mode, ServiceModeFastestRotation)
+	}
+}
+
+func TestLoadFastestRotationSettingsOverrideDefaults(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	body := `{"service":{"fastest_rotation":{"min_improvement_percent":25,"cooldown":"2h"}}}`
+	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Service.FastestRotation.MinImprovementPercent != 25 || c.Service.FastestRotation.Cooldown.Duration != 2*time.Hour {
+		t.Fatalf("fastest rotation overrides not applied: %+v", c.Service.FastestRotation)
+	}
+}
+
+func TestLoadFastestRotationYAMLCanExplicitlyDisableControls(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	body := []byte("service:\n  fastest_rotation:\n    min_improvement_percent: 0\n    cooldown: 0s\n")
+	if err := os.WriteFile(p, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Service.FastestRotation.MinImprovementPercent != 0 || c.Service.FastestRotation.Cooldown.Duration != 0 {
+		t.Fatalf("explicit YAML zero values did not disable controls: %+v", c.Service.FastestRotation)
+	}
+}
+
+func TestValidateRejectsNonFiniteFastestRotationImprovement(t *testing.T) {
+	for name, value := range map[string]float64{"NaN": math.NaN(), "+Inf": math.Inf(1), "-Inf": math.Inf(-1)} {
+		t.Run(name, func(t *testing.T) {
+			c := Default()
+			c.Service.FastestRotation.MinImprovementPercent = value
+			if err := c.Validate(); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestLoadRejectsNegativeFastestRotationSettings(t *testing.T) {
+	for name, body := range map[string]string{
+		"negative improvement": `{"service":{"fastest_rotation":{"min_improvement_percent":-1}}}`,
+		"negative cooldown":    `{"service":{"fastest_rotation":{"cooldown":"-1s"}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(p); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 
