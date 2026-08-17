@@ -246,25 +246,77 @@ record_fail_closed_chain_ownership() {
   mv -T -- "$tmp" "$OPENVPN_FAIL_CLOSED_OWNER_FILE" || { rm -f -- "$tmp"; return 1; }
 }
 
+fail_closed_filter_snapshot() {
+  iptables -t filter -S 2>/dev/null
+}
+
+fail_closed_chain_declared_in_snapshot() {
+  local snapshot=$1
+  grep -Fxq -- "-N $OPENVPN_FAIL_CLOSED_CHAIN" <<<"$snapshot"
+}
+
+fail_closed_chain_referenced_in_snapshot() {
+  local snapshot=$1
+  grep -Eq -- "(^|[[:space:]])(-j|-g)[[:space:]]${OPENVPN_FAIL_CLOSED_CHAIN}([[:space:]]|$)" <<<"$snapshot"
+}
+
+# A chain left behind between -N and the atomic owner-marker rename is safe to
+# recover only while it is demonstrably untouched.  Inspect one complete
+# filter-table snapshot: the exact -N declaration proves existence, the lack
+# of an -A/-I/-R row proves zero rules, and no -j/-g target proves that no
+# chain can currently enter it.  Do not weaken this to -S CHAIN alone; that
+# would miss a reference from another chain.
+fail_closed_chain_is_pristine_partial() {
+  local snapshot line declaration_count=0
+  snapshot=$(fail_closed_filter_snapshot) || return 1
+  while IFS= read -r line; do
+    case "$line" in
+      "-N $OPENVPN_FAIL_CLOSED_CHAIN")
+        declaration_count=$((declaration_count + 1))
+        ;;
+      "-A $OPENVPN_FAIL_CLOSED_CHAIN"*|"-I $OPENVPN_FAIL_CLOSED_CHAIN"*|"-R $OPENVPN_FAIL_CLOSED_CHAIN"*)
+        return 1
+        ;;
+    esac
+  done <<<"$snapshot"
+  (( declaration_count == 1 )) || return 1
+  ! fail_closed_chain_referenced_in_snapshot "$snapshot"
+}
+
 install_fail_closed_barrier() {
   valid_ipv4_cidr "$OVPN_CIDR" || { echo 'invalid OpenVPN CIDR for fail-closed barrier' >&2; return 2; }
   validate_fail_closed_chain || return
   command -v iptables >/dev/null 2>&1 || { echo 'iptables is unavailable for fail-closed barrier' >&2; return 10; }
 
   # Use an explicitly owned chain rather than xt_comment: minimal/container
-  # kernels may not provide the comment match extension. Never adopt a
-  # pre-existing same-name chain unless our private capability marker exists.
+  # kernels may not provide the comment match extension. A failed -N is not
+  # enough to identify an existing chain as ours: a process may have died
+  # after -N and before the private marker was atomically installed, but a
+  # same-name foreign chain must never be changed. Recover only that strict,
+  # empty-and-unreferenced partial state.
+  local ownership_needed=0
   if is_dry_run; then
     run iptables -t filter -N "$OPENVPN_FAIL_CLOSED_CHAIN"
   elif iptables -t filter -N "$OPENVPN_FAIL_CLOSED_CHAIN" 2>/dev/null; then
+    ownership_needed=1
+  elif fail_closed_chain_owned; then
+    :
+  elif fail_closed_chain_is_pristine_partial; then
+    ownership_needed=1
+  else
+    echo 'refusing pre-existing unowned fail-closed chain' >&2
+    return 11
+  fi
+
+  if (( ownership_needed )); then
+    # The marker is the capability used by cleanup. Leave a pristine chain in
+    # place if this atomic write fails; a later invocation can prove and
+    # recover it without risking a foreign chain. In particular, do not
+    # blindly -X after a failed write: the chain may have changed meanwhile.
     record_fail_closed_chain_ownership || {
-      iptables -t filter -X "$OPENVPN_FAIL_CLOSED_CHAIN" 2>/dev/null || true
       echo 'could not record fail-closed chain ownership' >&2
       return 11
     }
-  elif ! fail_closed_chain_owned; then
-    echo 'refusing pre-existing unowned fail-closed chain' >&2
-    return 11
   fi
   ensure_iptables_rule filter "$OPENVPN_FAIL_CLOSED_CHAIN" -j DROP
 
@@ -276,9 +328,21 @@ install_fail_closed_barrier() {
 remove_fail_closed_barrier() {
   validate_fail_closed_chain || return
   command -v iptables >/dev/null 2>&1 || return 10
+  local snapshot
   if ! is_dry_run && ! fail_closed_chain_owned; then
-    echo 'refusing cleanup of unowned fail-closed chain' >&2
-    return 11
+    # A second cleanup after the owned chain and marker were both removed is a
+    # safe no-op. If the same-name chain still exists, however, reject every
+    # unowned shape (including an empty partial chain) without attempting any
+    # jump, flush, or delete operation.
+    snapshot=$(fail_closed_filter_snapshot) || {
+      echo 'refusing cleanup of unowned fail-closed chain' >&2
+      return 11
+    }
+    if fail_closed_chain_declared_in_snapshot "$snapshot"; then
+      echo 'refusing cleanup of unowned fail-closed chain' >&2
+      return 11
+    fi
+    return 0
   fi
   remove_iptables_rule_exact filter INPUT -s "$OVPN_CIDR" -j "$OPENVPN_FAIL_CLOSED_CHAIN"
   remove_iptables_rule_exact filter FORWARD -s "$OVPN_CIDR" -j "$OPENVPN_FAIL_CLOSED_CHAIN"
@@ -286,7 +350,19 @@ remove_fail_closed_barrier() {
     run iptables -t filter -F "$OPENVPN_FAIL_CLOSED_CHAIN"
     run iptables -t filter -X "$OPENVPN_FAIL_CLOSED_CHAIN"
   else
-    if iptables -t filter -S "$OPENVPN_FAIL_CLOSED_CHAIN" >/dev/null 2>&1; then
+    snapshot=$(fail_closed_filter_snapshot) || {
+      echo 'could not inspect fail-closed chain during cleanup' >&2
+      return 12
+    }
+    if fail_closed_chain_declared_in_snapshot "$snapshot"; then
+      # Remove only our exact INPUT/FORWARD jumps above. If another chain now
+      # references this owned chain, preserve its DROP rule and marker rather
+      # than flushing a chain that cannot be deleted. A retry is then safe and
+      # idempotent once the foreign reference is gone.
+      if fail_closed_chain_referenced_in_snapshot "$snapshot"; then
+        echo 'refusing cleanup of referenced owned fail-closed chain' >&2
+        return 12
+      fi
       iptables -t filter -F "$OPENVPN_FAIL_CLOSED_CHAIN" \
         || { echo 'could not flush owned fail-closed chain' >&2; return 12; }
       iptables -t filter -X "$OPENVPN_FAIL_CLOSED_CHAIN" \
@@ -313,7 +389,11 @@ write_runtime_generation() {
   tmp=$(mktemp "${SINGBOX_GENERATION_FILE}.tmp.XXXXXX")
   printf '%s\n' "$current" >"$tmp"
   chmod 600 "$tmp"
+  sync -f "$tmp" 2>/dev/null || true
   mv -f "$tmp" "$SINGBOX_GENERATION_FILE"
+  dir=${SINGBOX_GENERATION_FILE%/*}
+  [[ "$dir" != "$SINGBOX_GENERATION_FILE" ]] || dir=.
+  sync -f "$dir" 2>/dev/null || true
 }
 
 validate_proto() {

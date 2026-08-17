@@ -10,27 +10,45 @@ IPV6_ADDRESS=${VPNKIT_LOCAL_SMOKE_IPV6_ADDRESS:-2606:4700:4700::1111}
 TIMEOUT=${VPNKIT_LOCAL_SMOKE_TIMEOUT_SECONDS:-8}
 DEVICE=${VPNKIT_LOCAL_SMOKE_DEVICE:-}
 
+# OpenVPN's redirect-gateway def1 installs two broad IPv4 halves. Keep two
+# independent, redacted route-policy anchors so a single host route cannot
+# masquerade as full-tunnel coverage.
+ROUTE_POLICY_LOWER_IP=1.1.1.1
+ROUTE_POLICY_UPPER_IP=8.8.8.8
+
 fail() {
   printf '%s\n' "$1" >&2
   exit 1
 }
 
 valid_ipv4() {
-  local value=$1 old_ifs=$IFS
+  local value=${1:-} old_ifs=$IFS
   local -a octets
+  [[ "$value" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
   IFS=.
   read -r -a octets <<<"$value"
   IFS=$old_ifs
   [[ ${#octets[@]} -eq 4 ]] || return 1
   local octet
   for octet in "${octets[@]}"; do
-    [[ "$octet" =~ ^[0-9]{1,3}$ ]] || return 1
     (( 10#$octet <= 255 )) || return 1
   done
 }
 
+canonical_ipv4() {
+  local value=${1:-} old_ifs=$IFS
+  local -a octets
+  valid_ipv4 "$value" || return 1
+  IFS=.
+  read -r -a octets <<<"$value"
+  IFS=$old_ifs
+  printf '%d.%d.%d.%d\n' \
+    "$((10#${octets[0]}))" "$((10#${octets[1]}))" \
+    "$((10#${octets[2]}))" "$((10#${octets[3]}))"
+}
+
 valid_ipv6() {
-  [[ "$1" == *:* && "$1" != *[[:space:]/]* ]] || return 1
+  [[ "${1:-}" == *:* && "${1:-}" != *[[:space:]/]* ]] || return 1
   python3 - "$1" <<'PY' >/dev/null 2>&1
 import ipaddress
 import sys
@@ -57,42 +75,126 @@ command -v curl >/dev/null 2>&1 || fail 'curl is unavailable for local smoke'
 command -v ping >/dev/null 2>&1 || fail 'ping is unavailable for local smoke'
 command -v timeout >/dev/null 2>&1 || fail 'timeout is unavailable for local smoke'
 
-# A route to an internet literal must use the OpenVPN tunnel device, not a
-# physical uplink or an unrelated local interface.
-route4=$(ip -4 route get "$ROUTE_IP" 2>/dev/null) || fail 'IPv4 route smoke failed'
-# The expected device comes only from the validated active owned NM UUID.  An
-# arbitrary tun/tap/ppp/vpn interface is not equivalent proof: require the
-# route lookup to select that exact device.
-route_device=$(awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }' <<<"$route4")
-[[ "$route_device" == "$DEVICE" ]] || fail 'IPv4 route did not use the exact local VPN device'
-case "$route_device" in
-  ppp0|vpn0) fail 'IPv4 route used a forbidden VPN-like device' ;;
-  tun*) ;;
-  *) fail 'IPv4 route did not use a safe VPN tunnel device' ;;
-esac
+parse_ping_addresses() {
+  local old_ifs=$IFS
+  local -a parsed
+  [[ "$PING_IPS" =~ ^[0-9.,]+$ ]] || fail 'local smoke ping addresses are malformed'
+  IFS=,
+  read -r -a parsed <<<"$PING_IPS"
+  IFS=$old_ifs
+  [[ ${#parsed[@]} -gt 0 ]] || fail 'ping smoke has no addresses'
+  local address
+  for address in "${parsed[@]}"; do
+    valid_ipv4 "$address" || fail 'local smoke ping address is invalid'
+  done
+  PING_ADDRESSES=("${parsed[@]}")
+}
 
-timeout "$TIMEOUT" getent ahostsv4 "$HOSTNAME" 2>/dev/null | awk '$1 ~ /^[0-9]+(\.[0-9]+){3}$/ { found=1 } END { exit(found ? 0 : 1) }' \
-  >/dev/null || fail 'DNS hostname smoke failed'
+# Check one IPv4 destination without printing the route itself. The returned
+# destination and route shape are validated as well as the exact owned device;
+# accepting only a matching `dev` token would otherwise allow malformed or
+# unreachable mock/host output to become evidence.
+route4_exact() {
+  local target=$1 route4 route_primary route_cache= route_target route_device
+  route4=$(ip -4 route get "$target" 2>/dev/null) || fail 'IPv4 route lookup failed'
+  [[ -n "$route4" ]] || fail 'IPv4 route lookup returned malformed output'
+  route_primary=${route4%%$'\n'*}
+  if [[ "$route4" == *$'\n'* ]]; then
+    route_cache=${route4#*$'\n'}
+    # Current iproute2 emits a second, indented `cache` line. Accept only that
+    # exact optional metadata line; multiple route records remain fail-closed.
+    [[ "$route_cache" != *$'\n'* && "${route_cache//[[:space:]]/}" == cache ]] || \
+      fail 'IPv4 route lookup returned malformed output'
+  fi
+  [[ "$route_primary" =~ (^|[[:space:]])(unreachable|prohibit|blackhole|throw)([[:space:]]|$) ]] && \
+    fail 'IPv4 route lookup returned a blocked route'
+  route_target=$(awk '{ print $1; exit }' <<<"$route_primary")
+  [[ "$route_target" == "$target" ]] || fail 'IPv4 route lookup returned the wrong destination'
+  route_device=$(awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i == "dev") {
+          if (seen || i == NF) bad=1
+          else { seen=1; device=$(i + 1) }
+        }
+      }
+    }
+    END {
+      if (bad || !seen || device == "") exit 1
+      print device
+    }
+  ' <<<"$route_primary") || fail 'IPv4 route lookup omitted a unique device'
+  [[ "$route_device" == "$DEVICE" ]] || fail 'IPv4 route did not use the exact local VPN device'
+}
 
-curl -4 -fsS --connect-timeout "$TIMEOUT" --max-time "$TIMEOUT" -o /dev/null "https://$HOSTNAME/" \
-  >/dev/null 2>&1 || fail 'hostname HTTPS smoke failed'
+resolve_hostname_ipv4() {
+  local resolved line canonical
+  local -a fields
+  local -A seen=()
+  HOSTNAME_ADDRESSES=()
+  if ! resolved=$(timeout "$TIMEOUT" getent ahostsv4 "$HOSTNAME" 2>/dev/null); then
+    fail 'DNS hostname smoke failed'
+  fi
+  [[ -n "${resolved//[[:space:]]/}" ]] || fail 'DNS hostname smoke returned no addresses'
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ [^[:space:]] ]] || fail 'DNS hostname smoke returned a malformed line'
+    fields=()
+    read -r -a fields <<<"$line"
+    [[ ${#fields[@]} -gt 0 ]] || fail 'DNS hostname smoke returned a malformed line'
+    valid_ipv4 "${fields[0]}" || fail 'DNS hostname smoke returned a malformed address'
+    canonical=$(canonical_ipv4 "${fields[0]}") || fail 'DNS hostname smoke returned an invalid address'
+    if [[ -z "${seen[$canonical]+present}" ]]; then
+      seen["$canonical"]=1
+      HOSTNAME_ADDRESSES+=("$canonical")
+    fi
+  done <<<"$resolved"
+  [[ ${#HOSTNAME_ADDRESSES[@]} -gt 0 ]] || fail 'DNS hostname smoke returned no addresses'
+}
+
+PING_ADDRESSES=()
+parse_ping_addresses
+
+# Establish full-tunnel route-policy evidence before any application probe.
+# These two redacted anchors cover the two public policy halves expected from
+# redirect-gateway def1; neither may be inferred from ROUTE_IP alone.
+route4_exact "$ROUTE_POLICY_LOWER_IP"
+route4_exact "$ROUTE_POLICY_UPPER_IP"
+
+# DNS itself is an input to the hostname probe. Every unique, validated IPv4
+# target returned by the resolver must use the exact tunnel before curl runs.
+resolve_hostname_ipv4
+for address in "${HOSTNAME_ADDRESSES[@]}"; do
+  route4_exact "$address"
+done
+
+# The literal-IP HTTPS target gets its own route lookup immediately before the
+# probe, rather than inheriting the route evidence from a different address.
+route4_exact "$ROUTE_IP"
 curl -4 -kfsS --connect-timeout "$TIMEOUT" --max-time "$TIMEOUT" -o /dev/null "https://$ROUTE_IP/" \
   >/dev/null 2>&1 || fail 'literal-IP HTTPS smoke failed'
 
-old_ifs=$IFS
-IFS=, read -r -a ping_addresses <<<"$PING_IPS"
-IFS=$old_ifs
-[[ ${#ping_addresses[@]} -gt 0 ]] || fail 'ping smoke has no addresses'
-for address in "${ping_addresses[@]}"; do
-  valid_ipv4 "$address" || fail 'local smoke ping address is invalid'
+curl -4 -fsS --connect-timeout "$TIMEOUT" --max-time "$TIMEOUT" -o /dev/null "https://$HOSTNAME/" \
+  >/dev/null 2>&1 || fail 'hostname HTTPS smoke failed'
+
+for address in "${PING_ADDRESSES[@]}"; do
+  # Keep the route check adjacent to the actual echo request so each ping
+  # destination has fresh exact-device evidence.
+  route4_exact "$address"
   ping -4 -c 1 -W "$TIMEOUT" "$address" >/dev/null 2>&1 || fail 'IPv4 ping smoke failed'
 done
 
 # The local profile is intentionally IPv4-only. Both route lookup and an
 # actual IPv6 echo must fail; accepting either would permit an IPv6 leak.
-route6=$(ip -6 route get "$IPV6_ADDRESS" 2>/dev/null || true)
-if [[ -n "$route6" ]] && ! grep -Eiq '(^|[[:space:]])(unreachable|prohibit|blackhole)([[:space:]]|$)' <<<"$route6"; then
-  fail 'IPv6 route is unexpectedly available'
+route6=
+route6_status=0
+route6=$(ip -6 route get "$IPV6_ADDRESS" 2>/dev/null) || route6_status=$?
+if [[ -n "$route6" ]]; then
+  [[ "$route6" != *$'\n'* ]] || fail 'IPv6 route lookup returned malformed output'
+  if ! [[ "$route6" =~ (^|[[:space:]])(unreachable|prohibit|blackhole)([[:space:]]|$) ]]; then
+    fail 'IPv6 route is unexpectedly available'
+  fi
+elif (( route6_status == 0 )); then
+  fail 'IPv6 route lookup returned malformed output'
 fi
 if ping -6 -c 1 -W "$TIMEOUT" "$IPV6_ADDRESS" >/dev/null 2>&1; then
   fail 'IPv6 ping unexpectedly succeeded'
@@ -100,6 +202,12 @@ fi
 
 printf 'host_smoke=pass\n'
 printf 'route=pass\n'
+printf 'route_policy=pass\n'
+printf 'route_policy_lower=pass\n'
+printf 'route_policy_upper=pass\n'
+printf 'route_dns=pass\n'
+printf 'route_literal_ip=pass\n'
+printf 'route_ping=pass\n'
 printf 'dns=pass\n'
 printf 'hostname_https=pass\n'
 printf 'literal_ip_https=pass\n'

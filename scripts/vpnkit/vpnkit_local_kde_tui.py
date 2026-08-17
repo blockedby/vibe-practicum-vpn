@@ -24,9 +24,11 @@ from __future__ import annotations
 
 import argparse
 import curses
+import fcntl
 import json
 import math
 import os
+import secrets
 import selectors
 import signal
 import stat
@@ -40,15 +42,18 @@ from typing import Mapping, Protocol, Sequence
 
 
 LIFECYCLE_EXECUTABLE_ENV = "VPNKIT_TUI_LIFECYCLE_EXECUTABLE"
+TUI_SUPERVISED_ENV = "VPNKIT_TUI_SUPERVISED"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LIFECYCLE_EXECUTABLE = Path(__file__).with_name("vpnkit-local.sh")
 DEFAULT_SECRET_ROOT = REPO_ROOT / "secrets" / "vpnkit-local"
 DEFAULT_SUBSCRIPTION_PATH = DEFAULT_SECRET_ROOT / "vibe-vpn" / "sub_url"
+SUBSCRIPTION_LOCK_NAME = ".vibe-vpn.lock"
 LOCAL_SECRETS_ENV = "VPNKIT_LOCAL_SECRETS_DIR"
 MAX_SUBSCRIPTION_LENGTH = 16_384
 MAX_STATUS_BYTES = 16_384
 STATUS_TIMEOUT = 10.0
 PROCESS_TERMINATION_GRACE = 0.25
+DEFAULT_LIFECYCLE_COMPENSATION_SECONDS = 30.0
 
 
 class LifecycleAction(str, Enum):
@@ -129,27 +134,73 @@ def normalize_action(action: LifecycleAction | str) -> LifecycleAction:
         raise ValueError("unsupported lifecycle action") from exc
 
 
-def _terminate_process_group(process: subprocess.Popen[bytes], *, grace: float = PROCESS_TERMINATION_GRACE) -> None:
-    """Terminate a lifecycle process and every descendant in its session."""
+def _process_group_alive(pgid: int) -> bool:
+    """Return whether a supervised process group still has a member."""
 
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        # Permission or transient lookup errors are fail-closed: do not report
+        # a timeout while an unverified child could still be mutating state.
+        return True
+    return True
+
+
+def _wait_for_process_group_exit(
+    process: subprocess.Popen[bytes], pgid: int, timeout: float | None
+) -> bool:
+    """Wait for both the leader and every supervised group member to exit."""
+
+    deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+    while True:
+        leader_done = process.poll() is not None
+        if leader_done and not _process_group_alive(pgid):
+            return True
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            wait_for = min(0.05, remaining)
+        else:
+            wait_for = 0.05
+        try:
+            process.wait(timeout=wait_for)
+        except (subprocess.TimeoutExpired, OSError, subprocess.SubprocessError):
+            pass
+
+
+def _terminate_process_group(
+    process: subprocess.Popen[bytes], *, grace: float = PROCESS_TERMINATION_GRACE
+) -> None:
+    """Terminate a lifecycle process and wait for its complete process group."""
+
+    pgid = process.pid
+    try:
+        os.killpg(pgid, signal.SIGTERM)
     except (OSError, ProcessLookupError):
         pass
+    if _wait_for_process_group_exit(process, pgid, grace):
+        return
+
+    # Do this even when the process leader exited during the TERM grace period:
+    # the lifecycle shell, lock child, and external descendants all share this
+    # supervised group when invoked by the TUI.
     try:
-        process.wait(timeout=grace)
-    except (subprocess.TimeoutExpired, OSError, subprocess.SubprocessError):
-        pass
-    # Do this even when the process leader exited during the grace period: a
-    # descendant can keep running after its parent has gone away.
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
+        os.killpg(pgid, signal.SIGKILL)
     except (OSError, ProcessLookupError):
         pass
-    try:
-        process.wait(timeout=grace)
-    except (subprocess.TimeoutExpired, OSError, subprocess.SubprocessError):
-        pass
+    # SIGKILL cannot be ignored. Keep reaping until the group is gone so
+    # run() never returns "timeout" while a mutation child is still alive.
+    # This is intentionally unbounded for an OS-level kill race; returning
+    # early would violate the lifecycle closure contract.
+    _wait_for_process_group_exit(process, pgid, None)
+
+
+class _RunnerCancelled(Exception):
+    """Internal signal used after the supervised lifecycle tree is terminated."""
+
 
 
 def _read_bounded_output(
@@ -330,6 +381,19 @@ class AllowlistedSubprocessRunner:
         self.executable = value
         self.timeout = timeout
 
+    @staticmethod
+    def _cancellation_grace() -> float:
+        """Allow lifecycle compensation to acknowledge TERM before KILL."""
+
+        raw = os.environ.get("VPNKIT_LOCAL_COMPENSATION_TIMEOUT_SECONDS", "")
+        try:
+            configured = float(raw)
+        except (TypeError, ValueError):
+            configured = DEFAULT_LIFECYCLE_COMPENSATION_SECONDS
+        if not math.isfinite(configured) or configured < 1 or configured > 3600:
+            configured = DEFAULT_LIFECYCLE_COMPENSATION_SECONDS
+        return max(PROCESS_TERMINATION_GRACE, configured + 1.0)
+
     def argv_for(self, action: LifecycleAction | str) -> list[str]:
         """Return a fresh, fixed argv list for an allowlisted action."""
 
@@ -344,7 +408,26 @@ class AllowlistedSubprocessRunner:
         normalized = normalize_action(action)
         argv = self.argv_for(normalized)
         process: subprocess.Popen[bytes] | None = None
+        previous_handlers: dict[int, object] = {}
+
+        def cancel(signum: int, _frame: object) -> None:
+            if process is not None and process.poll() is None:
+                _terminate_process_group(process, grace=self._cancellation_grace())
+            raise _RunnerCancelled(signum)
+
+        # The child has its own process group so the TUI can terminate it
+        # without killing its curses process. The lifecycle adapter receives a
+        # supervision marker and therefore does not create a second detached
+        # session for its lock child.
         try:
+            for signal_number in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                try:
+                    previous_handlers[signal_number] = signal.getsignal(signal_number)
+                    signal.signal(signal_number, cancel)
+                except (OSError, ValueError):
+                    pass
+            env = os.environ.copy()
+            env[TUI_SUPERVISED_ENV] = "1"
             process = subprocess.Popen(
                 argv,
                 shell=False,
@@ -352,18 +435,29 @@ class AllowlistedSubprocessRunner:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                env=env,
             )
             try:
                 returncode = process.wait(timeout=self.timeout)
             except subprocess.TimeoutExpired:
-                _terminate_process_group(process)
+                _terminate_process_group(process, grace=self._cancellation_grace())
                 return CommandResult(normalized, None, "timeout")
+            except _RunnerCancelled:
+                return CommandResult(normalized, None, "cancelled")
+        except _RunnerCancelled:
+            return CommandResult(normalized, None, "cancelled")
         except (OSError, subprocess.SubprocessError):
             if process is not None and process.poll() is None:
-                _terminate_process_group(process)
+                _terminate_process_group(process, grace=self._cancellation_grace())
             # Do not expose exception text: a path or child output must never
             # become a UI/logging channel for private operator data.
             return CommandResult(normalized, None, "unavailable")
+        finally:
+            for signal_number, handler in previous_handlers.items():
+                try:
+                    signal.signal(signal_number, handler)  # type: ignore[arg-type]
+                except (OSError, ValueError):
+                    pass
         return CommandResult(normalized, returncode, "ok" if returncode == 0 else "failed")
 
     def query_status(self) -> Mapping[str, object]:
@@ -422,40 +516,140 @@ class SubscriptionError(ValueError):
 
 
 
-def _canonical_secret_root() -> Path:
-    """Return the one local secret root used by this process.
-
-    ``VPNKIT_LOCAL_SECRETS_DIR`` is the same explicit isolated-lab override as
-    the local lifecycle adapter.  It selects a different canonical BASE; it
-    never turns ``--subscription-path`` into an arbitrary destination.
-    """
-
-    raw = os.environ.get(LOCAL_SECRETS_ENV)
-    if raw is None or raw == "":
-        return DEFAULT_SECRET_ROOT
-    root = Path(os.path.expanduser(raw))
-    if not root.is_absolute():
-        root = REPO_ROOT / root
-    if any(part == ".." for part in root.parts):
-        raise SubscriptionError("local secret root must not contain parent traversal")
-    return root
-
-
-
 def _reject_symlink_components(path: Path) -> None:
     """Reject symlinks in every existing component without resolving them."""
 
+    if not path.is_absolute():
+        raise SubscriptionError("local path must be absolute")
     current = Path(path.anchor or os.sep)
     for part in path.parts[1:]:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            current = current.parent
+            continue
         current /= part
         try:
             entry = os.lstat(current)
         except FileNotFoundError:
-            return
+            # Keep walking: a later ``..`` component can return to an
+            # existing path, matching the shell path guard's lexical check.
+            continue
         except OSError as exc:
-            raise SubscriptionError("subscription path could not be inspected") from exc
+            raise SubscriptionError("local path could not be inspected") from exc
         if stat.S_ISLNK(entry.st_mode):
-            raise SubscriptionError("subscription path contains a symlink")
+            raise SubscriptionError("local path contains a symlink component")
+
+
+
+def _path_is_within(path: Path, root: Path, *, include_root: bool = True) -> bool:
+    if include_root:
+        return path == root or root in path.parents
+    return root in path.parents
+
+
+
+def _validate_existing_parent(path: Path) -> None:
+    """Match the guard's missing-root parent check without creating anything."""
+
+    current = path
+    while True:
+        try:
+            entry = os.lstat(current)
+        except FileNotFoundError:
+            if current == current.parent:
+                raise SubscriptionError("local secret root parent is unavailable")
+            current = current.parent
+            continue
+        except OSError as exc:
+            raise SubscriptionError("local secret root parent could not be inspected") from exc
+        if not stat.S_ISDIR(entry.st_mode) or stat.S_ISLNK(entry.st_mode):
+            raise SubscriptionError("local secret root parent is not a directory")
+        return
+
+
+
+def _is_private_mode(mode: int) -> bool:
+    """Return whether group/other have no access to a secret inode."""
+
+    return stat.S_IMODE(mode) & 0o077 == 0
+
+
+
+def _canonical_secret_root() -> Path:
+    """Return a canonical root bounded like vpnkit-local-path-guard.sh.
+
+    The environment variable is a selector for the repository's local tree,
+    an isolated lab child, or an explicitly marked temporary test fixture. It
+    is never permission to inspect or write an arbitrary absolute directory.
+    Validation is deliberately performed before status construction so an
+    unsafe environment cannot be silently reported as an empty configuration.
+    """
+
+    raw = os.environ.get(LOCAL_SECRETS_ENV)
+    if raw is None or raw == "":
+        requested = DEFAULT_SECRET_ROOT
+    else:
+        requested = Path(os.path.expanduser(raw))
+        if not requested.is_absolute():
+            requested = REPO_ROOT / requested
+
+    _reject_symlink_components(requested)
+    try:
+        # Keep canonicalization lexical. realpath() would turn a symlink that
+        # appears between the lexical check and resolution into an accepted
+        # destination; the held O_NOFOLLOW descriptors below are the authority.
+        base = Path(os.path.abspath(os.path.normpath(os.fspath(requested))))
+    except (OSError, ValueError) as exc:
+        raise SubscriptionError("local secret root could not be canonicalized") from exc
+    _reject_symlink_components(base)
+
+    if any(
+        token in part.lower()
+        for part in base.parts
+        if part not in ("", os.sep)
+        for token in ("production", "prod", "live")
+    ):
+        raise SubscriptionError("refusing production-like local secret root")
+
+    local_root = REPO_ROOT / "secrets" / "vpnkit-local"
+    labs_root = REPO_ROOT / "secrets" / "vpnkit-labs"
+    temp_root: Path | None = None
+    if _path_is_within(base, local_root) or _path_is_within(base, labs_root, include_root=False):
+        pass
+    else:
+        for candidate in (Path("/tmp"), Path("/var/tmp")):
+            if candidate in base.parents:
+                temp_root = candidate
+                break
+        if temp_root is None:
+            raise SubscriptionError(
+                "VPNKIT_LOCAL_SECRETS_DIR must stay in the local, isolated lab, or test temporary tree"
+            )
+        if base == temp_root:
+            raise SubscriptionError("VPNKIT_LOCAL_SECRETS_DIR is too broad")
+        relative = base.relative_to(temp_root)
+        first = relative.parts[0] if relative.parts else ""
+        if base == temp_root / "vpnkit-local-":
+            raise SubscriptionError("VPNKIT_LOCAL_SECRETS_DIR is too broad")
+        if not first.startswith("vpnkit-local-") and os.environ.get("VPNKIT_LOCAL_TEST_FIXTURE") != "1":
+            raise SubscriptionError("unprefixed temporary secret roots require VPNKIT_LOCAL_TEST_FIXTURE=1")
+
+    try:
+        entry = os.lstat(base)
+    except FileNotFoundError:
+        _validate_existing_parent(base)
+    except OSError as exc:
+        raise SubscriptionError("local secret root could not be inspected") from exc
+    else:
+        if (
+            not stat.S_ISDIR(entry.st_mode)
+            or stat.S_ISLNK(entry.st_mode)
+            or entry.st_uid != os.geteuid()
+            or not _is_private_mode(entry.st_mode)
+        ):
+            raise SubscriptionError("VPNKIT_LOCAL_SECRETS_DIR must be an owned private directory")
+    return base
 
 
 
@@ -464,8 +658,10 @@ def _open_directory_no_symlinks(path: Path) -> int:
 
     if not path.is_absolute() or any(part == ".." for part in path.parts):
         raise SubscriptionError("subscription directory path is unsafe")
-    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    directory_flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+        raise SubscriptionError("subscription directory safety features are unavailable")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    directory_flags |= getattr(os, "O_CLOEXEC", 0)
     try:
         fd = os.open(os.sep, directory_flags)
     except OSError as exc:
@@ -485,7 +681,59 @@ def _open_directory_no_symlinks(path: Path) -> int:
 
 
 
-def _selected_path(path: str | os.PathLike[str] | None) -> Path:
+def _assert_private_directory(fd: int) -> os.stat_result:
+    try:
+        entry = os.fstat(fd)
+    except OSError as exc:
+        raise SubscriptionError("subscription directory could not be inspected") from exc
+    if not stat.S_ISDIR(entry.st_mode) or entry.st_uid != os.geteuid() or not _is_private_mode(entry.st_mode):
+        raise SubscriptionError("subscription directory must be an owned private directory")
+    return entry
+
+
+
+def _assert_private_final(entry: os.stat_result) -> os.stat_result:
+    if (
+        not stat.S_ISREG(entry.st_mode)
+        or entry.st_uid != os.geteuid()
+        or entry.st_nlink != 1
+        or not _is_private_mode(entry.st_mode)
+    ):
+        raise SubscriptionError("subscription destination must be an owned private regular file")
+    return entry
+
+
+
+def _inspect_final_inode(parent_fd: int, name: str) -> os.stat_result | None:
+    """Inspect the final inode through the trusted parent descriptor only."""
+
+    if not name or "/" in name or name in (".", ".."):
+        raise SubscriptionError("subscription destination name is unsafe")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise SubscriptionError("subscription destination safety features are unavailable")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = -1
+    try:
+        try:
+            fd = os.open(name, flags, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise SubscriptionError("subscription destination could not be inspected") from exc
+        try:
+            return _assert_private_final(os.fstat(fd))
+        except OSError as exc:
+            raise SubscriptionError("subscription destination could not be inspected") from exc
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
+
+def _selected_path(
+    path: str | os.PathLike[str] | None, *, inspect_final: bool = True
+) -> Path:
     if path is None:
         raise SubscriptionError("an explicit subscription path is required")
     try:
@@ -504,31 +752,332 @@ def _selected_path(path: str | os.PathLike[str] | None) -> Path:
     if selected != expected:
         raise SubscriptionError("subscription path must be the canonical local sub_url")
     _reject_symlink_components(selected)
-    parent_fd = _open_directory_no_symlinks(selected.parent)
-    os.close(parent_fd)
-    # The helper above is intentionally closed immediately; writes/status use
-    # their own directory descriptor to avoid path-based parent traversal.
-    # A missing final file is valid for a future write, but an existing final
-    # symlink is never accepted.
-    try:
-        entry = os.lstat(selected)
-    except FileNotFoundError:
-        return selected
-    if stat.S_ISLNK(entry.st_mode):
-        raise SubscriptionError("subscription destination is a symlink")
+    if inspect_final:
+        parent_fd = _open_subscription_parent(selected, root=root)
+        try:
+            _inspect_final_inode(parent_fd, selected.name)
+        finally:
+            os.close(parent_fd)
     return selected
 
 
 
-def _open_subscription_parent(selected: Path) -> int:
-    return _open_directory_no_symlinks(selected.parent)
+def _open_subscription_parent(selected: Path, *, root: Path | None = None) -> int:
+    """Return a held, trusted ``BASE/vibe-vpn`` directory descriptor."""
+
+    trusted_root = root if root is not None else _canonical_secret_root()
+    expected = trusted_root / "vibe-vpn" / "sub_url"
+    if selected != expected:
+        raise SubscriptionError("subscription path must be the canonical local sub_url")
+    base_fd = -1
+    try:
+        base_fd = _open_directory_no_symlinks(trusted_root)
+        _assert_private_directory(base_fd)
+        if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+            raise SubscriptionError("subscription directory safety features are unavailable")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        flags |= getattr(os, "O_CLOEXEC", 0)
+        try:
+            parent_fd = os.open("vibe-vpn", flags, dir_fd=base_fd)
+        except OSError as exc:
+            raise SubscriptionError("subscription directory is unavailable") from exc
+        try:
+            _assert_private_directory(parent_fd)
+        except BaseException:
+            os.close(parent_fd)
+            raise
+        return parent_fd
+    finally:
+        if base_fd != -1:
+            os.close(base_fd)
+
+
+
+def _assert_private_lock(fd: int) -> os.stat_result:
+    """Validate the persistent lock inode through its already-open fd."""
+
+    try:
+        entry = os.fstat(fd)
+    except OSError:
+        raise SubscriptionError("subscription lock could not be inspected") from None
+    if (
+        not stat.S_ISREG(entry.st_mode)
+        or entry.st_uid != os.geteuid()
+        or entry.st_nlink != 1
+        or not _is_private_mode(entry.st_mode)
+    ):
+        raise SubscriptionError("subscription lock must be an owned private regular file")
+    return entry
+
+
+
+def _acquire_subscription_lock(parent_fd: int) -> int:
+    """Open and exclusively lock the persistent sibling of ``sub_url``.
+
+    The parent descriptor was opened and validated by ``_open_subscription_parent``.
+    The lock pathname is therefore never resolved through a process-global path,
+    and the inode is retained rather than unlinked after the transaction.
+    """
+
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_CLOEXEC"):
+        raise SubscriptionError("subscription lock safety features are unavailable")
+    flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC
+    flags |= getattr(os, "O_NONBLOCK", 0)
+    lock_fd = -1
+    try:
+        try:
+            lock_fd = os.open(SUBSCRIPTION_LOCK_NAME, flags, 0o600, dir_fd=parent_fd)
+        except OSError:
+            raise SubscriptionError("subscription lock could not be opened") from None
+        _assert_private_lock(lock_fd)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        except OSError:
+            raise SubscriptionError("subscription lock could not be acquired") from None
+        # Recheck both the descriptor and the descriptor-relative pathname
+        # after acquisition. A same-user actor that swaps the persistent
+        # pathname while this fd waits must not create a second lock domain.
+        opened_entry = _assert_private_lock(lock_fd)
+        try:
+            path_entry = os.stat(
+                SUBSCRIPTION_LOCK_NAME,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except OSError:
+            raise SubscriptionError("subscription lock path could not be inspected") from None
+        if (
+            not stat.S_ISREG(path_entry.st_mode)
+            or path_entry.st_uid != os.geteuid()
+            or path_entry.st_nlink != 1
+            or not _is_private_mode(path_entry.st_mode)
+            or (path_entry.st_dev, path_entry.st_ino)
+            != (opened_entry.st_dev, opened_entry.st_ino)
+        ):
+            raise SubscriptionError("subscription lock path changed")
+        return lock_fd
+    except BaseException:
+        if lock_fd != -1:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                os.close(lock_fd)
+            except OSError:
+                pass
+        raise
+
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    view = memoryview(data)
+    while view:
+        written = os.write(fd, view)
+        if written <= 0:
+            raise SubscriptionError("subscription staging write made no progress")
+        view = view[written:]
+
+
+
+def _copy_fd(source_fd: int, destination_fd: int) -> None:
+    """Copy a private snapshot without materializing secret bytes in logs."""
+
+    while True:
+        chunk = os.read(source_fd, 64 * 1024)
+        if not chunk:
+            return
+        _write_all(destination_fd, chunk)
+
+
+
+def _assert_private_stage(fd: int, *, expected_mode: int = 0o600) -> os.stat_result:
+    try:
+        entry = os.fstat(fd)
+    except OSError as exc:
+        raise SubscriptionError("subscription staging file could not be inspected") from exc
+    if (
+        not stat.S_ISREG(entry.st_mode)
+        or entry.st_uid != os.geteuid()
+        or entry.st_nlink != 1
+        or stat.S_IMODE(entry.st_mode) != stat.S_IMODE(expected_mode)
+        or not _is_private_mode(expected_mode)
+    ):
+        raise SubscriptionError("subscription staging file is not private")
+    return entry
+
+
+
+def _create_subscription_stage(parent_fd: int, *, label: str = "sub_url") -> tuple[str, int]:
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise SubscriptionError("subscription staging safety features are unavailable")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    flags |= getattr(os, "O_CLOEXEC", 0)
+    for _ in range(8):
+        stage = f".{label}.{os.getpid()}.{secrets.token_hex(16)}.tmp"
+        try:
+            fd = os.open(stage, flags, 0o600, dir_fd=parent_fd)
+        except FileExistsError:
+            continue
+        except OSError as exc:
+            raise SubscriptionError("subscription staging file could not be created") from exc
+        return stage, fd
+    raise SubscriptionError("subscription staging file could not be created")
+
+
+
+def _open_final_inode(parent_fd: int, name: str) -> tuple[int, os.stat_result | None]:
+    """Open the final inode for a descriptor-relative, immutable snapshot."""
+
+    if not name or "/" in name or name in (".", ".."):
+        raise SubscriptionError("subscription destination name is unsafe")
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise SubscriptionError("subscription destination safety features are unavailable")
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(name, flags, dir_fd=parent_fd)
+    except FileNotFoundError:
+        return -1, None
+    except OSError as exc:
+        raise SubscriptionError("subscription destination could not be inspected") from exc
+    try:
+        return fd, _assert_private_final(os.fstat(fd))
+    except BaseException:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+
+
+
+def _inspect_inode_identity(entry: os.stat_result | None) -> tuple[int, int] | None:
+    if entry is None:
+        return None
+    return entry.st_dev, entry.st_ino
+
+
+
+def _unlink_stage_if_owned(parent_fd: int, name: str, stage_fd: int) -> None:
+    """Remove a stage only while its pathname still names our inode."""
+
+    probe_fd = -1
+    try:
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        try:
+            probe_fd = os.open(name, flags, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return
+        except OSError:
+            return
+        if _inspect_inode_identity(os.fstat(probe_fd)) != _inspect_inode_identity(os.fstat(stage_fd)):
+            return
+        os.unlink(name, dir_fd=parent_fd)
+    except (OSError, ValueError):
+        # Cleanup is deliberately silent; neither a private stage name nor an
+        # operating-system error belongs in UI output.
+        pass
+    finally:
+        if probe_fd != -1:
+            try:
+                os.close(probe_fd)
+            except OSError:
+                pass
+
+
+
+def _rollback_subscription(
+    *,
+    parent_fd: int,
+    name: str,
+    original_identity: tuple[int, int] | None,
+    candidate_identity: tuple[int, int] | None,
+    rollback_name: str | None,
+    rollback_fd: int,
+    rollback_is_absent: bool,
+    rollback_mode: int | None,
+) -> bool:
+    """Compensate a post-rename failure without overwriting a raced inode."""
+
+    rollback_ok = True
+    try:
+        current = _inspect_final_inode(parent_fd, name)
+    except BaseException:
+        current = None
+        rollback_ok = False
+
+    current_identity = _inspect_inode_identity(current)
+    already_restored = (
+        current_identity == original_identity
+        if not rollback_is_absent
+        else current is None
+    )
+    if not already_restored:
+        # Never restore over an inode that is not the one installed by this
+        # transaction. This is the race barrier for a newer writer.
+        if current_identity != candidate_identity or rollback_name is None:
+            rollback_ok = False
+        else:
+            try:
+                if rollback_is_absent:
+                    os.unlink(name, dir_fd=parent_fd)
+                else:
+                    os.replace(rollback_name, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+            except BaseException:
+                rollback_ok = False
+
+    # Verify the best state we can establish before the directory sync. A
+    # failed sync is still reported as incomplete even when bytes/mode are
+    # already back in place.
+    try:
+        restored = _inspect_final_inode(parent_fd, name)
+        if rollback_is_absent:
+            state_matches = restored is None
+        else:
+            rollback_entry = _assert_private_stage(rollback_fd, expected_mode=rollback_mode)  # type: ignore[arg-type]
+            state_matches = (
+                restored is not None
+                and _inspect_inode_identity(restored) == _inspect_inode_identity(rollback_entry)
+                and stat.S_IMODE(restored.st_mode) == stat.S_IMODE(rollback_mode)  # type: ignore[arg-type]
+            )
+        # An injected/underlying rename can report an error after moving the
+        # stage. The final descriptor-relative state, not that ambiguous
+        # return status, decides whether compensation completed.
+        rollback_ok = state_matches
+    except BaseException:
+        rollback_ok = False
+
+    try:
+        os.fsync(parent_fd)
+    except BaseException:
+        rollback_ok = False
+    return rollback_ok
+
+
+
+def _verify_replaced_inode(stage_fd: int, parent_fd: int, name: str) -> None:
+    staged = _assert_private_stage(stage_fd)
+    final = _inspect_final_inode(parent_fd, name)
+    if final is None or _inspect_inode_identity(final) != _inspect_inode_identity(staged):
+        raise SubscriptionError("subscription destination changed during replacement")
 
 
 
 def write_subscription(path: str | os.PathLike[str] | None, value: str) -> None:
-    """Write only the canonical local subscription file, without secret reads."""
+    """Atomically replace the canonical local subscription file.
 
-    selected = _selected_path(path)
+    Existing destination inodes are never opened for writing or truncated. A
+    new private inode is written and fsynced, then installed with a relative
+    rename while the trusted ``BASE/vibe-vpn`` descriptor remains held. Any
+    failure after that rename is compensated from a private rollback stage.
+    A persistent sibling lock serializes the complete descriptor-relative
+    transaction across processes and remains until stage cleanup finishes.
+    """
+
+    # Path/root validation may happen before the lock, but no final inode is
+    # trusted until the persistent sibling lock has been acquired.
+    selected = _selected_path(path, inspect_final=False)
     if not isinstance(value, str) or not value or not value.strip():
         raise SubscriptionError("subscription value must not be empty")
     if len(value) > MAX_SUBSCRIPTION_LENGTH:
@@ -537,53 +1086,172 @@ def write_subscription(path: str | os.PathLike[str] | None, value: str) -> None:
         raise SubscriptionError("subscription value must be one line")
     try:
         encoded = value.encode("utf-8")
-    except UnicodeEncodeError as exc:
-        raise SubscriptionError("subscription value is not valid UTF-8") from exc
+    except UnicodeEncodeError:
+        raise SubscriptionError("subscription value is not valid UTF-8") from None
     if len(encoded) > MAX_SUBSCRIPTION_LENGTH:
         raise SubscriptionError("subscription value is too long")
 
     parent_fd = -1
-    fd = -1
+    lock_fd = -1
+    original_fd = -1
+    stage_fd = -1
+    rollback_fd = -1
+    stage_name: str | None = None
+    rollback_name: str | None = None
+    rollback_is_absent = False
+    original_identity: tuple[int, int] | None = None
+    candidate_identity: tuple[int, int] | None = None
+    rollback_mode: int | None = None
+
     try:
         parent_fd = _open_subscription_parent(selected)
-        base_flags = os.O_WRONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-        base_flags |= getattr(os, "O_NONBLOCK", 0)
-        for _ in range(2):
-            try:
-                fd = os.open(selected.name, base_flags, dir_fd=parent_fd)
-                break
-            except FileNotFoundError:
-                try:
-                    fd = os.open(
-                        selected.name,
-                        base_flags | os.O_CREAT | os.O_EXCL,
-                        0o600,
-                        dir_fd=parent_fd,
-                    )
-                    break
-                except FileExistsError:
-                    continue
-        if fd == -1:
-            raise SubscriptionError("subscription destination could not be opened")
-        entry = os.fstat(fd)
-        if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
-            raise SubscriptionError("subscription destination is not an owned regular file")
-        os.ftruncate(fd, 0)
-        view = memoryview(encoded)
-        while view:
-            written = os.write(fd, view)
-            view = view[written:]
-        os.fchmod(fd, 0o600)
-        os.fsync(fd)
+        lock_fd = _acquire_subscription_lock(parent_fd)
+
+        # This is the write transaction's final-file preflight. It is
+        # deliberately after lock acquisition so a second process cannot
+        # snapshot, stage, replace, verify, or roll back concurrently.
+        original_fd, original_entry = _open_final_inode(parent_fd, selected.name)
+        if original_entry is not None:
+            original_identity = _inspect_inode_identity(original_entry)
+            rollback_mode = stat.S_IMODE(original_entry.st_mode)
+        else:
+            rollback_is_absent = True
+
+        # This is a private, O_EXCL, descriptor-relative copy of the exact
+        # pre-call state. It is deliberately not a hard link: rollback must
+        # remain independent of the inode being replaced.
+        rollback_name, rollback_fd = _create_subscription_stage(
+            parent_fd, label="sub_url-rollback"
+        )
+        if original_fd != -1:
+            _copy_fd(original_fd, rollback_fd)
+            current_original = os.fstat(original_fd)
+            if (
+                _inspect_inode_identity(current_original) != original_identity
+                or stat.S_IMODE(current_original.st_mode) != rollback_mode
+                or current_original.st_size != original_entry.st_size  # type: ignore[union-attr]
+            ):
+                raise SubscriptionError("subscription destination changed during staging")
+            os.fchmod(rollback_fd, rollback_mode)  # type: ignore[arg-type]
+            _assert_private_stage(rollback_fd, expected_mode=rollback_mode)  # type: ignore[arg-type]
+        else:
+            # An empty private stage plus this in-memory flag records that the
+            # original final entry was absent. It is never renamed to target.
+            _assert_private_stage(rollback_fd)
+        os.fsync(rollback_fd)
+        if rollback_is_absent:
+            _assert_private_stage(rollback_fd)
+        else:
+            _assert_private_stage(rollback_fd, expected_mode=rollback_mode)  # type: ignore[arg-type]
+
+        stage_name, stage_fd = _create_subscription_stage(parent_fd)
+        os.fchmod(stage_fd, 0o600)
+        _assert_private_stage(stage_fd)
+        _write_all(stage_fd, encoded)
+        os.fchmod(stage_fd, 0o600)
+        _assert_private_stage(stage_fd)
+        os.fsync(stage_fd)
+        candidate_entry = _assert_private_stage(stage_fd)
+        candidate_identity = _inspect_inode_identity(candidate_entry)
+
+        # This is intentionally the last observation before renameat: the
+        # original final inode must still be the one captured before staging.
+        # A changed inode is rejected without touching either final state.
+        before_replace = _inspect_final_inode(parent_fd, selected.name)
+        if _inspect_inode_identity(before_replace) != original_identity:
+            raise SubscriptionError("subscription destination changed during staging")
+
+        try:
+            os.replace(stage_name, selected.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        except BaseException:
+            # An adapter/test double can perform the rename and then raise. Run
+            # the same identity-checked compensation path; if no rename took
+            # place it observes the unchanged original and performs no write.
+            rollback_ok = _rollback_subscription(
+                parent_fd=parent_fd,
+                name=selected.name,
+                original_identity=original_identity,
+                candidate_identity=candidate_identity,
+                rollback_name=rollback_name,
+                rollback_fd=rollback_fd,
+                rollback_is_absent=rollback_is_absent,
+                rollback_mode=rollback_mode,
+            )
+            raise SubscriptionError(
+                "subscription update failed; prior state restored"
+                if rollback_ok
+                else "subscription update failed; rollback incomplete"
+            ) from None
+
+        try:
+            # The directory sync and final-inode verification are both inside
+            # the transaction: any failure after os.replace must restore the
+            # exact pre-call bytes/mode before returning.
+            os.fsync(parent_fd)
+            _verify_replaced_inode(stage_fd, parent_fd, selected.name)
+            # Keep the final directory sync inside the same compensation
+            # window. This second sync is intentionally not allowed to turn a
+            # post-rename durability failure into a committed in-memory state.
+            os.fsync(parent_fd)
+        except BaseException:
+            rollback_ok = _rollback_subscription(
+                parent_fd=parent_fd,
+                name=selected.name,
+                original_identity=original_identity,
+                candidate_identity=candidate_identity,
+                rollback_name=rollback_name,
+                rollback_fd=rollback_fd,
+                rollback_is_absent=rollback_is_absent,
+                rollback_mode=rollback_mode,
+            )
+            raise SubscriptionError(
+                "subscription update failed; prior state restored"
+                if rollback_ok
+                else "subscription update failed; rollback incomplete"
+            ) from None
     except SubscriptionError:
         raise
-    except OSError as exc:
-        raise SubscriptionError("subscription destination could not be written") from exc
+    except BaseException:
+        # Keep all filesystem and encoding failures free of paths, bytes, and
+        # exception text that could contain a subscription URL.
+        raise SubscriptionError("subscription destination could not be written") from None
     finally:
-        if fd != -1:
-            os.close(fd)
+        if original_fd != -1:
+            try:
+                os.close(original_fd)
+            except OSError:
+                pass
         if parent_fd != -1:
-            os.close(parent_fd)
+            if stage_name is not None and stage_fd != -1:
+                _unlink_stage_if_owned(parent_fd, stage_name, stage_fd)
+            if rollback_name is not None and rollback_fd != -1:
+                _unlink_stage_if_owned(parent_fd, rollback_name, rollback_fd)
+        if stage_fd != -1:
+            try:
+                os.close(stage_fd)
+            except OSError:
+                pass
+        if rollback_fd != -1:
+            try:
+                os.close(rollback_fd)
+            except OSError:
+                pass
+        if parent_fd != -1:
+            try:
+                os.close(parent_fd)
+            except OSError:
+                pass
+        # Unlock last: all rollback, stage removal, and descriptor cleanup
+        # above still happens while the process owns the exclusive lock.
+        if lock_fd != -1:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            try:
+                os.close(lock_fd)
+            except OSError:
+                pass
 
 
 
@@ -596,17 +1264,12 @@ def subscription_configured(path: str | os.PathLike[str] | None) -> bool:
         selected = _selected_path(path)
         parent_fd = _open_subscription_parent(selected)
         try:
-            entry = os.stat(selected.name, dir_fd=parent_fd, follow_symlinks=False)
+            entry = _inspect_final_inode(parent_fd, selected.name)
         finally:
             os.close(parent_fd)
     except (OSError, SubscriptionError, TypeError, ValueError):
         return False
-    return (
-        stat.S_ISREG(entry.st_mode)
-        and entry.st_nlink == 1
-        and stat.S_IMODE(entry.st_mode) == 0o600
-        and entry.st_size > 0
-    )
+    return entry is not None and entry.st_size > 0
 
 
 @dataclass
@@ -625,6 +1288,12 @@ class TuiState:
     networkmanager_active: str = "unknown"
 
     def __post_init__(self) -> None:
+        # Fail closed before even the initial metadata/status probe. The helper
+        # still returns False for malformed explicit paths, but an arbitrary
+        # environment root must not become a silent "missing" status.
+        _canonical_secret_root()
+        if self.subscription_path is not None:
+            _validate_subscription_argument(self.subscription_path)
         self.subscription_ready = subscription_configured(self.subscription_path)
 
     @property
@@ -847,6 +1516,8 @@ def run_curses(screen: object, state: TuiState) -> None:
         assert selected.lifecycle_action is not None
         result = state.dispatch(selected.lifecycle_action)
         state.refresh()
+        if result.reason == "cancelled":
+            return
         if result.ok:
             message = f"{selected.label} requested via the lifecycle adapter."
         else:
@@ -857,19 +1528,7 @@ def run_curses(screen: object, state: TuiState) -> None:
 def _validate_subscription_argument(path: str | os.PathLike[str]) -> None:
     """Reject an explicit CLI path before status mode does any filesystem work."""
 
-    try:
-        raw = os.fspath(path)
-    except (TypeError, ValueError) as exc:
-        raise SubscriptionError("subscription path is invalid") from exc
-    if not isinstance(raw, str) or raw == "":
-        raise SubscriptionError("subscription path is invalid")
-    selected = Path(os.path.expanduser(raw))
-    if not selected.is_absolute() or any(part == ".." for part in selected.parts):
-        raise SubscriptionError("subscription path must be an absolute canonical path")
-    expected = _canonical_secret_root() / "vibe-vpn" / "sub_url"
-    if selected != expected:
-        raise SubscriptionError("subscription path must be the canonical local sub_url")
-    _reject_symlink_components(selected)
+    _selected_path(path)
 
 
 

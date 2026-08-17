@@ -34,6 +34,10 @@ UUID_PATTERN='^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A
 # to a tunnel-shaped, shell-safe name while allowing names such as tun-local
 # or tun0.100 used by some NetworkManager setups.
 DEVICE_PATTERN='^tun[A-Za-z0-9_.-]{0,14}$'
+# NetworkManager can report a VPN's base/transport device while the VPN
+# address is still being installed.  Keep activation readiness bounded by the
+# helper rather than inheriting nmcli's long default wait.
+NM_CONNECT_TIMEOUT_SECONDS=${VPNKIT_LOCAL_NM_CONNECT_TIMEOUT_SECONDS:-30}
 YES=0
 ACTION=${1:-plan}
 [[ $# -gt 0 ]] && shift
@@ -415,9 +419,9 @@ connection_rows() {
   LC_ALL=C nmcli -t -f NAME,UUID,TYPE connection show 2>/dev/null
 }
 active_connection_rows() {
-  # DEVICE is read only from the active row for the owned UUID.  Do not
-  # expose a name obtained from an arbitrary profile or from a free-form
-  # NetworkManager diagnostic.
+  # DEVICE is retained as diagnostic context only.  For a VPN it may be the
+  # base/transport interface rather than the tunnel created by the VPN
+  # plugin, so it is never used as the owned tunnel proof.
   LC_ALL=C nmcli -t -f NAME,UUID,TYPE,DEVICE connection show --active 2>/dev/null
 }
 
@@ -447,9 +451,11 @@ safe_device_name() {
   [[ "$device" != ppp0 && "$device" != vpn0 ]]
 }
 
-active_device_for_uuid() {
+# Prove that the exact persisted UUID is active without trusting its reported
+# DEVICE.  A work VPN or another profile may use the same transport device,
+# but it cannot satisfy the UUID match below.
+active_connection_for_uuid() {
   local wanted=${1,,} rows line name uuid type device rest found=0
-  ACTIVE_DEVICE=
   uuid_is_valid "$wanted" || return 2
   rows=$(active_connection_rows) || return 2
   while IFS= read -r line; do
@@ -458,26 +464,132 @@ active_device_for_uuid() {
     IFS=: read -r name uuid type device rest <<<"$line"
     uuid_is_valid "$uuid" || continue
     [[ "${uuid,,}" == "$wanted" ]] || continue
-    # A VPN row without exactly one safe tunnel device is not a usable active
-    # capability.  Refuse ambiguous or malformed output instead of exposing
-    # a value that could redirect the host smoke to another interface.
     [[ "$type" == vpn ]] || return 2
-    safe_device_name "$device" || return 2
     (( found == 0 )) || return 2
-    ACTIVE_DEVICE=$device
     found=1
   done <<<"$rows"
   (( found == 1 )) || return 1
 }
 
-active_has_uuid() {
-  local rc
-  if active_device_for_uuid "$1" >/dev/null 2>&1; then
-    rc=0
+ipv4_address_is_valid() {
+  local value=$1 old_ifs=$IFS octet
+  local -a octets=()
+  IFS=.
+  read -r -a octets <<<"$value"
+  IFS=$old_ifs
+  [[ ${#octets[@]} -eq 4 ]] || return 1
+  for octet in "${octets[@]}"; do
+    [[ "$octet" =~ ^[0-9]{1,3}$ ]] || return 1
+    (( 10#$octet <= 255 )) || return 1
+  done
+}
+
+ipv4_cidr_is_valid() {
+  local value=$1 address prefix
+  [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]] || return 1
+  address=${value%/*}
+  prefix=${value##*/}
+  ipv4_address_is_valid "$address" || return 1
+  (( 10#$prefix <= 32 ))
+}
+
+parse_active_ip4_values() {
+  local output=$1 line value found=0
+  ACTIVE_IPV4=
+  while IFS= read -r line; do
+    line=${line%$'\r'}
+    [[ -n "$line" ]] || continue
+    if [[ "$line" == *:* ]]; then
+      value=${line##*:}
+    else
+      value=$line
+    fi
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    [[ -z "$value" || "$value" == -- ]] && continue
+    ipv4_cidr_is_valid "$value" || return 2
+    (( found == 0 )) || return 2
+    ACTIVE_IPV4=$value
+    found=1
+  done <<<"$output"
+  (( found == 1 )) || return 3
+}
+
+# Query only the active IP data for the exact owned UUID. An active VPN may
+# briefly have no address while it is activating; return 3 for that bounded
+# readiness state. Any malformed or duplicate address is unsafe. NetworkManager
+# exposes active IP4 data through `connection show uuid` on current releases;
+# the device-details fallback still binds the address to the exact UUID rather
+# than trusting the transport DEVICE field from an active VPN row.
+active_ip4_for_uuid() {
+  local wanted=${1,,} output fallback_output rc
+  ACTIVE_IPV4=
+  uuid_is_valid "$wanted" || return 2
+  output=$(LC_ALL=C nmcli -t -f IP4.ADDRESS connection show uuid "$wanted" 2>/dev/null) || return 2
+  if parse_active_ip4_values "$output"; then
+    return 0
   else
     rc=$?
+    if (( rc == 2 )); then
+      return 2
+    fi
   fi
-  (( rc == 0 ))
+
+  if ! fallback_output=$(LC_ALL=C nmcli -t -f GENERAL.CON-UUID,IP4.ADDRESS device show 2>/dev/null | \
+    awk -F: -v wanted="$wanted" '
+      tolower($1) == "general.con-uuid" { matched=(tolower($2) == tolower(wanted)); next }
+      matched && $1 ~ /^IP4\.ADDRESS/ { print $2 }
+    '); then
+    # A device-details field set is not available on every nmcli frontend;
+    # treat that as the same bounded activation race as an empty IP field.
+    return 3
+  fi
+  parse_active_ip4_values "$fallback_output"
+}
+
+# The kernel address table is the second half of the proof.  Match the exact
+# address/CIDR reported for the owned active UUID and require one, and only
+# one, safe tun-shaped interface.  A missing or non-tunnel match is not
+# accepted as a hint to try an arbitrary tun/ppp/vpn device.
+kernel_device_for_ipv4() {
+  local wanted=$1 wanted_address=${1%/*} output line index device family address rest found=0
+  ACTIVE_DEVICE=
+  command -v ip >/dev/null 2>&1 || return 2
+  output=$(ip -o -4 addr 2>/dev/null) || return 2
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    read -r index device family address rest <<<"$line"
+    # Point-to-point tun addresses may be printed without a local prefix
+    # (followed by `peer`), while subnet-style tun addresses include /CIDR.
+    # The exact IPv4 address remains the UUID-bound identity; any duplicate
+    # kernel occurrence is rejected below.
+    address=${address%%/*}
+    [[ "$family" == inet && "$address" == "$wanted_address" ]] || continue
+    safe_device_name "$device" || return 2
+    (( found == 0 )) || return 2
+    ACTIVE_DEVICE=$device
+    found=1
+  done <<<"$output"
+  (( found == 1 )) || return 2
+}
+
+# Return 3 when the UUID is active but its runtime address is not ready yet;
+# return 2 for malformed, mismatched, or ambiguous proof.
+active_device_for_uuid() {
+  local wanted=${1,,} rc
+  ACTIVE_DEVICE=
+  uuid_is_valid "$wanted" || return 2
+  active_connection_for_uuid "$wanted" || return $?
+  active_ip4_for_uuid "$wanted" || {
+    rc=$?
+    (( rc == 3 )) && return 3
+    return 2
+  }
+  kernel_device_for_ipv4 "$ACTIVE_IPV4" || return 2
+}
+
+active_has_uuid() {
+  active_connection_for_uuid "$1" >/dev/null 2>&1
 }
 
 load_nm_profile() {
@@ -889,9 +1001,39 @@ read_owned_active_state() {
   fi
   case "$rc" in
     0) return 0 ;;
-    1) ACTIVE_DEVICE=none; return 1 ;;
+    1|3) ACTIVE_DEVICE=none; return 1 ;;
     *) ACTIVE_DEVICE=invalid; return 2 ;;
   esac
+}
+
+nm_connect_timeout() {
+  [[ "$NM_CONNECT_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] &&
+    (( 10#$NM_CONNECT_TIMEOUT_SECONDS >= 1 && 10#$NM_CONNECT_TIMEOUT_SECONDS <= 120 )) || {
+    echo 'VPNKIT_LOCAL_NM_CONNECT_TIMEOUT_SECONDS must be in 1..120' >&2
+    return 1
+  }
+  printf '%s\n' "$NM_CONNECT_TIMEOUT_SECONDS"
+}
+
+wait_for_owned_active_device() {
+  local uuid=$1 timeout deadline rc
+  timeout=$(nm_connect_timeout) || return 2
+  deadline=$((SECONDS + timeout))
+  while :; do
+    if active_device_for_uuid "$uuid" >/dev/null 2>&1; then
+      return 0
+    else
+      rc=$?
+    fi
+    # No active row or no assigned IPv4 is a normal activation race.  A
+    # malformed/duplicate/mismatched address is unsafe and must fail closed.
+    case "$rc" in
+      1|3) ;;
+      *) return 2 ;;
+    esac
+    (( SECONDS >= deadline )) && return 1
+    sleep 1
+  done
 }
 
 plan() {
@@ -971,12 +1113,44 @@ require_owned() {
   [[ "$OWNERSHIP" == owned ]] || { ownership_error; exit 11; }
 }
 
+verify_active_mapping() {
+  need_nm
+  require_owned
+  read_owned_active_state "$STATE_UUID" || {
+    echo 'owned NetworkManager UUID to IPv4 to tun mapping is unavailable' >&2
+    exit 20
+  }
+  # An assigned IPv4 on the exact owned UUID and a matching kernel tun device
+  # are the NetworkManager/OpenVPN handshake proof. Do not print the UUID or
+  # address: callers only need the bounded proof markers.
+  printf 'networkmanager_mapping=pass\n'
+  printf 'owned_uuid_ip4_tun=pass\n'
+  printf 'openvpn_handshake=pass\n'
+  printf 'device=%s\n' "$ACTIVE_DEVICE"
+}
+
 connect_profile() {
+  local rc
   confirm
   need_nm
   require_owned
-  nmcli connection up uuid "$STATE_UUID" >/dev/null 2>&1 || { echo 'NetworkManager connect failed' >&2; exit 20; }
-  read_owned_active_state "$STATE_UUID" || { echo 'NetworkManager did not report a safe device for the owned profile' >&2; exit 20; }
+  # Keep nmcli itself non-blocking and own the bounded readiness window.  A
+  # successful `connection up` can still leave the VPN active with no IP while
+  # the plugin finishes creating/configuring its tunnel.
+  nm_connect_timeout >/dev/null || exit 2
+  command -v ip >/dev/null 2>&1 || { echo 'ip is unavailable for NetworkManager connect' >&2; exit 10; }
+  nmcli --wait 0 connection up uuid "$STATE_UUID" >/dev/null 2>&1 || { echo 'NetworkManager connect failed' >&2; exit 20; }
+  if wait_for_owned_active_device "$STATE_UUID"; then
+    :
+  else
+    rc=$?
+    if (( rc == 1 )); then
+      echo 'NetworkManager connect timed out before the owned tunnel became ready' >&2
+    else
+      echo 'NetworkManager did not report a safe device for the owned profile' >&2
+    fi
+    exit 20
+  fi
   printf 'networkmanager_connect=ok\nconnection=vpnkit-local\ndevice=%s\n' "$ACTIVE_DEVICE"
 }
 
@@ -990,11 +1164,14 @@ disconnect_profile() {
     return
   fi
   [[ "$OWNERSHIP" == owned ]] || { ownership_error; exit 20; }
-  if read_owned_active_state "$STATE_UUID"; then
+  # Stopping is authorized by the exact owned UUID, not by the tunnel mapping.
+  # The mapping can disappear first during activation/rollback, while nmcli
+  # can still safely deactivate this UUID without touching a work VPN.
+  if active_connection_for_uuid "$STATE_UUID"; then
     nmcli connection down uuid "$STATE_UUID" >/dev/null 2>&1 || { echo 'NetworkManager disconnect failed' >&2; exit 20; }
   else
     rc=$?
-    (( rc == 1 )) || { echo 'active owned NetworkManager device is unavailable or unsafe' >&2; exit 20; }
+    (( rc == 1 )) || { echo 'active owned NetworkManager connection is unavailable or unsafe' >&2; exit 20; }
   fi
   printf 'networkmanager_disconnect=ok\nconnection=vpnkit-local\n'
 }
@@ -1009,16 +1186,18 @@ remove_profile() {
     return
   fi
   [[ "$OWNERSHIP" == owned ]] || { ownership_error; exit 20; }
-  if read_owned_active_state "$STATE_UUID"; then
+  # As with disconnect, do not require a safe interface mapping before the
+  # exact owned UUID can be brought down and removed.
+  if active_connection_for_uuid "$STATE_UUID"; then
     nmcli connection down uuid "$STATE_UUID" >/dev/null 2>&1 || { echo 'NetworkManager disconnect failed' >&2; exit 20; }
   else
     rc=$?
-    (( rc == 1 )) || { echo 'active owned NetworkManager device is unavailable or unsafe' >&2; exit 20; }
+    (( rc == 1 )) || { echo 'active owned NetworkManager connection is unavailable or unsafe' >&2; exit 20; }
   fi
   delete_uuid "$STATE_UUID" || { echo 'NetworkManager remove failed' >&2; exit 20; }
   clear_state || { echo 'NetworkManager ownership state could not be cleared' >&2; exit 20; }
   printf 'networkmanager_remove=ok\nconnection=vpnkit-local\n'
 }
 
-usage() { printf 'Usage: %s plan|status|import|connect|disconnect|remove [--yes]\n' "$0"; }
-case "$ACTION" in plan) plan ;; status) status ;; import) import_profile ;; connect) connect_profile ;; disconnect) disconnect_profile ;; remove) remove_profile ;; help|-h|--help) usage ;; *) usage >&2; exit 2 ;; esac
+usage() { printf 'Usage: %s plan|status|verify|import|connect|disconnect|remove [--yes]\n' "$0"; }
+case "$ACTION" in plan) plan ;; status) status ;; verify) [[ $# -eq 0 ]] || { usage >&2; exit 2; }; verify_active_mapping ;; import) import_profile ;; connect) connect_profile ;; disconnect) disconnect_profile ;; remove) remove_profile ;; help|-h|--help) usage ;; *) usage >&2; exit 2 ;; esac

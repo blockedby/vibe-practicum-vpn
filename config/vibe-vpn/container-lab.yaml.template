@@ -8,6 +8,8 @@ sing_box_config: /var/lib/vpnkit/sing-box/config.json
 sing_box_service: vpnkit-supervised-sing-box
 sing_box_restart_mode: request-file
 sing_box_restart_file: /run/vpnkit/restart-sing-box
+sing_box_restart_ack_generation_file: /run/vpnkit/sing-box-generation
+sing_box_restart_ack_file: /run/vpnkit/sing-box-generation.ack
 state_dir: /var/lib/vibe-vpn
 production_socks: 127.0.0.1:2080
 test_socks: 127.0.0.1:18080

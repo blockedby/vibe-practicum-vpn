@@ -40,22 +40,23 @@ func (d *Duration) parse(s string) error {
 }
 
 type Config struct {
-	SubscriptionFile         string   `json:"subscription_file" yaml:"subscription_file"`
-	ExtraNodesFile           string   `json:"extra_nodes_file" yaml:"extra_nodes_file"`
-	Runtime                  string   `json:"runtime" yaml:"runtime"`
-	XrayBin                  string   `json:"xray_bin" yaml:"xray_bin"`
-	XrayConfig               string   `json:"xray_config" yaml:"xray_config"`
-	SingBoxBin               string   `json:"sing_box_bin" yaml:"sing_box_bin"`
-	SingBoxConfig            string   `json:"sing_box_config" yaml:"sing_box_config"`
-	SingBoxService           string   `json:"sing_box_service" yaml:"sing_box_service"`
-	SingBoxRestartMode       string   `json:"sing_box_restart_mode" yaml:"sing_box_restart_mode"`
-	SingBoxRestartFile       string   `json:"sing_box_restart_file" yaml:"sing_box_restart_file"`
+	SubscriptionFile   string `json:"subscription_file" yaml:"subscription_file"`
+	ExtraNodesFile     string `json:"extra_nodes_file" yaml:"extra_nodes_file"`
+	Runtime            string `json:"runtime" yaml:"runtime"`
+	XrayBin            string `json:"xray_bin" yaml:"xray_bin"`
+	XrayConfig         string `json:"xray_config" yaml:"xray_config"`
+	SingBoxBin         string `json:"sing_box_bin" yaml:"sing_box_bin"`
+	SingBoxConfig      string `json:"sing_box_config" yaml:"sing_box_config"`
+	SingBoxService     string `json:"sing_box_service" yaml:"sing_box_service"`
+	SingBoxRestartMode string `json:"sing_box_restart_mode" yaml:"sing_box_restart_mode"`
+	SingBoxRestartFile string `json:"sing_box_restart_file" yaml:"sing_box_restart_file"`
+	// SingBoxRestartAckFile names the supervisor health acknowledgement file.
+	// Its token/generation/health fields are checked together by vibe-vpn.
 	SingBoxRestartAckFile    string   `json:"sing_box_restart_ack_file" yaml:"sing_box_restart_ack_file"`
 	SingBoxRestartAckTimeout Duration `json:"sing_box_restart_ack_timeout" yaml:"sing_box_restart_ack_timeout"`
-	// SingBoxRestartAckGenerationFile is an explicit-name alias for configs
-	// that prefer to describe the acknowledgement marker rather than the
-	// request/ack protocol. The runtime uses it when SingBoxRestartAckFile is
-	// empty.
+	// SingBoxRestartAckGenerationFile names the monotonically increasing
+	// runtime generation marker. It is intentionally separate from the health
+	// acknowledgement file so a generation bump alone cannot commit state.
 	SingBoxRestartAckGenerationFile string        `json:"sing_box_restart_ack_generation_file,omitempty" yaml:"sing_box_restart_ack_generation_file,omitempty"`
 	StateDir                        string        `json:"state_dir" yaml:"state_dir"`
 	ProductionSocks                 string        `json:"production_socks" yaml:"production_socks"`
@@ -289,8 +290,15 @@ func (c Config) Validate() error {
 		if c.SingBoxService == "" {
 			return fmt.Errorf("sing_box_service is empty")
 		}
-		if strings.EqualFold(strings.TrimSpace(c.SingBoxRestartMode), "request-file") && c.SingBoxRestartFile == "" {
-			return fmt.Errorf("sing_box_restart_file is required for request-file mode")
+		if strings.EqualFold(strings.TrimSpace(c.SingBoxRestartMode), "request-file") {
+			if c.SingBoxRestartFile == "" {
+				return fmt.Errorf("sing_box_restart_file is required for request-file mode")
+			}
+			if c.SingBoxRestartAckGenerationFile == "" {
+				return fmt.Errorf("sing_box_restart_ack_generation_file is required for request-file mode")
+			}
+			// The runtime derives <generation>.ack when this optional explicit
+			// path is omitted, but the generation marker itself is mandatory.
 		}
 	case "xray":
 		if c.XrayBin == "" {

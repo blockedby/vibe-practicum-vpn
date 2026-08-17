@@ -6,6 +6,7 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/secrets/openvpn/client" "$tmp/profiles"
 printf '%s\n' 'client' 'dev tun' 'proto udp' 'remote 127.0.0.1 21194' >"$tmp/secrets/openvpn/client/vpnkit-local.ovpn"
 : >"$tmp/log"; : >"$tmp/connections"; : >"$tmp/active"
+: >"$tmp/active-ip4"; : >"$tmp/ip-addresses"; : >"$tmp/pending-ip4-queries"
 printf '1\n' >"$tmp/import-number"
 rm -f -- "$tmp/failure-marker"
 
@@ -20,6 +21,14 @@ connections="$MOCK_CONNECTIONS"
 active="$MOCK_ACTIVE"
 profiles="$MOCK_PROFILES"
 next_file="$MOCK_IMPORT_NUMBER"
+active_ip4="$MOCK_ACTIVE_IP4"
+pending_ip4_queries="$MOCK_PENDING_IP4_QUERIES"
+
+# Keep the mock close to the real command shape while allowing the helper to
+# own a bounded readiness wait after nmcli returns.
+while [[ "${1:-}" == --wait || "${1:-}" == -w ]]; do
+  shift 2
+done
 
 rewrite_name() {
   local uuid=$1 name=$2 line current_uuid current_name current_type
@@ -90,6 +99,20 @@ case "${1:-}" in
     # Real-shaped terse connection inventory and profile detail responses.
     if [[ "${2:-}" == "-f" && "${4:-}" == "connection" && "${5:-}" == "show" ]]; then
       fields=${3:-}
+      if [[ "$fields" == "IP4.ADDRESS" && "${6:-}" == "uuid" ]]; then
+        uuid=${7:-}
+        if grep -Fq ":$uuid:" "$active"; then
+          if [[ -s "$pending_ip4_queries" ]]; then
+            pending=$(<"$pending_ip4_queries")
+            if [[ "$pending" =~ ^[0-9]+$ && pending -gt 0 ]]; then
+              printf '%s\n' "$((pending - 1))" >"$pending_ip4_queries"
+              exit 0
+            fi
+          fi
+          cat "$active_ip4"
+        fi
+        exit 0
+      fi
       if [[ "${6:-}" == "--active" ]]; then
         [[ "$fields" == "NAME,UUID,TYPE,DEVICE" ]] && cat "$active"
         exit 0
@@ -134,7 +157,9 @@ case "${1:-}" in
         [[ "${3:-}" == uuid ]] || exit 1
         uuid=${4:-}
         grep -Fq ":$uuid:" "$connections" || exit 1
-        grep -Fq ":$uuid:" "$active" || awk -F: -v wanted="$uuid" '$2 == wanted { printf "%s:%s:%s:tun7\n", $1, $2, $3; found=1 } END { exit !found }' "$connections" >>"$active"
+        # A real NM VPN row may expose its transport/base device (Meta), not
+        # the tunnel. The helper must prove the latter from IP4 + kernel data.
+        grep -Fq ":$uuid:" "$active" || awk -F: -v wanted="$uuid" '$2 == wanted { printf "%s:%s:%s:Meta\n", $1, $2, $3; found=1 } END { exit !found }' "$connections" >>"$active"
         ;;
       down)
         [[ "${3:-}" == uuid ]] || exit 1
@@ -155,6 +180,13 @@ case "${1:-}" in
 esac
 EOF
 chmod +x "$tmp/bin/nmcli" "$helper"
+cat >"$tmp/bin/ip" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "$*" == '-o -4 addr' ]] || exit 1
+cat "$MOCK_IP_ADDRS"
+EOF
+chmod +x "$tmp/bin/ip"
 cat >"$tmp/bin/mv" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -166,7 +198,7 @@ fi
 exec /bin/mv "$@"
 EOF
 chmod +x "$tmp/bin/mv"
-export PATH="$tmp/bin:$PATH" MOCK_LOG="$tmp/log" MOCK_CONNECTIONS="$tmp/connections" MOCK_ACTIVE="$tmp/active" MOCK_PROFILES="$tmp/profiles" MOCK_IMPORT_NUMBER="$tmp/import-number" MOCK_FAILURE_MARKER="$tmp/failure-marker" MOCK_STATE_FILE="$tmp/secrets/state/networkmanager-state" VPNKIT_LOCAL_SECRETS_DIR="$tmp/secrets" VPNKIT_LOCAL_TEST_FIXTURE=1
+export PATH="$tmp/bin:$PATH" MOCK_LOG="$tmp/log" MOCK_CONNECTIONS="$tmp/connections" MOCK_ACTIVE="$tmp/active" MOCK_PROFILES="$tmp/profiles" MOCK_IMPORT_NUMBER="$tmp/import-number" MOCK_FAILURE_MARKER="$tmp/failure-marker" MOCK_STATE_FILE="$tmp/secrets/state/networkmanager-state" MOCK_ACTIVE_IP4="$tmp/active-ip4" MOCK_IP_ADDRS="$tmp/ip-addresses" MOCK_PENDING_IP4_QUERIES="$tmp/pending-ip4-queries" VPNKIT_LOCAL_NM_CONNECT_TIMEOUT_SECONDS=2 VPNKIT_LOCAL_SECRETS_DIR="$tmp/secrets" VPNKIT_LOCAL_TEST_FIXTURE=1
 
 bash -n "$helper"
 plan=$($helper plan)
@@ -195,6 +227,16 @@ owned_uuid=$(<"$tmp/secrets/state/networkmanager-uuid")
 read -r state_uuid state_fingerprint <"$tmp/secrets/state/networkmanager-state"
 [[ "$state_uuid" == "$owned_uuid" && "$state_fingerprint" =~ ^[0-9a-f]{64}$ ]]
 old_profile_snapshot=$(<"$tmp/profiles/$owned_uuid")
+# The read-only verify action proves the exact owned UUID -> active IP4 ->
+# kernel tun mapping used as the OpenVPN handshake readiness gate.
+printf 'vpnkit-local:%s:vpn:Meta\n' "$owned_uuid" >"$tmp/active"
+printf '10.89.0.2/24\n' >"$tmp/active-ip4"
+printf '7 tun7 inet 10.89.0.2/24 scope global\n' >"$tmp/ip-addresses"
+verify_output=$($helper verify)
+grep -Fxq 'networkmanager_mapping=pass' <<<"$verify_output"
+grep -Fxq 'owned_uuid_ip4_tun=pass' <<<"$verify_output"
+grep -Fxq 'openvpn_handshake=pass' <<<"$verify_output"
+grep -Fxq 'device=tun7' <<<"$verify_output"
 grep -q "connection modify uuid $owned_uuid" "$tmp/log"
 grep -q "connection.id vpnkit-local" "$tmp/log"
 ! grep -Eq 'connection (up|down|delete) id ' "$tmp/log"
@@ -386,21 +428,50 @@ fi
 rm -f -- "$tmp/secrets/state/networkmanager-state"
 cp -- "$tmp/state-authority.snapshot" "$tmp/secrets/state/networkmanager-state"
 
+# The active NM row deliberately reports the transport/base interface Meta.
+# The owned active UUID's IP4 data and the kernel address table identify tun0.
+printf 'IP4.ADDRESS:10.89.0.2/24\n' >"$tmp/active-ip4"
+printf '7: tun0    inet 10.89.0.2 peer 10.89.0.1/32 scope global tun0\n' >"$tmp/ip-addresses"
+printf '1\n' >"$tmp/pending-ip4-queries"
 connect_output=$($helper connect --yes)
-grep -Fxq 'device=tun7' <<<"$connect_output"
+grep -Fxq 'device=tun0' <<<"$connect_output"
 $helper status | grep -q 'configured=yes'
 $helper status | grep -q 'active=yes'
-$helper status | grep -Fxq 'device=tun7'
-printf 'vpnkit-local:%s:vpn:ppp0\n' "$owned_uuid" >"$tmp/active"
-if $helper status >/dev/null 2>&1; then
-  echo 'unsafe active NetworkManager device was exposed' >&2
+$helper status | grep -Fxq 'device=tun0'
+grep -q "connection up uuid $owned_uuid" "$tmp/log"
+grep -q "IP4.ADDRESS connection show uuid $owned_uuid" "$tmp/log"
+
+# No-IP activation is bounded rather than reported as an unsafe device forever.
+: >"$tmp/active-ip4"
+if timeout_output=$($helper connect --yes 2>&1); then
+  echo 'no-IP activation unexpectedly succeeded' >&2
   exit 1
 fi
-: >"$tmp/active"
-printf 'vpnkit-local:%s:vpn:tun7\n' "$owned_uuid" >"$tmp/active"
-grep -q "connection up uuid $owned_uuid" "$tmp/log"
+grep -Fq 'timed out before the owned tunnel became ready' <<<"$timeout_output"
+printf 'IP4.ADDRESS:10.89.0.2/24\n' >"$tmp/active-ip4"
+
+# A runtime address that does not exist on the kernel table, or that exists on
+# more than one tunnel, is not an arbitrary-interface fallback.
+printf '7: tun0    inet 10.89.0.3/24 scope global tun0\n' >"$tmp/ip-addresses"
+if $helper status >/dev/null 2>&1; then
+  echo 'owned IP mapping mismatch was accepted' >&2
+  exit 1
+fi
+printf '7: tun0    inet 10.89.0.2/24 scope global tun0\n8: tun1    inet 10.89.0.2/24 scope global tun1\n' >"$tmp/ip-addresses"
+if $helper status >/dev/null 2>&1; then
+  echo 'duplicate owned IP mapping was accepted' >&2
+  exit 1
+fi
+
+# Disconnect must still stop the exact owned UUID when the safe tunnel proof
+# is unavailable. Foreign/work VPN rows are left untouched.
+: >"$tmp/active-ip4"
+: >"$tmp/ip-addresses"
+printf 'vpnkit-local:%s:vpn:Meta\nwork-vpn:99999999-9999-4999-8999-999999999999:vpn:Meta\n' "$owned_uuid" >"$tmp/active"
+: >"$tmp/log"
 $helper disconnect --yes >/dev/null
 grep -q "connection down uuid $owned_uuid" "$tmp/log"
+grep -q 'work-vpn:99999999-9999-4999-8999-999999999999:vpn:Meta' "$tmp/active"
 
 # Every refresh failure point must preserve the old UUID, its profile, and a
 # complete ownership capability.  The mock fails once at the named step so
@@ -438,7 +509,12 @@ unset MOCK_FAIL_STEP
 rm -f -- "$MOCK_FAILURE_MARKER"
 printf '%s\n' 'client' 'dev tun' 'proto udp' 'remote 127.0.0.1 21194' >"$tmp/secrets/openvpn/client/vpnkit-local.ovpn"
 
+: >"$tmp/active-ip4"
+: >"$tmp/ip-addresses"
+printf 'vpnkit-local:%s:vpn:Meta\n' "$owned_uuid" >"$tmp/active"
+: >"$tmp/log"
 $helper remove --yes >/dev/null
+grep -q "connection down uuid $owned_uuid" "$tmp/log"
 grep -q "connection delete uuid $owned_uuid" "$tmp/log"
 [[ ! -e "$tmp/secrets/state/networkmanager-state" && ! -e "$tmp/secrets/state/networkmanager-uuid" && ! -e "$tmp/secrets/state/networkmanager-profile-fingerprint" ]]
 

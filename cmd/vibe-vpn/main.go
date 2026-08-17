@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -91,7 +93,7 @@ func newRootCommand() *cobra.Command {
 	pick.Flags().Int("duration-sec", -1, "download duration per node in seconds; 0 disables duration mode")
 	pick.Flags().Bool("verbose", false, "print every node while testing")
 	pick.Flags().Bool("debug", false, "show temporary benchmark backend logs")
-	pick.Flags().BoolVar(&o.restartAsync, "restart-async", false, "do not wait for request-file runtime acknowledgement (bootstrap only)")
+	pick.Flags().BoolVar(&o.restartAsync, "restart-async", false, "deprecated bootstrap compatibility flag; supervised request acknowledgement remains required")
 	addFilters(pick)
 	root.AddCommand(pick)
 
@@ -121,7 +123,24 @@ func newRootCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return singbox.SyncFromSourcePreserveSelectedWithLock(context.Background(), source, runtime, c.StateDir)
+		lock, err := state.AcquireLock(context.Background(), c.StateDir)
+		if err != nil {
+			return err
+		}
+		defer lock.Close()
+		if os.Getenv("VIBE_VPN_DEFER_TRANSACTION_RECOVERY") != "1" {
+			if err := recoverTransactionsLocked(context.Background(), c); err != nil {
+				return fmt.Errorf("recover pending transaction: %w", err)
+			}
+		} else if pending, pendingErr := state.PendingTransactions(c.StateDir); pendingErr != nil {
+			return pendingErr
+		} else if len(pending) != 0 {
+			// Entrypoint startup runs this sync before the request supervisor. Do
+			// not overwrite a crash candidate; the post-health recovery command
+			// below resolves it while the supervisor can emit acknowledgements.
+			return nil
+		}
+		return singbox.SyncFromSourcePreserveSelectedLocked(source, runtime)
 	}}
 	syncSingBox.Flags().String("source", "/etc/sing-box/config.json", "rendered source sing-box config")
 	syncSingBox.Flags().String("runtime", "/var/lib/vpnkit/sing-box/config.json", "persisted runtime sing-box config")
@@ -145,14 +164,39 @@ func newRootCommand() *cobra.Command {
 	prune.Flags().Int("keep", 10, "number of newest backups to keep")
 	root.AddCommand(prune)
 	root.AddCommand(&cobra.Command{Use: "daemon", Short: "Run long-lived VPN health and failover service", RunE: func(cmd *cobra.Command, args []string) error { return cmdDaemon(o) }})
+	root.AddCommand(&cobra.Command{Use: "recover-transactions", Short: "Recover pending runtime/state transactions", Hidden: true, RunE: func(cmd *cobra.Command, args []string) error { return cmdRecoverTransactions(o) }})
 	root.AddCommand(newIKEv2Command(o))
 	return root
+}
+
+func cmdRecoverTransactions(o *cliOptions) error {
+	c, err := loadConfig(o.configPath)
+	if err != nil {
+		return err
+	}
+	lock, err := state.AcquireLock(context.Background(), c.StateDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	return recoverTransactionsLocked(context.Background(), c)
 }
 
 func cmdDaemon(o *cliOptions) error {
 	c, err := loadConfig(o.configPath)
 	if err != nil {
 		return err
+	}
+	lock, err := state.AcquireLock(context.Background(), c.StateDir)
+	if err != nil {
+		return fmt.Errorf("daemon transaction lock: %w", err)
+	}
+	if err := recoverTransactionsLocked(context.Background(), c); err != nil {
+		_ = lock.Close()
+		return fmt.Errorf("recover pending transaction: %w", err)
+	}
+	if err := lock.Close(); err != nil {
+		return fmt.Errorf("release daemon transaction lock: %w", err)
 	}
 	lg := logging.New(c.Logging.Path, c.Logging.AlsoJournal, os.Stdout)
 	tester := func(ctx context.Context) error { return runScheduledTestContext(ctx, o, c) }
@@ -172,16 +216,67 @@ func runScheduledTest(o *cliOptions, c config.Config) error {
 	return runScheduledTestContext(context.Background(), o, c)
 }
 
+type scheduledTestRunner func(context.Context, *cliOptions, config.Config, *state.FileVersion) (state.FileVersion, error)
+
+// scheduledResultsSupersededError is a non-success outcome: the benchmark did
+// not publish a result it owns, because another writer won the CAS. The marker
+// lets the daemon distinguish this expected contention from a benchmark error.
+type scheduledResultsSupersededError struct{}
+
+func (scheduledResultsSupersededError) Error() string {
+	return "scheduled benchmark results superseded"
+}
+func (scheduledResultsSupersededError) NoOwnedResult() bool { return true }
+
+// ErrScheduledResultsSuperseded is the stable sentinel for the no-owned-result
+// outcome. Callers must not continue into scheduled rotation and re-load the
+// other writer's results.
+var ErrScheduledResultsSuperseded = scheduledResultsSupersededError{}
+
 func runScheduledTestContext(ctx context.Context, o *cliOptions, c config.Config) error {
+	return runScheduledTestContextWithRunner(ctx, o, c, func(ctx context.Context, o *cliOptions, c config.Config, baseline *state.FileVersion) (state.FileVersion, error) {
+		var candidate state.FileVersion
+		err := runTestContextVersioned(ctx, o, false, 0, 0, -1, false, false, baseline, &candidate)
+		return candidate, err
+	})
+}
+
+// runScheduledTestContextWithRunner keeps the benchmark outside the shared
+// state lock. Only its short result publication/conditional compensation uses
+// that lock, so health probes and failover detection remain responsive.
+func runScheduledTestContextWithRunner(ctx context.Context, o *cliOptions, c config.Config, run scheduledTestRunner) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	path := filepath.Join(c.StateDir, "last-results.json")
-	old, readErr := os.ReadFile(path)
-	err := runTestContext(ctx, o, false, 0, 0, -1, false, false)
-	if err != nil && readErr == nil {
-		_ = os.MkdirAll(c.StateDir, 0700)
-		_ = os.WriteFile(path, old, 0600)
+	baseline, err := state.CaptureFileVersion(path)
+	if err != nil {
+		return fmt.Errorf("snapshot last results: %w", err)
+	}
+	candidate, err := run(ctx, o, c, &baseline)
+	if err != nil && candidate.Exists() && (!baseline.Exists() || !candidate.Equal(baseline)) {
+		// A scheduled benchmark may have written a failed result before
+		// returning an error. Compensate only if this exact scheduled version is
+		// still current. A manual test/pick that published meanwhile therefore
+		// wins, even across processes. With no baseline there is nothing to
+		// restore: delete only this exact candidate version instead of leaving
+		// failed results behind.
+		compensationCtx := ctx
+		if compensationCtx.Err() != nil {
+			// The candidate was already published before cancellation. Cleanup is
+			// a bounded ownership compensation, not a new benchmark publication;
+			// keep it from being skipped solely because the run was canceled.
+			compensationCtx = context.Background()
+		}
+		var compensationErr error
+		if baseline.Exists() {
+			_, compensationErr = state.RestoreIfVersion(compensationCtx, c.StateDir, "last-results.json", candidate, baseline.Data(), baseline.Perm())
+		} else {
+			_, compensationErr = state.DeleteIfVersion(compensationCtx, c.StateDir, "last-results.json", candidate)
+		}
+		if compensationErr != nil {
+			return fmt.Errorf("%w; conditional last-results compensation failed: %v", err, compensationErr)
+		}
 	}
 	return err
 }
@@ -203,6 +298,13 @@ func runTest(o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) 
 }
 
 func runTestContext(ctx context.Context, o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool) error {
+	return runTestContextVersioned(ctx, o, apply, max, lim, dur, verbose, debug, nil, nil)
+}
+
+// runTestContextVersioned publishes results under the shared state lock. When
+// expected is non-nil, publication is compare-and-swap: a long-running
+// scheduled benchmark never replaces a result written after its snapshot.
+func runTestContextVersioned(ctx context.Context, o *cliOptions, apply bool, max, lim, dur int, verbose, debug bool, expected, published *state.FileVersion) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -328,7 +430,27 @@ func runTestContext(ctx context.Context, o *cliOptions, apply bool, max, lim, du
 		return err
 	}
 	results = o.filter.Apply(results)
-	if err := state.SaveJSON(c.StateDir, "last-results.json", results); err != nil {
+	var publishedVersion state.FileVersion
+	if expected == nil {
+		publishedVersion, err = state.SaveJSONVersioned(ctx, c.StateDir, "last-results.json", results)
+	} else {
+		var committed bool
+		publishedVersion, committed, err = state.SaveJSONIfVersion(ctx, c.StateDir, "last-results.json", results, *expected)
+		if err == nil && !committed {
+			fmt.Println("Scheduled results superseded by a newer writer; keeping newer last-results.json.")
+			// This is deliberately non-nil and owns no result: the scheduled
+			// service must not treat another writer's manual results as its own
+			// successful benchmark and rotate based on them.
+			if published != nil {
+				*published = state.FileVersion{}
+			}
+			return ErrScheduledResultsSuperseded
+		}
+	}
+	if published != nil {
+		*published = publishedVersion
+	}
+	if err != nil {
 		return err
 	}
 	printSummary(results, 20)
@@ -687,22 +809,9 @@ func cmdRollback(o *cliOptions) error {
 		return fmt.Errorf("rollback state lock: %w", err)
 	}
 	defer lock.Close()
-	var b string
-	var rollbackErr error
-	if normalizedRuntime(c) == "xray" {
-		b, rollbackErr = xray.RollbackLocked(c.XrayConfig, c.StateDir)
-	} else {
-		b, rollbackErr = singbox.RollbackWithRestartLocked(c.SingBoxConfig, c.StateDir, singboxRestartConfig(c))
-	}
-	if rollbackErr != nil {
-		return rollbackErr
-	}
-	if snap, snapErr := state.LoadSnapshotForBackup(c.StateDir, b); snapErr == nil {
-		if err := snap.Restore(c.StateDir); err != nil {
-			return fmt.Errorf("runtime rolled back but selected-node state restore failed: %w", err)
-		}
-	} else if !os.IsNotExist(snapErr) {
-		return fmt.Errorf("runtime rolled back but selected-node state snapshot is corrupt: %w", snapErr)
+	b, err := rollbackRuntimeAndStateLocked(context.Background(), c)
+	if err != nil {
+		return err
 	}
 	fmt.Println("Rolled back", b)
 	return nil
@@ -853,6 +962,288 @@ func applyResultLocked(ctx context.Context, c config.Config, b picker.NodeResult
 	return applyResultLockedWithOptions(ctx, c, b, false)
 }
 
+var transactionSequence uint64
+
+func transactionID() string {
+	return fmt.Sprintf("txn-%d-%d", time.Now().UTC().UnixNano(), atomic.AddUint64(&transactionSequence, 1))
+}
+
+func transactionRuntimePath(c config.Config) string {
+	if normalizedRuntime(c) == "xray" {
+		return c.XrayConfig
+	}
+	return c.SingBoxConfig
+}
+
+func transactionRuntimeName(c config.Config) string {
+	if normalizedRuntime(c) == "xray" {
+		return "xray"
+	}
+	return "singbox"
+}
+
+func beginRuntimeTransactionLocked(c config.Config, operation state.TransactionOperation, candidate state.Snapshot) (string, error) {
+	runtimePath := transactionRuntimePath(c)
+	oldRuntime, err := os.ReadFile(runtimePath)
+	if err != nil {
+		return "", err
+	}
+	oldState, err := state.Capture(c.StateDir)
+	if err != nil {
+		return "", err
+	}
+	id := transactionID()
+	if err := state.BeginTransactionWithMetadata(c.StateDir, id, operation, transactionRuntimeName(c), runtimePath, oldRuntime, nil, oldState, candidate); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func recoverTransactionsLocked(ctx context.Context, c config.Config) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := state.MigrateLegacyTransactionArtifacts(c.StateDir); err != nil {
+		return err
+	}
+	transactions, err := state.PendingTransactions(c.StateDir)
+	if err != nil {
+		return err
+	}
+	for _, tx := range transactions {
+		if err := recoverTransactionLocked(ctx, c, tx); err != nil {
+			return err
+		}
+	}
+	return state.PruneOrphanTransactionArtifacts(c.StateDir)
+}
+
+func recoverTransactionLocked(ctx context.Context, c config.Config, tx state.Transaction) error {
+	configPath := transactionRuntimePath(c)
+	if tx.Runtime != "" && tx.Runtime != transactionRuntimeName(c) {
+		return fmt.Errorf("pending transaction targets a different runtime")
+	}
+	if tx.ConfigPath != "" && filepath.Clean(tx.ConfigPath) != filepath.Clean(configPath) {
+		return fmt.Errorf("pending transaction targets a different runtime config")
+	}
+	current, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if os.IsNotExist(err) {
+		current = nil
+	}
+
+	switch tx.Phase {
+	case state.PhasePrepared:
+		// Equality with OldRuntime only proves the file bytes. It says nothing
+		// about a service that died after compensation wrote those bytes. Apply
+		// the old runtime again and require the backend health contract before
+		// publishing the old state or deleting the journal.
+		if err := restoreTransactionRuntimeLocked(ctx, c, tx, true); err != nil {
+			return fmt.Errorf("prepared transaction old runtime is not healthy: %w", err)
+		}
+		if err := tx.OldState.Restore(c.StateDir); err != nil {
+			return err
+		}
+		if err := state.AcknowledgeTransaction(c.StateDir, tx.ID, tx.OldRuntime); err != nil {
+			return err
+		}
+		if err := state.UpdateTransactionPhase(c.StateDir, tx.ID, state.PhaseStateCommitted); err != nil {
+			return err
+		}
+		return state.CompleteTransaction(c.StateDir, tx.ID)
+	case state.PhaseRuntimeAcknowledged:
+		if tx.CandidateRuntimeReady && bytes.Equal(current, tx.CandidateRuntime) {
+			// A previous acknowledgement is not durable proof that the child is
+			// still serving. Re-run the backend-specific restart/health contract
+			// before restoring candidate state and advancing the journal.
+			if err := restartCurrentRuntimeLocked(ctx, c); err != nil {
+				return recoverTransactionToOldPair(ctx, c, tx, fmt.Errorf("candidate runtime health recheck failed: %w", err))
+			}
+			if err := verifyRuntimeBytes(configPath, tx.CandidateRuntime); err != nil {
+				return recoverTransactionToOldPair(ctx, c, tx, fmt.Errorf("candidate runtime changed during recovery: %w", err))
+			}
+			if err := tx.CandidateState.Restore(c.StateDir); err != nil {
+				return err
+			}
+			if err := state.UpdateTransactionPhase(c.StateDir, tx.ID, state.PhaseStateCommitted); err != nil {
+				return err
+			}
+			return state.CompleteTransaction(c.StateDir, tx.ID)
+		}
+		// A torn or externally replaced candidate is resolved to the exact old
+		// pair, but only after the old runtime has also passed health checks.
+		if err := restoreTransactionRuntimeLocked(ctx, c, tx, true); err != nil {
+			return fmt.Errorf("runtime-acknowledged transaction old runtime is not healthy: %w", err)
+		}
+		if err := verifyRuntimeBytes(configPath, tx.OldRuntime); err != nil {
+			return fmt.Errorf("runtime-acknowledged transaction old runtime changed during recovery: %w", err)
+		}
+		if err := tx.OldState.Restore(c.StateDir); err != nil {
+			return err
+		}
+		if err := state.UpdateTransactionPhase(c.StateDir, tx.ID, state.PhaseStateCommitted); err != nil {
+			return err
+		}
+		return state.CompleteTransaction(c.StateDir, tx.ID)
+	case state.PhaseStateCommitted:
+		if tx.CandidateRuntimeReady && bytes.Equal(current, tx.CandidateRuntime) {
+			// Journal cleanup is still gated by a fresh health proof. If the
+			// candidate is unhealthy, restore the old pair for safety but retain
+			// the journal so a later invocation must re-prove it before cleanup.
+			if err := restartCurrentRuntimeLocked(ctx, c); err != nil {
+				return recoverTransactionToOldPair(ctx, c, tx, fmt.Errorf("state-committed candidate runtime is not healthy: %w", err))
+			}
+			if err := verifyRuntimeBytes(configPath, tx.CandidateRuntime); err != nil {
+				return recoverTransactionToOldPair(ctx, c, tx, fmt.Errorf("state-committed candidate runtime changed during recovery: %w", err))
+			}
+			if err := tx.CandidateState.Restore(c.StateDir); err != nil {
+				return err
+			}
+			return state.CompleteTransaction(c.StateDir, tx.ID)
+		}
+		// For old, missing, or externally replaced bytes, fail closed to old.
+		// The old service must be restarted and verified even when bytes already
+		// match, and the old state is restored before journal removal.
+		if err := restoreTransactionRuntimeLocked(ctx, c, tx, true); err != nil {
+			return fmt.Errorf("state-committed transaction old runtime is not healthy: %w", err)
+		}
+		if err := verifyRuntimeBytes(configPath, tx.OldRuntime); err != nil {
+			return fmt.Errorf("state-committed transaction old runtime changed during recovery: %w", err)
+		}
+		if err := tx.OldState.Restore(c.StateDir); err != nil {
+			return err
+		}
+		return state.CompleteTransaction(c.StateDir, tx.ID)
+	default:
+		return fmt.Errorf("invalid pending transaction phase")
+	}
+}
+
+func restartCurrentRuntimeLocked(ctx context.Context, c config.Config) error {
+	if normalizedRuntime(c) == "xray" {
+		return xray.RestartWithHealthContext(ctx, c.XrayConfig, xrayHealthConfig(c))
+	}
+	return singbox.RestartWithAckContext(ctx, singboxRestartConfig(c))
+}
+
+// recoverTransactionToOldPair is deliberately not a journal-closing abort.
+// When candidate health fails, the old pair is restored only as a fail-closed
+// safety action; the journal remains until a later recovery proves the old
+// runtime and completes the durable cleanup.
+func recoverTransactionToOldPair(ctx context.Context, c config.Config, tx state.Transaction, cause error) error {
+	restoreErr := restoreTransactionRuntimeLocked(ctx, c, tx, true)
+	if restoreErr != nil {
+		if stateErr := restoreOldStateIfRuntimeMatches(c, tx); stateErr != nil {
+			return fmt.Errorf("%w; old runtime recovery failed: %v; old state recovery failed: %v; journal retained", cause, restoreErr, stateErr)
+		}
+		return fmt.Errorf("%w; old runtime recovery failed: %v; old state restored; journal retained", cause, restoreErr)
+	}
+	if err := verifyRuntimeBytes(transactionRuntimePath(c), tx.OldRuntime); err != nil {
+		return fmt.Errorf("%w; old runtime changed during recovery: %v; journal retained", cause, err)
+	}
+	if err := tx.OldState.Restore(c.StateDir); err != nil {
+		return fmt.Errorf("%w; old state recovery failed: %v; journal retained", cause, err)
+	}
+	return fmt.Errorf("%w; old pair restored; journal retained for retry", cause)
+}
+
+// abortTransactionLocked restores the journal's old runtime and state. It is
+// used for bounded cancellation/error paths; the journal is retained if any
+// step fails so the next locked invocation can retry recovery.
+func abortTransactionLocked(ctx context.Context, c config.Config, id string, forceRestart bool) error {
+	tx, err := state.LoadTransaction(c.StateDir, id)
+	if err != nil {
+		return err
+	}
+	if err := restoreTransactionRuntimeLocked(ctx, c, tx, forceRestart); err != nil {
+		if stateErr := restoreOldStateIfRuntimeMatches(c, tx); stateErr != nil {
+			return fmt.Errorf("%w; old state recovery failed: %v", err, stateErr)
+		}
+		return err
+	}
+	if err := verifyRuntimeBytes(transactionRuntimePath(c), tx.OldRuntime); err != nil {
+		return err
+	}
+	if err := tx.OldState.Restore(c.StateDir); err != nil {
+		return err
+	}
+	if tx.Phase == state.PhasePrepared {
+		if err := state.AcknowledgeTransaction(c.StateDir, id, tx.OldRuntime); err != nil {
+			return err
+		}
+	}
+	if err := state.UpdateTransactionPhase(c.StateDir, id, state.PhaseStateCommitted); err != nil {
+		return err
+	}
+	return state.CompleteTransaction(c.StateDir, id)
+}
+
+func restoreTransactionRuntimeLocked(ctx context.Context, c config.Config, tx state.Transaction, forceRestart bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// forceRestart is retained for the bounded compensation call sites, but
+	// byte equality is never a sufficient reason to skip the runtime health
+	// proof. A crash can leave identical bytes with a dead service.
+	_ = forceRestart
+	oldPath, err := state.TransactionOldRuntimePath(c.StateDir, tx.ID)
+	if err != nil {
+		return err
+	}
+	// Compensating restart deliberately uses a non-cancelable context. A
+	// canceled caller must not leave the runtime half-restored while the
+	// journal is being closed.
+	ctx = context.Background()
+	var restoreErr error
+	if normalizedRuntime(c) == "xray" {
+		restoreErr = xray.RestoreBackupLockedContextWithHealth(ctx, c.XrayConfig, oldPath, xrayHealthConfig(c))
+	} else {
+		restoreErr = singbox.RestoreBackupWithRestartLockedContext(ctx, c.SingBoxConfig, c.StateDir, oldPath, singboxRestartConfig(c))
+	}
+	if restoreErr != nil {
+		return restoreErr
+	}
+	return verifyRuntimeBytes(transactionRuntimePath(c), tx.OldRuntime)
+}
+
+func verifyRuntimeBytes(path string, expected []byte) error {
+	got, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(got, expected) {
+		return fmt.Errorf("runtime bytes changed during transaction")
+	}
+	return nil
+}
+
+func restoreOldStateIfRuntimeMatches(c config.Config, tx state.Transaction) error {
+	if err := verifyRuntimeBytes(transactionRuntimePath(c), tx.OldRuntime); err != nil {
+		return err
+	}
+	return tx.OldState.Restore(c.StateDir)
+}
+
+func transactionFailpoint(name string) {
+	point := strings.TrimSpace(os.Getenv("VIBE_VPN_TX_FAILPOINT"))
+	if point == "" {
+		point = strings.TrimSpace(os.Getenv("VIBE_VPN_TRANSACTION_FAILPOINT"))
+	}
+	if point == "" {
+		point = strings.TrimSpace(os.Getenv("VIBE_VPN_FAILPOINT"))
+	}
+	point = strings.ReplaceAll(point, "_", "-")
+	if point != name && !(name == "after-runtime-ack" && (point == "after-runtime-ack-before-save-current" || point == "after-runtime-ack-before-state-commit")) && !(name == "after-rollback-runtime-ack" && (point == "after-rollback-runtime-ack-before-state-restore" || point == "after-rollback-runtime-ack-before-state-commit")) {
+		return
+	}
+	// Test-only crash injection. SIGKILL is intentional: no deferred cleanup
+	// may erase the journal before the recovery subprocess gets to observe it.
+	_ = syscall.Kill(os.Getpid(), syscall.SIGKILL)
+	os.Exit(137)
+}
+
 func applyResultLockedWithOptions(ctx context.Context, c config.Config, b picker.NodeResult, asyncRestart bool) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -860,93 +1251,218 @@ func applyResultLockedWithOptions(ctx context.Context, c config.Config, b picker
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	snapshot, err := state.Capture(c.StateDir)
-	if err != nil {
-		return fmt.Errorf("capture current state: %w", err)
+	if err := recoverTransactionsLocked(ctx, c); err != nil {
+		return fmt.Errorf("recover pending transaction: %w", err)
 	}
+	cur := state.Current{Name: b.Name, Host: b.Host, Port: b.Port, Network: b.Network, Security: b.Security, Link: b.Link, Mbps: b.Mbps, TestedAt: time.Now().UTC().Format(time.RFC3339)}
+	candidateState, err := state.SnapshotForCurrent(cur)
+	if err != nil {
+		return fmt.Errorf("prepare selected state: %w", err)
+	}
+	txID, err := beginRuntimeTransactionLocked(c, state.TransactionApply, candidateState)
+	if err != nil {
+		return fmt.Errorf("begin runtime transaction: %w", err)
+	}
+
 	var backup string
 	if normalizedRuntime(c) == "xray" {
-		backup, err = xray.ApplyLockedContext(ctx, c.XrayConfig, c.StateDir, b.Outbound)
+		backup, err = xray.ApplyLockedContextWithHealth(ctx, c.XrayConfig, c.StateDir, b.Outbound, xrayHealthConfig(c))
 	} else {
 		out, convErr := singBoxOutboundForResult(b)
 		if convErr != nil {
+			_ = abortTransactionLocked(context.Background(), c, txID, false)
 			return fmt.Errorf("build sing-box outbound from selected result: %w", convErr)
 		}
 		restart := singboxRestartConfig(c)
-		if asyncRestart {
-			// Bootstrap pick runs before the supervisor loop exists. This is the
-			// only caller that explicitly requests the legacy asynchronous path.
-			restart.AckGenerationFile = ""
-			restart.AckTimeout = 0
-		}
+		// The flag remains accepted for old bootstrap command lines, but it no
+		// longer disables the request/generation/health acknowledgement. The
+		// entrypoint starts its request supervisor before invoking bootstrap.
+		_ = asyncRestart
 		backup, err = singbox.ApplyWithRestartLockedContext(ctx, c.SingBoxConfig, c.StateDir, out, restart)
 	}
 	if err != nil {
+		// The runtime package may already have compensated its file, but the
+		// transaction boundary still re-applies and verifies the exact old
+		// runtime before it can close the prepared journal.
+		abortErr := abortTransactionLocked(context.Background(), c, txID, false)
+		if abortErr != nil {
+			return fmt.Errorf("runtime apply failed: %w; transaction restore failed: %v", err, abortErr)
+		}
 		return err
 	}
-	rollbackApplied := func(cause error) error {
-		restoreErr := restoreRuntimeBackup(c, backup)
-		stateErr := snapshot.Restore(c.StateDir)
-		if restoreErr != nil || stateErr != nil {
-			return fmt.Errorf("%w; runtime restore: %v; state restore: %v", cause, restoreErr, stateErr)
+	candidateRuntime, err := os.ReadFile(transactionRuntimePath(c))
+	if err != nil {
+		abortErr := abortTransactionLocked(context.Background(), c, txID, true)
+		if abortErr != nil {
+			return fmt.Errorf("read acknowledged runtime failed: %w; transaction restore failed: %v", err, abortErr)
 		}
-		return cause
+		return err
 	}
+	if err := state.AcknowledgeTransaction(c.StateDir, txID, candidateRuntime); err != nil {
+		abortErr := abortTransactionLocked(context.Background(), c, txID, true)
+		if abortErr != nil {
+			return fmt.Errorf("journal runtime acknowledgement failed: %w; transaction restore failed: %v", err, abortErr)
+		}
+		return err
+	}
+	transactionFailpoint("after-runtime-ack")
 	if err := ctx.Err(); err != nil {
-		return rollbackApplied(err)
+		if abortErr := abortTransactionLocked(context.Background(), c, txID, true); abortErr != nil {
+			return fmt.Errorf("apply canceled; transaction restore failed: %w", abortErr)
+		}
+		return err
 	}
-	cur := state.Current{Name: b.Name, Host: b.Host, Port: b.Port, Network: b.Network, Security: b.Security, Link: b.Link, Mbps: b.Mbps, TestedAt: time.Now().Format(time.RFC3339)}
+	if err := verifyRuntimeBytes(transactionRuntimePath(c), candidateRuntime); err != nil {
+		if abortErr := abortTransactionLocked(context.Background(), c, txID, true); abortErr != nil {
+			return fmt.Errorf("candidate runtime changed before state commit: %w; transaction restore failed: %v", err, abortErr)
+		}
+		return err
+	}
 	if err := state.SaveCurrent(c.StateDir, cur); err != nil {
-		return rollbackApplied(fmt.Errorf("production applied but state update failed: %w", err))
+		abortErr := abortTransactionLocked(context.Background(), c, txID, true)
+		if abortErr != nil {
+			return fmt.Errorf("production applied but state update failed: %w; transaction restore failed: %v", err, abortErr)
+		}
+		return fmt.Errorf("production applied but state update failed: %w", err)
 	}
-	if err := ctx.Err(); err != nil {
-		return rollbackApplied(err)
+	if err := state.UpdateTransactionPhase(c.StateDir, txID, state.PhaseStateCommitted); err != nil {
+		return fmt.Errorf("selected state committed but transaction journal update failed: %w", err)
+	}
+	if err := state.CompleteTransaction(c.StateDir, txID); err != nil {
+		return fmt.Errorf("selected state committed but transaction cleanup failed: %w", err)
 	}
 	fmt.Printf("Applied to production %s. Backup: %s\n", normalizedRuntime(c), backup)
 	return nil
 }
 
-func restoreRuntimeBackup(c config.Config, backup string) error {
-	if backup == "" {
-		return restoreRuntime(c)
+func latestPairedRuntimeBackup(c config.Config) (string, state.Snapshot, error) {
+	prefix := "sing-box-"
+	if normalizedRuntime(c) == "xray" {
+		prefix = "xray-"
+	}
+	files, err := state.PairedRuntimeBackups(c.StateDir, prefix)
+	if err != nil {
+		return "", state.Snapshot{}, err
+	}
+	if len(files) == 0 {
+		return "", state.Snapshot{}, fmt.Errorf("no paired backups")
+	}
+	last := files[len(files)-1]
+	snap, err := state.LoadSnapshotForBackup(c.StateDir, last)
+	if err != nil {
+		return "", state.Snapshot{}, err
+	}
+	return last, snap, nil
+}
+
+func rollbackRuntimeAndStateLocked(ctx context.Context, c config.Config) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := recoverTransactionsLocked(ctx, c); err != nil {
+		return "", fmt.Errorf("recover pending transaction: %w", err)
+	}
+	backup, targetState, err := latestPairedRuntimeBackup(c)
+	if err != nil {
+		return "", err
+	}
+	txID, err := beginRuntimeTransactionLocked(c, state.TransactionRollback, targetState)
+	if err != nil {
+		return "", fmt.Errorf("begin rollback transaction: %w", err)
 	}
 	if normalizedRuntime(c) == "xray" {
-		return xray.RestoreBackupLocked(c.XrayConfig, c.StateDir, backup)
+		err = xray.RestoreBackupLockedContextWithHealth(ctx, c.XrayConfig, backup, xrayHealthConfig(c))
+	} else {
+		err = singbox.RestoreBackupWithRestartLockedContext(ctx, c.SingBoxConfig, c.StateDir, backup, singboxRestartConfig(c))
 	}
-	return singbox.RestoreBackupWithRestartLocked(c.SingBoxConfig, c.StateDir, backup, singboxRestartConfig(c))
+	if err != nil {
+		abortErr := abortTransactionLocked(context.Background(), c, txID, false)
+		if abortErr != nil {
+			return "", fmt.Errorf("runtime rollback failed: %w; transaction restore failed: %v", err, abortErr)
+		}
+		return "", err
+	}
+	candidateRuntime, err := os.ReadFile(transactionRuntimePath(c))
+	if err != nil {
+		return "", abortRollbackWithError(c, txID, err)
+	}
+	if err := state.AcknowledgeTransaction(c.StateDir, txID, candidateRuntime); err != nil {
+		return "", abortRollbackWithError(c, txID, err)
+	}
+	transactionFailpoint("after-rollback-runtime-ack")
+	if err := ctx.Err(); err != nil {
+		return "", abortRollbackWithError(c, txID, err)
+	}
+	if err := verifyRuntimeBytes(transactionRuntimePath(c), candidateRuntime); err != nil {
+		return "", abortRollbackWithError(c, txID, fmt.Errorf("rollback runtime changed before state commit: %w", err))
+	}
+	if err := targetState.Restore(c.StateDir); err != nil {
+		return "", abortRollbackWithError(c, txID, fmt.Errorf("runtime rolled back but selected-node state restore failed: %w", err))
+	}
+	if err := state.UpdateTransactionPhase(c.StateDir, txID, state.PhaseStateCommitted); err != nil {
+		return "", fmt.Errorf("selected state restored but transaction journal update failed: %w", err)
+	}
+	if err := state.CompleteTransaction(c.StateDir, txID); err != nil {
+		return "", fmt.Errorf("rollback committed but transaction cleanup failed: %w", err)
+	}
+	return backup, nil
+}
+
+func abortRollbackWithError(c config.Config, txID string, cause error) error {
+	if abortErr := abortTransactionLocked(context.Background(), c, txID, true); abortErr != nil {
+		return fmt.Errorf("%w; transaction restore failed: %v", cause, abortErr)
+	}
+	return cause
 }
 
 func restoreRuntime(c config.Config) error {
-	if normalizedRuntime(c) == "xray" {
-		_, err := xray.RollbackLocked(c.XrayConfig, c.StateDir)
-		return err
-	}
-	_, err := singbox.RollbackWithRestartLocked(c.SingBoxConfig, c.StateDir, singboxRestartConfig(c))
+	_, err := rollbackRuntimeAndStateLocked(context.Background(), c)
 	return err
 }
 
-func singboxRestartConfig(c config.Config) singbox.RestartConfig {
-	ackFile := c.SingBoxRestartAckFile
-	if ackFile == "" {
-		ackFile = c.SingBoxRestartAckGenerationFile
+func runtimeHealthTimeout(c config.Config) time.Duration {
+	if d := c.SingBoxRestartAckTimeout.Duration; d > 0 {
+		return d
 	}
-	// Existing local request-file configs predate the explicit ack key. Keep
-	// those configs supervised by the generation marker without changing the
-	// async compatibility contract for arbitrary request files.
-	if ackFile == "" && strings.EqualFold(strings.TrimSpace(c.SingBoxRestartMode), string(singbox.RestartModeRequestFile)) {
-		ackFile = strings.TrimSpace(os.Getenv("SINGBOX_GENERATION_FILE"))
-		if ackFile == "" {
-			ackFile = strings.TrimSpace(os.Getenv("VPNKIT_SINGBOX_GENERATION_FILE"))
+	return 30 * time.Second
+}
+
+func xrayHealthConfig(c config.Config) xray.HealthConfig {
+	return xray.HealthConfig{
+		Service:      "xray",
+		Binary:       c.XrayBin,
+		ProbeAddress: c.ProductionSocks,
+		Timeout:      runtimeHealthTimeout(c),
+	}
+}
+
+func singboxRestartConfig(c config.Config) singbox.RestartConfig {
+	generationFile := strings.TrimSpace(c.SingBoxRestartAckGenerationFile)
+	// Existing local request-file configs predate the explicit generation and
+	// health-ack keys. Infer only the known vpnkit namespace; arbitrary request
+	// files must explicitly configure the full protocol.
+	if generationFile == "" && strings.EqualFold(strings.TrimSpace(c.SingBoxRestartMode), string(singbox.RestartModeRequestFile)) {
+		generationFile = strings.TrimSpace(os.Getenv("SINGBOX_GENERATION_FILE"))
+		if generationFile == "" {
+			generationFile = strings.TrimSpace(os.Getenv("VPNKIT_SINGBOX_GENERATION_FILE"))
 		}
-		if ackFile == "" && filepath.Clean(c.SingBoxRestartFile) == "/run/vpnkit/restart-sing-box" {
-			ackFile = "/run/vpnkit/sing-box-generation"
+		if generationFile == "" && filepath.Clean(c.SingBoxRestartFile) == "/run/vpnkit/restart-sing-box" {
+			generationFile = "/run/vpnkit/sing-box-generation"
 		}
+	}
+	healthAckFile := strings.TrimSpace(c.SingBoxRestartAckFile)
+	if healthAckFile == "" && generationFile != "" {
+		healthAckFile = generationFile + ".ack"
 	}
 	return singbox.RestartConfig{
 		Mode:              singbox.RestartMode(c.SingBoxRestartMode),
 		Service:           c.SingBoxService,
 		RequestFile:       c.SingBoxRestartFile,
-		AckGenerationFile: ackFile,
+		AckGenerationFile: generationFile,
+		AckFile:           healthAckFile,
+		ConfigPath:        c.SingBoxConfig,
+		ProbeAddress:      c.ProductionSocks,
+		HealthTimeout:     runtimeHealthTimeout(c),
 		AckTimeout:        c.SingBoxRestartAckTimeout.Duration,
 		SingBoxBin:        c.SingBoxBin,
 	}
@@ -1234,17 +1750,27 @@ func cmdPruneContext(ctx context.Context, o *cliOptions, dryRun bool, keep int) 
 		return fmt.Errorf("--keep must be non-negative")
 	}
 	var lock *state.Lock
+	transactionCount := 0
 	if !dryRun {
 		lock, err = state.AcquireLock(ctx, c.StateDir)
 		if err != nil {
 			return fmt.Errorf("prune state lock: %w", err)
 		}
 		defer lock.Close()
-		// Migration is a write and therefore deliberately does not happen in
-		// dry-run mode. It runs under the same lock as apply/rollback/sync.
+		// Migration and crash recovery are writes and therefore deliberately do
+		// not happen in dry-run mode. They run under the same lock as
+		// apply/rollback/sync.
 		if err := state.MigrateLegacySnapshots(c.StateDir); err != nil {
 			return fmt.Errorf("migrate state snapshots: %w", err)
 		}
+		if err := recoverTransactionsLocked(ctx, c); err != nil {
+			return fmt.Errorf("recover pending transaction: %w", err)
+		}
+		if err := state.PruneOrphanTransactionArtifacts(c.StateDir); err != nil {
+			return fmt.Errorf("prune transaction artifacts: %w", err)
+		}
+	} else if pending, pendingErr := state.PendingTransactions(c.StateDir); pendingErr == nil {
+		transactionCount = len(pending)
 	}
 	killedSingBox, killedXray := 0, 0
 	if dryRun {
@@ -1317,7 +1843,7 @@ func cmdPruneContext(ctx context.Context, o *cliOptions, dryRun bool, keep int) 
 	if dryRun {
 		prefix = "would_remove"
 	}
-	fmt.Printf("%s: stale_singbox=%d stale_xray=%d singbox_temp_files=%d xray_temp_files=%d backups=%d orphan_state_snapshots=%d keep=%d\n", prefix, killedSingBox, killedXray, removedSingBox, removedXray, brem, orem, keep)
+	fmt.Printf("%s: stale_singbox=%d stale_xray=%d singbox_temp_files=%d xray_temp_files=%d backups=%d orphan_state_snapshots=%d pending_transactions=%d keep=%d\n", prefix, killedSingBox, killedXray, removedSingBox, removedXray, brem, orem, transactionCount, keep)
 	return nil
 }
 

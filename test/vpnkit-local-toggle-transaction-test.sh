@@ -12,12 +12,27 @@ printf '0\n' >"$tmp/up-count"
 cat >"$tmp/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+printf 'docker %s\n' "$*" >>"$MOCK_DOCKER_LOG"
+if [[ "${1:-}" == container || "${1:-}" == network || "${1:-}" == volume ]]; then
+  exit 0
+fi
 if [[ "$*" == *'compose'*'ps -q vpnkit'* ]]; then
   printf 'local-cid\n'
   exit 0
 fi
-if [[ "$1" == inspect ]]; then
-  printf 'healthy\n'
+if [[ "${1:-}" == inspect ]]; then
+  joined="$*"
+  if [[ "$joined" == *'State.Running'* ]]; then
+    printf 'healthy\n'
+  elif [[ "$joined" == *'{{.Name}}'* ]]; then
+    printf '/vpnkit-local-vpnkit-1\n'
+  elif [[ "$joined" == *'Config.Labels'*'com.docker.compose.project.working_dir'* ]]; then
+    printf '%s\n' "$MOCK_WORKDIR"
+  elif [[ "$joined" == *'Config.Labels'*'com.vpnkit.local.owner'* ]]; then
+    printf 'local-lifecycle\n'
+  elif [[ "$joined" == *'Config.Labels'*'com.docker.compose.project'* ]]; then
+    printf 'vpnkit-local\n'
+  fi
   exit 0
 fi
 if [[ "$*" == *'compose'*'up -d --build --force-recreate vpnkit'* ]]; then
@@ -37,6 +52,7 @@ chmod +x "$tmp/bin/docker"
 export PATH="$tmp/bin:$PATH" MOCK_UP_COUNT="$tmp/up-count"
 export VPNKIT_LOCAL_SECRETS_DIR="$tmp/secrets"
 export VPNKIT_LOCAL_MANAGE_NETWORKMANAGER=false
+export MOCK_DOCKER_LOG="$tmp/docker.log" MOCK_WORKDIR="$root"
 export VPNKIT_RULESET_SOURCE_MODE=local-fixture
 export VPNKIT_LOCAL_POLICY=strict
 export VPNKIT_LOCAL_BOOT_TIMEOUT_SECONDS=2
@@ -46,6 +62,9 @@ if bash "$lifecycle" toggle mode >"$tmp/output" 2>&1; then
   exit 1
 fi
 [[ ! -e "$tmp/secrets/state/routing-policy" ]]
+[[ ! -e "$tmp/secrets/state/lifecycle.journal" ]]
+[[ "$(stat -c '%a' "$tmp/secrets/state/lifecycle.lock")" == 600 ]]
+[[ "$(stat -c '%h' "$tmp/secrets/state/lifecycle.lock")" == 1 ]]
 [[ $(<"$tmp/up-count") == 2 ]]
 grep -Fq 'prior policy/runtime was restored' "$tmp/output"
 ! grep -Eiq 'test-only|subscription\.example' "$tmp/output"
@@ -94,6 +113,45 @@ fi
 [[ $(stat -c '%a' "$tmp/secrets/state/routing-policy") == "$old_mode" ]]
 ! compgen -G "$tmp/secrets/state/.routing-policy.*" >/dev/null
 
+# An allowed project name does not authorize a foreign or missing-owner
+# container. The toggle must reject before either candidate or rollback
+# Compose recreation.
+mkdir -p "$tmp/foreign-bin"
+cat >"$tmp/foreign-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf 'docker %s\n' "$*" >>"$MOCK_DOCKER_LOG"
+if [[ "${1:-}" == container || "${1:-}" == network || "${1:-}" == volume ]]; then exit 0; fi
+if [[ "$*" == *'compose'*'ps -q vpnkit'* ]]; then printf 'foreign-cid\n'; exit 0; fi
+if [[ "${1:-}" == inspect ]]; then
+  joined="$*"
+  if [[ "$joined" == *'State.Running'* ]]; then
+    printf 'healthy\n'
+  elif [[ "$joined" == *'Config.Labels'*'com.docker.compose.project.working_dir'* ]]; then
+    printf '%s\n' "$MOCK_WORKDIR"
+  elif [[ "$joined" == *'Config.Labels'*'com.vpnkit.local.owner'* ]]; then
+    [[ "${MOCK_OWNER_MODE:-foreign}" == missing ]] && printf '\n' || printf 'foreign-owner\n'
+  elif [[ "$joined" == *'Config.Labels'*'com.docker.compose.project'* ]]; then
+    printf 'vpnkit-local\n'
+  fi
+  exit 0
+fi
+if [[ "$*" == *'compose'*'up '* || "$*" == *'compose'*'down '* ]]; then
+  printf 'COMPOSE_MUTATION\n' >>"$MOCK_DOCKER_LOG"
+fi
+exit 0
+EOF
+chmod +x "$tmp/foreign-bin/docker"
+for owner_mode in foreign missing; do
+  : >"$tmp/foreign-docker.log"
+  if PATH="$tmp/foreign-bin:$PATH" MOCK_DOCKER_LOG="$tmp/foreign-docker.log" \
+      MOCK_OWNER_MODE="$owner_mode" MOCK_WORKDIR="$root" "$lifecycle" toggle mode >"$tmp/toggle-$owner_mode.out" 2>&1; then
+    echo "unsafe toggle owner mode was accepted: $owner_mode" >&2
+    exit 1
+  fi
+  ! grep -Fq COMPOSE_MUTATION "$tmp/foreign-docker.log"
+done
+
 # A policy symlink is rejected without following or replacing its target.
 printf 'strict\n' >"$tmp/policy-target"
 rm -f "$tmp/secrets/state/routing-policy"
@@ -105,4 +163,5 @@ if "$lifecycle" toggle mode >"$tmp/symlink.out" 2>&1; then
 fi
 [[ $(<"$tmp/policy-target") == strict ]]
 [[ ! -s "$tmp/docker.log" ]]
+[[ ! -e "$tmp/secrets/state/lifecycle.journal" ]]
 printf 'vpnkit local toggle transaction mock tests passed\n'

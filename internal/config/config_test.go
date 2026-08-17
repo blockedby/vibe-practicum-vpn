@@ -27,6 +27,33 @@ sing_box_restart_ack_timeout: 17s
 	}
 }
 
+func TestLoadRestartHealthAckRequiresGeneration(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	body := []byte(`sing_box_restart_mode: request-file
+sing_box_restart_file: /run/vpnkit/restart-sing-box
+sing_box_restart_ack_file: /run/vpnkit/sing-box-generation.ack
+`)
+	if err := os.WriteFile(p, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected health acknowledgement without generation to fail validation")
+	}
+}
+
+func TestLoadRequestFileRequiresGenerationEvenWithoutExplicitHealthAck(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	body := []byte(`sing_box_restart_mode: request-file
+sing_box_restart_file: /run/vpnkit/restart-sing-box
+`)
+	if err := os.WriteFile(p, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected request-file without generation acknowledgement to fail validation")
+	}
+}
+
 func TestLoadRestartAcknowledgementTimeoutRejectsNegative(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.json")
 	if err := os.WriteFile(p, []byte(`{"sing_box_restart_ack_timeout":"-1s"}`), 0600); err != nil {
