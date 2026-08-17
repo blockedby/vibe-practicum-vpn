@@ -4,45 +4,83 @@ Public-safe operational tooling for the containerized `vpnkit` VPN/routing setup
 
 ## Documentation
 
+- Local KDE VPN technical notes: [`docs/LOCAL_KDE_VPNKIT.md`](./docs/LOCAL_KDE_VPNKIT.md)
 - Current Docker setup: [`docs/DOCKER_SETUP.md`](./docs/DOCKER_SETUP.md)
 - Consolidated historical notes: [`docs/RESEARCH_AND_ATTEMPTS.md`](./docs/RESEARCH_AND_ATTEMPTS.md)
 - Private endpoint template: [`config/private-endpoints.example.env`](./config/private-endpoints.example.env)
 - Vercel DNS failover runbook: [`docs/VERCEL_DNS_FAILOVER.md`](./docs/VERCEL_DNS_FAILOVER.md)
 
-## Current iteration quick map
+## What's included
 
-This branch adds five connected pieces of operational tooling:
+- A one-button local VPN for CachyOS/KDE, with a small terminal UI.
+- Docker-based OpenVPN and sing-box labs for safe testing.
+- Profile and manifest rendering tools.
+- Steam Deck helpers.
+- Guarded production deployment and rollback scripts.
 
-- **Manifest/profile matrix**: `config/vpnkit-manifest.example.yaml`, `config/vpnkit-manifest.schema.json`, `scripts/vpnkit/vpnkit-manifest-validate.py`, and `scripts/vpnkit/vpnkit-render-profile-for-pair.sh` describe server/client/profile intent and render public-safe fixture or local real profiles.
-- **Unified Steam Deck lab acceptance**: `test/containers-test.sh --scenario steamdeck-host --action up|test|down|cycle` prepares isolated lab secrets, deploys `vpnkit-test-steamdeck-host`, runs OpenVPN/sing-box checks, outer client smoke, and required nested OpenVPN rows.
-- **Unified local KDE host acceptance**: `--action test` is contract/mock-only, while only the explicit `--action accept --approve-local-kde-host` path may run the guarded local lifecycle, NetworkManager mapping, localhost UDP profile, underlay rules, and existing host smoke without adopting production or work VPN state.
-- **Local KDE quick installer/launcher**: `scripts/vpnkit/vpnkit-local-install.sh` and `scripts/vpnkit/vpnkit-local-tui.sh` provide the normal-user, redacted, no-auto-connect quick flow.
-- **Production deploy/rollback tooling**: `scripts/vpnkit/vpnkit-prod-deploy.sh` provides `plan`, `dry-run`, `deploy`, `verify`, and `rollback` for Docker/Compose production endpoints with rollback bundles and smoke checks.
+If you only want the local KDE VPN, start with the guide below.
 
-Production/full-tunnel OpenVPN pushed DNS policy: use Google DNS only (`8.8.8.8` default, `8.8.4.4` accepted override/fallback). Do not use Cloudflare `1.1.1.1` for pushed DNS; `1.1.1.1` remains acceptable as a public connectivity probe in route/ICMP checks.
+## Local VPN for CachyOS/KDE
 
-## Local CachyOS/KDE vpnkit (issue #40)
+This mode runs a private VPN gateway in Docker on your own computer. KDE connects to it through the NetworkManager profile `vpnkit-local`. It does not modify production servers or select your work VPN.
 
-The local mode runs an isolated Docker project bound to `127.0.0.1`, generates an independent local OpenVPN PKI/profile under ignored `secrets/vpnkit-local/`, benchmarks the private subscription before OpenVPN readiness, and exposes strict/smart routing through a small TUI. It does not reuse or mutate production `vpnkit` resources.
+### First-time setup
 
-### Quick Start
-
-From the repository root, run these two commands as your normal desktop user:
+Requirements: Docker with Compose, NetworkManager, OpenVPN, Python 3, and `sudo` access for the one-time routing helper.
 
 ```bash
+cd ~/code/tools/vibe-practicum-vpn
+
+# 1. Open the TUI and press c to enter the subscription URL.
+#    Input is displayed as stars and is never printed or committed.
 scripts/vpnkit/vpnkit-local-tui.sh
+
+# 2. Install/update the local gateway and import the KDE profile.
 scripts/vpnkit/vpnkit-local-install.sh
 ```
 
-In the TUI, press `c` to enter the subscription value (it is hidden), then quit the TUI. Never put the subscription URL in tracked config or shell history. To review the preflight without creating the env file or invoking `sudo`, run `scripts/vpnkit/vpnkit-local-install.sh --dry-run`. The normal installer creates/validates the private local env file, shows the redacted underlay plan, installs the underlay through `sudo`, starts only the local container lifecycle, and imports the owned `vpnkit-local` NetworkManager profile without connecting it. It never prints the subscription or generated profile.
+The installer does **not** connect automatically. Open KDE Network Settings and activate **vpnkit-local** once. After that, the TUI can start and stop it.
 
-### Manual KDE activation
+### Daily use
 
-After the installer reports readiness, open KDE Network settings and activate the imported `vpnkit-local` profile yourself. No profile is auto-connected, and existing work-VPN connections are not selected or modified by this flow.
+```bash
+cd ~/code/tools/vibe-practicum-vpn
+scripts/vpnkit/vpnkit-local-tui.sh
+```
 
-### Uninstall / rollback
+| Key | Action |
+| --- | --- |
+| `c` | Enter or replace the subscription URL |
+| `s` | Start the local VPN |
+| `x` | Stop it |
+| `r` | Test the subscription and select an upstream |
+| `m` | Switch between strict and smart routing |
+| `d` | Show redacted diagnostics |
+| `q` | Quit |
 
-Use this bounded sequence to stop and remove only the local capability. It leaves ignored PKI/rendered files and the subscription for review:
+Use **strict** mode if you are unsure. Smart mode applies the repository's direct/adblock routing rules.
+
+### Update
+
+```bash
+cd ~/code/tools/vibe-practicum-vpn
+git pull --ff-only
+scripts/vpnkit/vpnkit-local-install.sh
+```
+
+The installer keeps the subscription and local PKI. It may ask for `sudo` when the routing helper needs an update.
+
+### Status and troubleshooting
+
+```bash
+scripts/vpnkit/vpnkit-local.sh status --json
+scripts/vpnkit/vpnkit-local-networkmanager.sh status
+scripts/vpnkit/vpnkit-local-underlay-routing.sh verify
+```
+
+These commands redact private values. The subscription, generated profiles, PKI, rendered configs, and local state stay under the ignored `secrets/vpnkit-local/` directory.
+
+### Remove
 
 ```bash
 scripts/vpnkit/vpnkit-local-networkmanager.sh disconnect --yes
@@ -51,71 +89,11 @@ scripts/vpnkit/vpnkit-local.sh stop
 sudo scripts/vpnkit/vpnkit-local-underlay-routing.sh uninstall --yes
 ```
 
-The installer help (`scripts/vpnkit/vpnkit-local-install.sh --help`) repeats the rollback path. The same-host OpenVPN path requires a one-time root policy-routing helper to keep Docker upstream traffic on the physical uplink and prevent recursion. It also protects host-to-container traffic with destination rules at priorities `998`/`999`: `to VPNKIT_LOCAL_DOCKER_SUBNET lookup main` (with the ordinary default route suppressed) uses the local Docker bridge, and an immediate unreachable rule fails closed when that bridge route is absent, before the existing source-underlay rules at `1000`/`1001`. Review its redacted plan first; `install`/`uninstall` require direct root plus `--yes`:
+This leaves private local files in `secrets/vpnkit-local/` so they can be reused or removed manually.
 
-The helper config is versioned. Existing `VERSION=1` installations intentionally own only source rules `1000`/`1001`; they do not infer destination rules from missing fields. A new install or successful v1-to-v2 migration persists `VERSION=2` with all four priorities. If migration fails after candidate routing is applied, rollback removes candidate `998`/`999`, reapplies the exact v1 source-only policy, and only then restores the old helper/config.
+For architecture, safety boundaries, and acceptance commands, see [`docs/LOCAL_KDE_VPNKIT.md`](./docs/LOCAL_KDE_VPNKIT.md).
 
-```bash
-scripts/vpnkit/vpnkit-local-underlay-routing.sh plan
-sudo scripts/vpnkit/vpnkit-local-underlay-routing.sh install --yes
-scripts/vpnkit/vpnkit-local-underlay-routing.sh verify
-```
-
-After verified installation, TUI Start/Stop manages only the fixed NetworkManager connection `vpnkit-local`. For container-only testing before that gate, set `VPNKIT_LOCAL_MANAGE_NETWORKMANAGER=false` in the ignored local env. Rollback is bounded:
-
-```bash
-scripts/vpnkit/vpnkit-local-networkmanager.sh disconnect --yes
-scripts/vpnkit/vpnkit-local.sh stop
-sudo scripts/vpnkit/vpnkit-local-underlay-routing.sh uninstall --yes
-```
-
-### Public-safe issue-40 integration slice
-
-The local Docker runner is a bounded integration slice, not a generic fixture claim. It uses the isolated project `vpnkit-local-lab`, a loopback-only UDP publication (even with environment variables unset), throwaway lab material under `secrets/vpnkit-labs/local-docker/`, a direct fixture outbound, and an OpenVPN client on a separate Docker subnet. It does not import a KDE profile, run NetworkManager/underlay routing, consume a real subscription, or prove a real proxy exit. Explicit local-docker actions fail when Docker or its Compose plugin is unavailable; dependent diagnostics may still be reported as SKIP after that required failure.
-
-Run the non-privileged slice with:
-
-```bash
-test/containers-test.sh --scenario local-docker --action cycle
-```
-
-The runner refuses protected projects `vpnkit` and `vpnkit-local`, protected real secret/log roots, arbitrary artifact roots, and unowned Docker resources. The local renderer accepts only the real local root, the isolated lab subtree, or a temporary directory. Before `down` or client cleanup the runner checks the Compose project, owner, and working-directory labels. Test-runner logs default to the per-project user-owned `/tmp/vpnkit-containers-test/<project>/` root; container logs use Compose-managed named volumes rather than host bind paths.
-
-A standalone `local-docker --action test` is not a liveness-only check. It requires the private provenance record created only after a successful runner `up`/`cycle`, then compares the current nonignored tracked/untracked source digest, resolved Compose config digest, deployed image ID, and container ID. Secret and log trees are excluded from the source digest. Missing, stale, or mismatched evidence makes the test fail/not-ready; rerun `up` or `cycle` after source/config changes.
-
-The full-tunnel client rows require the OpenVPN route via `tun0`, hostname and literal-IP HTTPS, ICMP to `1.1.1.1` and `8.8.8.8`, and UDP DNS coverage to `8.8.8.8`. IPv6 is fail-closed: an IPv6 default route or successful IPv6 HTTPS/ICMP is a failure. An arbitrary-UDP echo row is reported as a bounded `SKIP` because the public test has no deterministic UDP echo service.
-
-### Explicit local KDE host acceptance
-
-This is the only runner path that imports the real local KDE/NetworkManager profile. It is intentionally opt-in and requires either the approval flag or `VPNKIT_LOCAL_KDE_HOST_APPROVED=1`:
-
-```bash
-test -r config/vpnkit-local.local.env && set -a && . config/vpnkit-local.local.env && set +a
-VPNKIT_LOCAL_KDE_HOST_APPROVED=1 \
-  test/containers-test.sh --scenario local-kde-host --action accept
-# equivalent: add --approve-local-kde-host (or the explicit --yes alias)
-```
-
-The sourced local config may keep the documented template variables. Live acceptance allows only the safe contract: the canonical `secrets/vpnkit-local` root, endpoint `127.0.0.1`, project `vpnkit-local`, subnet `172.30.89.0/24`, container address `172.30.89.2`, priorities `998/999/1000/1001`, strict policy, Google pushed DNS (`8.8.8.8` or bounded `8.8.4.4` fallback), NetworkManager `true`, and bounded local timeouts. Different roots/projects/routing identities, helper/test seams, arbitrary uplink/priority overrides, command-like environment values, and unsafe DNS are rejected before Docker or NetworkManager. The example file is therefore meant to be sourced as-is; users should not unset its legitimate values.
-
-`--action test` is the contract alias, not a live acceptance alias. Without `VPNKIT_LOCAL_TEST_FIXTURE=1` it refuses before command discovery/lifecycle/Docker/NetworkManager mutation. With that explicit capability, the focused tests supply temporary roots and fake `docker`, `nmcli`, `ip`, and probe commands and may exercise the contract path; no real host mutation is permitted. Only `--action accept` plus approval may run the live path. The live path forces the guarded local Compose project, `VPNKIT_LOCAL_ENDPOINT=127.0.0.1`, and the loopback-published UDP port (`VPNKIT_LOCAL_OPENVPN_PORT`, default `21194`). It snapshots local stack/NetworkManager state and active work-VPN identities, invokes `scripts/vpnkit/vpnkit-local.sh start`, verifies the exact owned UUID-to-IP4-to-tun mapping and OpenVPN readiness, verifies destination lookup/fail-closed rules, runs `scripts/vpnkit/vpnkit-local-host-smoke.sh`, compares work-VPN identities again, and uses lifecycle stop plus exact owned-capability cleanup/restore. Mutating lifecycle commands serialize on a private descriptor lock under canonical state and retain a durable private journal until exact recovery/compensation is proven. A successful live run records exactly `PASS host:localhost-udp-underlay-nm`; it refuses an active preexisting local stack and never targets production `vpnkit` or mutates another VPN profile.
-
-sing-box 1.13 does not natively health-check and fail over between configured DNS servers. The local Compose wrapper therefore probes Cloudflare DoH (`1.1.1.1`) through the local SOCKS inbound and, only when that probe fails and Google DoH (`8.8.8.8`) succeeds, switches the persisted `dns.final` tag to the exercised fallback and requests the normal validated sing-box restart. Recovery switches back to Cloudflare. The pushed OpenVPN DNS remains Google-only as required by the production policy.
-
-Useful tests added/extended in this branch:
-
-```bash
-test/issue40-review-fixes-test.sh
-bash test/vpnkit-local-install-test.sh  # installer/launcher preflight; mock-only
-bash test/vpnkit-local-lifecycle-test.sh  # mock-only local KDE host acceptance
-bash test/vpnkit-local-lifecycle-transaction-test.sh  # lock/journal/signal recovery
-python3 test/sing-box-smart-routing-proof.py
-test/manifest-profile-intents-test.sh
-test/prod-deploy-helper-test.sh
-test/containers-test.sh --scenario steamdeck-host --action cycle
-```
-
-Agent/operator rule of thumb: use `devops-runtime-readiness` for deploy/runtime changes, require fresh acceptance evidence before calling work ready, use the unified runner for lab acceptance, use the deploy helper for production rollout, and keep all generated profiles, PKI, rendered configs, logs, and private endpoints in gitignored local paths only.
+## Other tools
 
 Read-only backend drift check after sourcing local endpoints or passing SSH aliases:
 
