@@ -1428,6 +1428,31 @@ def _draw_line(screen: object, row: int, text: str, *, bold: bool = False) -> No
         pass
 
 
+def _clear_line(screen: object, row: int) -> None:
+    """Clear one line without selecting a custom foreground/background."""
+
+    height, width = screen.getmaxyx()  # type: ignore[attr-defined]
+    if row < 0 or row >= height or width <= 0:
+        return
+    try:
+        screen.move(row, 0)  # type: ignore[attr-defined]
+        screen.clrtoeol()  # type: ignore[attr-defined]
+    except curses.error:
+        pass
+
+
+def _configure_default_theme(screen: object) -> None:
+    """Use the terminal's own foreground and background colors."""
+
+    try:
+        curses.start_color()
+        curses.use_default_colors()
+        curses.init_pair(1, -1, -1)
+        screen.bkgd(" ", curses.color_pair(1))  # type: ignore[attr-defined]
+    except (curses.error, AttributeError):
+        # Monochrome/minimal terminals already use their native defaults.
+        pass
+
 
 def render(screen: object, state: TuiState, message: str = "") -> None:
     screen.erase()  # type: ignore[attr-defined]
@@ -1459,26 +1484,55 @@ def render(screen: object, state: TuiState, message: str = "") -> None:
 
 
 def _hidden_input(screen: object) -> str:
-    """Read a one-line subscription without enabling terminal echo."""
+    """Read a one-line subscription while rendering one star per character."""
 
-    height, width = screen.getmaxyx()  # type: ignore[attr-defined]
-    row = max(0, height - 3)
-    _draw_line(screen, row, "Subscription value (hidden; Enter saves, Esc cancels):")
-    screen.refresh()  # type: ignore[attr-defined]
+    value: list[str] = []
     curses.noecho()
     try:
-        raw = screen.getstr(row + 1, 0, min(MAX_SUBSCRIPTION_LENGTH, max(1, width - 1)))  # type: ignore[attr-defined]
+        try:
+            curses.curs_set(1)
+        except curses.error:
+            pass
+        while True:
+            height, width = screen.getmaxyx()  # type: ignore[attr-defined]
+            prompt_row = max(0, height - 3)
+            input_row = min(max(0, height - 1), prompt_row + 1)
+            _clear_line(screen, prompt_row)
+            _clear_line(screen, input_row)
+            _draw_line(screen, prompt_row, "Subscription value (masked; Enter saves, Esc cancels):")
+            mask = "*" * min(len(value), max(0, width - 1))
+            _draw_line(screen, input_row, mask)
+            try:
+                screen.move(input_row, min(len(mask), max(0, width - 2)))  # type: ignore[attr-defined]
+            except curses.error:
+                pass
+            screen.refresh()  # type: ignore[attr-defined]
+
+            key = screen.get_wch()  # type: ignore[attr-defined]
+            if key in ("\n", "\r", curses.KEY_ENTER):
+                return "".join(value).strip()
+            if key == "\x1b":
+                return ""
+            if key in ("\b", "\x7f", curses.KEY_BACKSPACE, 8, 127):
+                if value:
+                    value.pop()
+                continue
+            if key == curses.KEY_RESIZE:
+                continue
+            if isinstance(key, str) and key.isprintable():
+                candidate = "".join((*value, key))
+                if len(candidate) <= MAX_SUBSCRIPTION_LENGTH and len(candidate.encode("utf-8")) <= MAX_SUBSCRIPTION_LENGTH:
+                    value.append(key)
     finally:
         curses.noecho()
-    if raw in (b"\x1b", "\x1b"):
-        return ""
-    if isinstance(raw, bytes):
-        return raw.decode("utf-8", errors="strict").strip()
-    return str(raw).strip()
-
+        try:
+            curses.curs_set(0)
+        except curses.error:
+            pass
 
 
 def run_curses(screen: object, state: TuiState) -> None:
+    _configure_default_theme(screen)
     state.refresh()
     try:
         curses.curs_set(0)

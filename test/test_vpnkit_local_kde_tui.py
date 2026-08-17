@@ -855,6 +855,68 @@ class StateAndStatusTests(unittest.TestCase):
         self.assertEqual(TUI.MENU_ACTIONS[-1].lifecycle_action, None)
 
 
+class CursesPresentationTests(unittest.TestCase):
+    class FakeScreen:
+        def __init__(self, keys=()):
+            self.keys = iter(keys)
+            self.drawn = []
+            self.background = None
+
+        def getmaxyx(self):
+            return (24, 80)
+
+        def addstr(self, row, column, text, attr=0):
+            self.drawn.append((row, column, text, attr))
+
+        def move(self, row, column):
+            return None
+
+        def clrtoeol(self):
+            return None
+
+        def refresh(self):
+            return None
+
+        def get_wch(self):
+            return next(self.keys)
+
+        def bkgd(self, character, attr):
+            self.background = (character, attr)
+
+    def test_subscription_input_displays_stars_and_supports_backspace(self) -> None:
+        screen = self.FakeScreen(("a", "b", TUI.curses.KEY_BACKSPACE, "c", "\n"))
+        with mock.patch.object(TUI.curses, "noecho"), mock.patch.object(TUI.curses, "curs_set"):
+            value = TUI._hidden_input(screen)
+
+        self.assertEqual(value, "ac")
+        input_frames = [text for row, _, text, _ in screen.drawn if row == 22]
+        self.assertIn("*", input_frames)
+        self.assertIn("**", input_frames)
+        self.assertNotIn("a", input_frames)
+        self.assertNotIn("b", input_frames)
+        self.assertNotIn("c", input_frames)
+
+    def test_subscription_input_escape_cancels(self) -> None:
+        screen = self.FakeScreen(("s", "e", "c", "r", "e", "t", "\x1b"))
+        with mock.patch.object(TUI.curses, "noecho"), mock.patch.object(TUI.curses, "curs_set"):
+            self.assertEqual(TUI._hidden_input(screen), "")
+
+    def test_default_theme_uses_terminal_foreground_and_background(self) -> None:
+        screen = self.FakeScreen()
+        with (
+            mock.patch.object(TUI.curses, "start_color") as start_color,
+            mock.patch.object(TUI.curses, "use_default_colors") as use_default_colors,
+            mock.patch.object(TUI.curses, "init_pair") as init_pair,
+            mock.patch.object(TUI.curses, "color_pair", return_value=37),
+        ):
+            TUI._configure_default_theme(screen)
+
+        start_color.assert_called_once_with()
+        use_default_colors.assert_called_once_with()
+        init_pair.assert_called_once_with(1, -1, -1)
+        self.assertEqual(screen.background, (" ", 37))
+
+
 class CommandLineTests(unittest.TestCase):
     def test_status_json_is_noninteractive_and_contains_no_secret(self) -> None:
         secret = "cli-secret-never-printed"
