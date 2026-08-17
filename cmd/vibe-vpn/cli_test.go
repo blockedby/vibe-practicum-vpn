@@ -3,7 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -258,6 +262,86 @@ func TestCurrentLink(t *testing.T) {
 	}
 }
 
+func testSocksProbeListener(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		_ = ln.Close()
+		close(done)
+	})
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				greeting := make([]byte, 3)
+				if _, err := io.ReadFull(conn, greeting); err == nil && greeting[0] == 5 {
+					_, _ = conn.Write([]byte{5, 0})
+				}
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func installFakeSystemdRuntime(t *testing.T, dir, configPath, effectiveBinary, configFlag string) string {
+	t.Helper()
+	runtime := filepath.Join(dir, "systemd-runtime")
+	if err := os.WriteFile(runtime, []byte("#!/bin/sh\nfor arg in \"$@\"; do\n  [ \"$arg\" = check ] && exit 0\n  [ \"$arg\" = -test ] && exit 0\ndone\nwhile :; do sleep 1; done\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	pidFile := filepath.Join(dir, "systemd-runtime.pid")
+	systemctl := filepath.Join(dir, "bin", "systemctl")
+	script := fmt.Sprintf(`#!/bin/sh
+pidfile=%q
+runtime=%q
+config=%q
+binary=%q
+flag=%q
+case "${1:-}" in
+  restart)
+    if [ "${VIBE_VPN_XRAY_FAIL_RESTART:-0}" = 1 ]; then exit 42; fi
+    if [ -s "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null || true; fi
+    "$runtime" run "$flag" "$config" >/dev/null 2>&1 &
+    echo $! >"$pidfile"
+    ;;
+  stop)
+    if [ -s "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null || true; rm -f "$pidfile"; fi
+    ;;
+  is-active)
+    [ -s "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null
+    ;;
+  show)
+    case " $* " in
+      *MainPID*) [ -s "$pidfile" ] && cat "$pidfile" ;;
+      *ExecStart*) printf '%%s\n' "{ path=$binary ; argv[]=$binary run $flag $config ; }" ;;
+      *) exit 1 ;;
+    esac
+    ;;
+esac
+exit 0
+`, pidFile, runtime, configPath, effectiveBinary, configFlag)
+	if err := os.WriteFile(systemctl, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if b, err := os.ReadFile(pidFile); err == nil {
+			if pid := strings.TrimSpace(string(b)); pid != "" {
+				_ = exec.Command("kill", pid).Run()
+			}
+		}
+		_ = os.Remove(pidFile)
+	})
+	return runtime
+}
+
 func TestApplyBestRespectsFilters(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
@@ -278,6 +362,16 @@ func TestApplyBestRespectsFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "xray.json"), []byte(`{"outbounds":[{"tag":"proxy"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	installFakeSystemdRuntime(t, dir, filepath.Join(dir, "xray.json"), "/bin/echo", "-config")
+	probe := testSocksProbeListener(t)
+	configBytes, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configBytes = []byte(strings.Replace(string(configBytes), "127.0.0.1:1", probe, 1))
+	if err := os.WriteFile(cfg, configBytes, 0600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := newRootCommand()
@@ -338,6 +432,9 @@ func TestApplyResultSingBoxDerivesOutboundFromLink(t *testing.T) {
 	c.Runtime = "singbox"
 	c.SingBoxConfig = cfgPath
 	c.SingBoxService = "sing-box-test"
+	c.SingBoxBin = filepath.Join(dir, "systemd-runtime")
+	installFakeSystemdRuntime(t, dir, cfgPath, c.SingBoxBin, "-c")
+	c.ProductionSocks = testSocksProbeListener(t)
 	c.StateDir = dir
 	res := picker.NodeResult{
 		Name: "reality", Host: "example.com", Port: 443, Network: "tcp", Security: "reality", Mbps: 42,

@@ -28,7 +28,7 @@ func FetchMany(rawURLs []string, timeout time.Duration) ([]string, []error) {
 	out := []string{}
 	errs := []error{}
 	for i, rawURL := range rawURLs {
-		links, err := Fetch(rawURL, timeout)
+		links, err := fetchWithTransientRetry(rawURL, timeout)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("subscription %d fetch failed: %s", i+1, safeFetchError(err)))
 			continue
@@ -36,6 +36,23 @@ func FetchMany(rawURLs []string, timeout time.Duration) ([]string, []error) {
 		out = append(out, links...)
 	}
 	return out, errs
+}
+
+func fetchWithTransientRetry(rawURL string, timeout time.Duration) ([]string, error) {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		var links []string
+		links, err = Fetch(rawURL, timeout)
+		if err == nil {
+			return links, nil
+		}
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) || attempt == 2 {
+			return nil, err
+		}
+		time.Sleep(time.Duration(attempt+1) * 250 * time.Millisecond)
+	}
+	return nil, err
 }
 
 func safeFetchError(err error) string {

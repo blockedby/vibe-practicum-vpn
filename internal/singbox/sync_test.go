@@ -1,10 +1,16 @@
 package singbox
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/kcnc/vibe-practicum-vpn/internal/state"
 )
 
 func TestSyncFromSourcePreserveSelectedAddsAdblockPolicyAndKeepsRuntimeOutbound(t *testing.T) {
@@ -79,6 +85,44 @@ func TestSyncFromSourcePreserveSelectedCreatesRuntimeWhenAbsent(t *testing.T) {
 	}
 	if _, err := os.Stat(runtime); err != nil {
 		t.Fatalf("runtime config was not created: %v", err)
+	}
+}
+
+func TestSyncUsesCrossProcessStateDirLock(t *testing.T) {
+	if os.Getenv("VIBE_VPN_SYNC_LOCK_HELPER") == "1" {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+		defer cancel()
+		err := SyncFromSourcePreserveSelectedWithLock(ctx, os.Getenv("VIBE_VPN_SYNC_SOURCE"), os.Getenv("VIBE_VPN_SYNC_RUNTIME"), os.Getenv("VIBE_VPN_SYNC_STATE_DIR"))
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("sync helper error=%v, want lock timeout", err)
+		}
+		return
+	}
+
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source.json")
+	runtime := filepath.Join(dir, "runtime", "config.json")
+	writeJSON(t, source, map[string]any{"outbounds": []any{map[string]any{"tag": "selected-native-out", "type": "direct"}}})
+	lock, err := state.AcquireLock(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestSyncUsesCrossProcessStateDirLock$", "-test.v")
+	cmd.Env = append(os.Environ(),
+		"VIBE_VPN_SYNC_LOCK_HELPER=1",
+		"VIBE_VPN_SYNC_SOURCE="+source,
+		"VIBE_VPN_SYNC_RUNTIME="+runtime,
+		"VIBE_VPN_SYNC_STATE_DIR="+dir,
+	)
+	if err := cmd.Run(); err != nil {
+		_ = lock.Close()
+		t.Fatalf("sync helper did not observe lock contention: %v", err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := SyncFromSourcePreserveSelectedWithLock(context.Background(), source, runtime, dir); err != nil {
+		t.Fatalf("sync after lock release failed: %v", err)
 	}
 }
 

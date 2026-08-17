@@ -1,5 +1,8 @@
 # Secrets / private operator inputs
 secrets/
+# Local same-host vpnkit PKI, rendered configs, profiles, and subscription inputs
+secrets/vpnkit-local/
+config/vpnkit-local.local.env
 config/private-endpoints.local.env
 *.key
 *.pem
